@@ -16,3 +16,13 @@ pub fn main() !void {
     defer port.deinit();
     std.debug.print("connected to port", .{});
 }
+
+test "socket permissions error" {
+    const ETH_P_ETHERCAT: u16 = 0x88a4;
+    const socket_result = std.posix.socket(
+        std.posix.AF.PACKET,
+        std.posix.SOCK.RAW,
+        std.mem.nativeToBig(u32, ETH_P_ETHERCAT),
+    );
+    try std.testing.expect(socket_result == std.posix.SocketError.PermissionDenied);
+}

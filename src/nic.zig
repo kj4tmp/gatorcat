@@ -46,9 +46,45 @@ const FrameBuffer = struct {
             .allocator = allocator,
         };
     }
-    fn deinit(self: FrameBuffer) void {
+    fn deinit(self: *FrameBuffer) void {
         self.allocator.destroy(self.backer);
         self.allocator.destroy(self.fbs);
+    }
+    fn serialize_frame(self: *FrameBuffer, frame: telegram.EthernetFrame) !void {
+        var writer = self.fbs.writer();
+        try writer.writeStructEndian(
+            frame.header,
+            std.builtin.Endian.big,
+        );
+        try writer.writeStructEndian(
+            frame.ethercat_frame.header,
+            std.builtin.Endian.little,
+        );
+        assert(frame.ethercat_frame.datagrams.len > 0); // no datagrams to write
+        for (frame.ethercat_frame.datagrams) |datagram| {
+            try writer.writeStructEndian(
+                datagram.header,
+                std.builtin.Endian.little,
+            );
+            try writer.writeAll(datagram.data);
+            try writer.writeInt(
+                @TypeOf(datagram.wkc),
+                datagram.wkc,
+                std.builtin.Endian.little,
+            );
+        }
+        try writer.write(frame.padding);
+    }
+    fn deserialize_frame(self: *FrameBuffer) !telegram.EthernetFrame {
+        var reader = self.fbs.reader();
+        eth_header = try reader.readStructEndian(
+            telegram.EthernetHeader,
+            std.builtin.Endian.big,
+        );
+        ecat_header = try reader.readStructEndian(
+            telegram.EtherCATHeader,
+            std.builtin.Endian.little,
+        );
     }
 };
 
@@ -66,6 +102,7 @@ pub const Port = struct {
     send_mutex: Mutex = .{},
     socket: std.posix.socket_t,
     frames: []FrameBuffer,
+    tmp_frame: *FrameBuffer,
     allocator: std.mem.Allocator,
 
     pub fn init(
@@ -75,6 +112,10 @@ pub const Port = struct {
     ) !Port {
         var frames = try allocator.alloc(FrameBuffer, args.max_frame_idx + 1);
         errdefer allocator.free(frames);
+
+        var tmp_frame = try allocator.create(FrameBuffer);
+        errdefer allocator.free(tmp_frame);
+        tmp_frame.* = try tmp_frame.init(0, allocator);
 
         var idx: u8 = 0; // idx = num allocated
         errdefer for (frames[0..idx]) |frame| {
@@ -159,14 +200,18 @@ pub const Port = struct {
         return Port{
             .socket = socket,
             .frames = frames,
+            .tmp_frame = tmp_frame,
             .allocator = allocator,
         };
     }
-    pub fn deinit(self: Port) void {
+    pub fn deinit(self: *Port) void {
         for (self.frames) |frame| {
             frame.deinit();
         }
         self.allocator.free(self.frames);
+
+        self.tmp_frame.deinit();
+        self.allocator.destroy(self.tmp_frame);
     }
 
     /// Non-blocking fetch frame.
@@ -176,40 +221,58 @@ pub const Port = struct {
     ///
     /// The caller is expected to attempt multiple times to get
     /// the frame, for a long as they wish.
-    //pub fn fetch_frame(self: Port, idx: u8) error{frameNotFound}!*FrameBuffer {}
+    ///
+    /// Once the frame is found and the caller is done using the buffer,
+    /// the caller should call release_framebuffer.
+    //pub fn fetch_frame(self: *Port, idx: u8) error{frameNotFound}!*FrameBuffer {}
 
     /// Send a frame.
     ///
     /// Returns the idx of the frame for later retreival
     /// by fetch_frame.
     ///
-    /// Returns idx of sent frame
-    // pub fn send_frame(self: Port, frame: telegram.EthernetFrame) !u8 {
-    //     const frame_buffer: *FrameBuffer = self.claim_frame();
-    //     const header = telegram.EthernetHeader{
-    //         .dest_mac = std.mem.nativeToBig(u48, MAC_BROADCAST),
-    //         .src_max = std.mem.nativeToBig(u48, MAC_SOURCE),
-    //         .ether_type = std.mem.nativeToBig(u32, ETH_P_ETHERCAT),
-    //     };
-    //     @memcpy(frame_buffer.tx[0..@bitSizeOf(header)], std.mem.asBytes(header));
-    //     @memcpy(frame_buffer.tx[@sizeOf(header)..], data);
-    //     self.send_mutex.lock();
-    //     defer self.send_mutex.unlock();
-    //     try std.posix.write(self.socket, frame_buffer.tx);
-    // }
+    /// Returns idx of sent frame, or error.
+    pub fn send_frame(self: *Port, frame: telegram.EthernetFrame) !u8 {
+        const frame_buffer: *FrameBuffer = try self.claim_frame();
+        frame_buffer.fbs.reset();
+
+        {
+            self.send_mutex.lock();
+            defer self.send_mutex.unlock();
+            _ = try std.posix.write(self.socket, frame_buffer.fbs.getWritten());
+        }
+    }
+
+    /// Release Frame Buffer
+    ///
+    /// Releases a frame buffer so it can be claimed by others.
+    ///
+    /// Caller is inteded to use the idx returned by a previous
+    /// call to send_frame.
+    pub fn release_frame_buffer(self: *Port, idx: u8) void {
+        assert(idx < self.frames.len); // idx out of bounds
+
+        {
+            self.frame_status_mutex.lock();
+            defer self.frame_status_mutex.unlock();
+            self.frames[idx].status = FrameStatus.available;
+        }
+    }
 
     /// Claim a frame buffer.
-    fn claim_frame(self: Port) error{noFrameBufferAvailable}!*FrameBuffer {
+    ///
+    /// Only called by send_frame.
+    fn claim_frame(self: *Port) error{NoFrameBufferAvailable}!*FrameBuffer {
         self.frame_status_mutex.lock();
         defer self.frame_status_mutex.unlock();
 
-        for (self.frames) |frame| {
+        for (self.frames) |*frame| {
             if (frame.status == FrameStatus.available) {
                 frame.status = FrameStatus.in_use;
                 return &frame;
             }
         } else {
-            return error.noFrameBufferAvailable;
+            return error.NoFrameBufferAvailable;
         }
     }
 };

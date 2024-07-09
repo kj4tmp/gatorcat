@@ -181,7 +181,7 @@ pub const DatagramHeader = packed struct {
     /// service command, APRD etc.
     command: Command,
     /// used my maindevice to identify duplicate or lost datagrams
-    index: u8,
+    idx: u8,
     /// auto-increment, configured station, or logical address
     /// when position addressing
     address: Address,
@@ -225,6 +225,16 @@ pub const Datagram = struct {
     /// For a write command: if write command successful wkc+=1.
     /// For a read/write command: if read command successful wkc+=1, if write command successful wkc+=2. If both wkc+=3.
     wkc: u16,
+
+    /// Get length in bytes.
+    /// Saturates to max u16.
+    fn getLength(self: Datagram) u16 {
+        var length: u16 = 0;
+        length +|= @sizeOf(self.header);
+        length +|= self.data.len;
+        length +|= @bitSizeOf(self.wkc) / 8;
+        return length;
+    }
 };
 
 /// EtherCAT Header
@@ -247,6 +257,15 @@ pub const EtherCATHeader = packed struct {
 pub const EtherCATFrame = struct {
     header: EtherCATHeader,
     datagrams: []Datagram,
+
+    fn getLength(self: EtherCATFrame) u16 {
+        var length: u16 = 0;
+        length +|= @sizeOf(self.header);
+        for (self.datagrams) |datagram| {
+            length +|= datagram.getLength();
+        }
+        return length;
+    }
 };
 
 pub const EtherType = enum(u16) {
@@ -276,6 +295,15 @@ pub const EthernetFrame = struct {
     header: EthernetHeader,
     ethercat_frame: EtherCATFrame,
     padding: []u8,
+
+    /// calcuate the length of the frame in bytes
+    fn getLength(self: EthernetFrame) u32 {
+        var length: u32 = 0;
+        length +|= @sizeOf(self.header);
+        length +|= self.ethercat_frame.getLength();
+        length +|= self.padding.len;
+        return length;
+    }
 };
 
 /// Max frame length

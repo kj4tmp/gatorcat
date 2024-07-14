@@ -1,6 +1,8 @@
 const std = @import("std");
 const Mutex = std.Thread.Mutex;
 const assert = std.debug.assert;
+const big = std.builtin.Endian.big;
+const little = std.builtin.Endian.little;
 
 const telegram = @import("telegram.zig");
 
@@ -17,66 +19,127 @@ const FrameStatus = enum {
     in_use_receivable,
     /// received
     in_use_received,
+    in_use_currupted,
 };
-
-const FrameBufferBacker = [telegram.max_frame_length]u8;
-
-const FrameBufferFBS = std.io.FixedBufferStream([]u8);
 
 const FrameBuffer = struct {
     status: FrameStatus = FrameStatus.available,
+    buf: [telegram.max_frame_length]u8,
+    received_datagrams: [15]telegram.Datagram,
+    received_frame: telegram.EthernetFrame,
     idx: u8,
-    backer: *FrameBufferBacker,
-    fbs: *FrameBufferFBS,
-    allocator: std.mem.Allocator,
-    datagrams: [15]telegram.Datagram,
-    received_frame: ?telegram.EthernetFrame = null,
 
-    fn init(idx: u8, allocator: std.mem.Allocator) !FrameBuffer {
-        const backer = try allocator.create(FrameBufferBacker);
-        errdefer allocator.free(backer);
-
-        const fbs = try allocator.create(FrameBufferFBS);
-        errdefer allocator.free(fbs);
-
-        fbs.* = std.io.fixedBufferStream(backer);
-
+    fn init(idx: u8) FrameBuffer {
         return FrameBuffer{
-            .backer = backer,
+            .buf = undefined,
+            .received_datagrams = undefined,
+            .received_frame = undefined,
             .idx = idx,
-            .fbs = fbs,
-            .allocator = allocator,
         };
     }
-    fn deinit(self: *FrameBuffer) void {
-        self.allocator.destroy(self.backer);
-        self.allocator.destroy(self.fbs);
-    }
-    fn serialize_frame(self: *FrameBuffer, frame: telegram.EthernetFrame) !void {
-        self.fbs.reset();
-        var writer = self.fbs.writer();
+    fn serialize_frame(
+        self: *FrameBuffer,
+        frame: telegram.EthernetFrame,
+    ) ![]u8 {
+        assert(frame.ethercat_frame.datagrams.len > 0); // no datagrams to write
+        var fbs = std.io.fixedBufferStream(self.buf[0..]);
+        var writer = fbs.writer();
         try writer.writeStructEndian(
             frame.header,
-            std.builtin.Endian.big,
+            big,
         );
         try writer.writeStructEndian(
             frame.ethercat_frame.header,
-            std.builtin.Endian.little,
+            little,
         );
-        assert(frame.ethercat_frame.datagrams.len > 0); // no datagrams to write
-        for (frame.ethercat_frame.datagrams) |datagram| {
-            try writer.writeStructEndian(
-                datagram.header,
-                std.builtin.Endian.little,
-            );
+        // overwrite first datagram idx for identification for recv
+        var first_datagram_header_copy = frame.ethercat_frame.datagrams[0].header;
+        first_datagram_header_copy.idx = self.idx;
+        for (frame.ethercat_frame.datagrams, 0..) |datagram, i| {
+            if (i == 0) {
+                try writer.writeStructEndian(
+                    first_datagram_header_copy,
+                    little,
+                );
+            } else {
+                try writer.writeStructEndian(
+                    datagram.header,
+                    little,
+                );
+            }
             try writer.writeAll(datagram.data);
             try writer.writeInt(
                 @TypeOf(datagram.wkc),
                 datagram.wkc,
-                std.builtin.Endian.little,
+                little,
             );
         }
-        try writer.write(frame.padding);
+        try writer.writeAll(frame.padding);
+        return fbs.getWritten();
+    }
+    fn deserialize_frame(
+        self: *FrameBuffer,
+        received: []const u8,
+    ) !telegram.EthernetFrame {
+        var fbs_writing = std.io.fixedBufferStream(self.buf);
+        var writer = fbs_writing.writer();
+        try writer.writeAll(received);
+        var fbs_reading = std.io.fixedBufferStream(fbs_writing.getWritten());
+        var reader = fbs_reading.reader();
+
+        const ethernet_header = try reader.readStructEndian(
+            telegram.EthernetHeader,
+            big,
+        );
+        if (ethernet_header.ether_type != telegram.EtherType.ETHERCAT) {
+            return error.NotAnEtherCATFrame;
+        }
+        const ethercat_header = try reader.readStructEndian(
+            telegram.EtherCATHeader,
+            little,
+        );
+        const bytes_remaining = try fbs_reading.getEndPos() - try fbs_reading.getPos();
+        if (ethercat_header.length != bytes_remaining) {
+            return error.InvalidEtherCATHeader;
+        }
+
+        var n_datagrams: u8 = 0;
+        for (&self.received_datagrams) |*datagram| {
+            const datagram_header = try reader.readStructEndian(
+                telegram.DatagramHeader,
+                little,
+            );
+            const datagram_data_start = try fbs_reading.getPos();
+            const datagram_data_end = datagram_data_start + datagram_header.length;
+            const datagram_data: []u8 = self.buf[datagram_data_start..datagram_data_end];
+            try fbs_reading.seekBy(datagram_data.len);
+            const wkc = try reader.readInt(
+                @TypeOf(datagram.wkc),
+                little,
+            );
+            datagram.* = .{ .header = datagram_header, .data = datagram_data, .wkc = wkc };
+            n_datagrams += 1;
+            if (-datagram_header.next) break;
+        }
+        const datagrams = self.received_datagrams[0..n_datagrams];
+
+        const padding_start = try fbs_reading.getPos();
+        const padding_end = try fbs_reading.getEndPos();
+        const padding: []u8 = self.buf[padding_start..padding_end];
+
+        const ethercat_frame: telegram.EtherCATFrame = .{
+            .header = ethercat_header,
+            .datagrams = datagrams,
+        };
+
+        const received_frame: telegram.EthernetFrame = .{
+            .header = ethernet_header,
+            .ethercat_frame = ethercat_frame,
+            .padding = padding,
+        };
+
+        self.received_frame = received_frame;
+        return self.received_frame;
     }
 };
 
@@ -95,7 +158,6 @@ pub const Port = struct {
     recv_mutex: Mutex = .{},
     socket: std.posix.socket_t,
     frames: []FrameBuffer,
-    tmp_frame: *FrameBuffer,
     allocator: std.mem.Allocator,
 
     pub fn init(
@@ -103,21 +165,15 @@ pub const Port = struct {
         allocator: std.mem.Allocator,
         args: PortOptions,
     ) !Port {
-        var frames = try allocator.alloc(FrameBuffer, args.max_frame_idx + 1);
+        const frames = try allocator.alloc(FrameBuffer, @as(usize, args.max_frame_idx) + 1);
         errdefer allocator.free(frames);
 
-        var tmp_frame = try allocator.create(FrameBuffer);
-        errdefer allocator.free(tmp_frame);
-        tmp_frame.* = try tmp_frame.init(0, allocator);
-
-        var idx: u8 = 0; // idx = num allocated
-        errdefer for (frames[0..idx]) |frame| {
-            frame.deinit();
-        };
+        var idx: u8 = 0;
         for (frames) |*frame| {
-            frame.* = try FrameBuffer.init(idx, allocator);
-            idx += 1;
+            frame.* = FrameBuffer.init(idx);
+            idx +|= 1;
         }
+
         if (ifname.len > std.posix.IFNAMESIZE - 1) {
             return error.ifnameTooLong;
         }
@@ -193,56 +249,15 @@ pub const Port = struct {
         return Port{
             .socket = socket,
             .frames = frames,
-            .tmp_frame = tmp_frame,
             .allocator = allocator,
         };
     }
     pub fn deinit(self: *Port) void {
-        for (self.frames) |frame| {
-            frame.deinit();
-        }
         self.allocator.free(self.frames);
-
-        self.tmp_frame.deinit();
-        self.allocator.destroy(self.tmp_frame);
     }
 
-    /// Non-blocking fetch frame.
-    ///
-    /// Search frame buffers for the frame, if its not found
-    /// do one recv. If not found still, return frameNotFound.
-    ///
-    /// The caller is expected to attempt multiple times to get
-    /// the frame, for a long as they wish.
-    ///
-    /// Once the frame is found and the caller is done using the buffer,
-    /// the caller should call release_framebuffer.
-    pub fn fetch_frame(self: *Port, idx: u8) error{FrameNotFound}!telegram.EthernetFrame {
-        if (self.frames[idx].status == FrameStatus.in_use_received) {
-            // frame has already been received (perhaps by another thread)
-            return self.frames[idx].received_frame.?;
-        }
-
-        var buf = std.mem.zeroes([telegram.max_frame_length]u8);
-
-        self.recv_mutex.lock();
-        errdefer self.recv_mutex.unlock();
-        const bytes_read = try std.posix.read(self.socket, &buf);
-        self.recv_mutex.unlock();
-
-        if (bytes_read) {
-            self.deserialize_frame(buf[0..bytes_read]);
-        }
-    }
-
-    /// Send a frame.
-    ///
-    /// Returns the idx of the frame for later retreival
-    /// by fetch_frame.
-    ///
-    /// Returns idx of sent frame, or error.
-    pub fn send_frame(self: *Port, frame: *telegram.EthernetFrame) !u8 {
-        if (frame.datagrams.len == 0) {
+    pub fn send_frame(self: *Port, frame: telegram.EthernetFrame) !u8 {
+        if (frame.ethercat_frame.datagrams.len == 0) {
             return error.InvalidFrameNoDatagrams; // at least one datagram must be in sent frame
         }
         if (frame.ethercat_frame.datagrams.len > 15) {
@@ -251,13 +266,90 @@ pub const Port = struct {
         const frame_buffer: *FrameBuffer = try self.claim_frame();
         errdefer self.release_frame_buffer(frame_buffer.idx);
 
-        frame.datagrams[0].header.idx = frame_buffer.idx;
-        try frame_buffer.serialize_frame(frame);
+        const buf = try frame_buffer.serialize_frame(frame);
         {
             self.send_mutex.lock();
             defer self.send_mutex.unlock();
-            _ = try std.posix.write(self.socket, frame_buffer.fbs.getWritten());
+            _ = try std.posix.write(self.socket, buf);
         }
+        return frame_buffer.idx;
+    }
+
+    pub fn fetch_frame(self: *Port, idx: u8) !telegram.EthernetFrame {
+        if (self.frames[idx].status == FrameStatus.in_use_received) {
+            // frame has already been received (perhaps by another thread)
+            return self.frames[idx].received_frame;
+        }
+        if (self.frames[idx].status == FrameStatus.in_use_currupted) {
+            return error.CurruptedFrame;
+        }
+
+        var buf: [telegram.max_frame_length]u8 = undefined;
+
+        self.recv_mutex.lock();
+        defer self.recv_mutex.unlock();
+        const n_bytes_read = try std.posix.read(self.socket, &buf);
+        if (n_bytes_read == 0) {
+            return error.FrameNotFound;
+        }
+        const bytes_read: []const u8 = buf[0..n_bytes_read];
+        const recv_frame_idx = Port.identify_frame(bytes_read) catch {
+            return error.FrameNotFound;
+        };
+        if (recv_frame_idx >= self.frames.len) {
+            return error.FrameNotFound;
+        }
+        self.frame_status_mutex.lock();
+        defer self.frame_status_mutex.unlock();
+
+        if (self.frames[recv_frame_idx].status != FrameStatus.in_use_receivable) {
+            return error.FrameNotFound;
+        }
+
+        const frame_res = self.frames[recv_frame_idx].deserialize_frame(bytes_read);
+        if (-frame_res) {
+            self.frames[recv_frame_idx].status == FrameStatus.in_use_currupted;
+            if (idx == recv_frame_idx) {
+                return error.CurruptedFrame;
+            } else {
+                return error.FrameNotFound;
+            }
+        } else |frame| {
+            self.frames[recv_frame_idx].received_frame = frame;
+            self.frames[recv_frame_idx].status == FrameStatus.in_use_received;
+            if (idx == recv_frame_idx) {
+                return frame;
+            } else {
+                return error.FrameNotFound;
+            }
+        }
+    }
+
+    fn identify_frame(buf: []const u8) !u8 {
+        var fbs = std.io.fixedBufferStream(buf);
+        var reader = fbs.reader();
+
+        const ethernet_header = try reader.readStructEndian(
+            telegram.EthernetHeader,
+            big,
+        );
+        if (ethernet_header.ether_type != telegram.EtherType.ETHERCAT) {
+            return error.NotAnEtherCATFrame;
+        }
+        const ethercat_header = try reader.readStructEndian(
+            telegram.EtherCATHeader,
+            little,
+        );
+
+        const bytes_remaining = try fbs.getEndPos() - try fbs.getPos();
+        if (ethercat_header.length != bytes_remaining) {
+            return error.InvalidEtherCATHeader;
+        }
+        const datagram_header = try reader.readStructEndian(
+            telegram.DatagramHeader,
+            little,
+        );
+        return datagram_header.idx;
     }
 
     /// Release Frame Buffer
@@ -284,51 +376,18 @@ pub const Port = struct {
         for (self.frames) |*frame| {
             if (frame.status == FrameStatus.available) {
                 frame.status = FrameStatus.in_use;
-                return &frame;
+                return frame;
             }
         } else {
             return error.NoFrameBufferAvailable;
         }
     }
-
-    fn deserialize_frame(self: *Port, idx: u8, buf: []u8) !telegram.EthernetFrame {
-        var reader = std.io.fixedBufferStream(buf).reader();
-        const eth_header = try reader.readStructEndian(
-            telegram.EthernetHeader,
-            std.builtin.Endian.big,
-        );
-        if (eth_header.ether_type != telegram.EtherType.ETHERCAT) {
-            return error.NotEtherCATFrame;
-        }
-        const ecat_header = try reader.readStructEndian(
-            telegram.EtherCATHeader,
-            std.builtin.Endian.little,
-        );
-
-        const first_datagram_header = try reader.readStructEndian(
-            telegram.DatagramHeader,
-            std.builtin.Endian.little,
-        );
-
-        const idx: u8 = first_datagram_header.idx;
-
-        if (idx >= self.frames.len) {
-            return error.InvalidFrameIdx;
-        }
-
-        self.frame_status_mutex.lock();
-        defer self.frame_status_mutex.unlock();
-
-        datagrams = self.frames[idx].datagrams;
-
-        datagrams[0].header = first_datagram_header;
-        datagrams[0].data = try reader.
-
-        next: bool = first_datagram_header.next;
-
-        whi
-        
-        frame: telegram.EtherCATFrame
+    pub fn get_ethernet_header() telegram.EthernetHeader {
+        return telegram.EthernetHeader{
+            .dest_mac = MAC_BROADCAST,
+            .src_mac = MAC_SOURCE,
+            .ether_type = telegram.EtherType.ETHERCAT,
+        };
     }
 };
 

@@ -169,7 +169,7 @@ pub const StationAddress = packed struct {
 pub const Address = packed union {
     /// configured by FMMU's,
     /// The subdevice is addressed if the FMMU configuration corresponds to the address field
-    logical_addressing: u32,
+    logical_address: u32,
     position_address: PositionAddress,
     configured_station_address: StationAddress,
 };
@@ -230,10 +230,14 @@ pub const Datagram = struct {
     /// Saturates to max u16.
     fn getLength(self: Datagram) u16 {
         var length: u16 = 0;
-        length +|= @sizeOf(self.header);
+        length +|= @sizeOf(@TypeOf(self.header));
         length +|= self.data.len;
         length +|= @bitSizeOf(self.wkc) / 8;
         return length;
+    }
+    /// write calcuated fields (i.e. length field in header)
+    fn calc(self: *Datagram) void {
+        self.header.length = self.data.len;
     }
 };
 
@@ -260,11 +264,22 @@ pub const EtherCATFrame = struct {
 
     fn getLength(self: EtherCATFrame) u16 {
         var length: u16 = 0;
-        length +|= @sizeOf(self.header);
+        length +|= @sizeOf(@TypeOf(self.header));
         for (self.datagrams) |datagram| {
             length +|= datagram.getLength();
         }
         return length;
+    }
+
+    /// write calculated fields for this struct
+    /// and all datagrams
+    fn calc(self: *EtherCATFrame) void {
+        var length: u11 = 0;
+        for (self.datagrams) |*datagram| {
+            length +|= datagram.getLength();
+            datagram.calc();
+        }
+        self.header.length = length;
     }
 };
 
@@ -294,15 +309,35 @@ pub const EthernetHeader = packed struct {
 pub const EthernetFrame = struct {
     header: EthernetHeader,
     ethercat_frame: EtherCATFrame,
-    padding: []u8,
+    padding: []const u8,
 
     /// calcuate the length of the frame in bytes
-    fn getLength(self: EthernetFrame) u32 {
+    /// without padding
+    pub fn getLengthWithoutPadding(self: EthernetFrame) u32 {
+        var length: u32 = 0;
+        length +|= @sizeOf(@TypeOf(self.header));
+        length +|= self.ethercat_frame.getLength();
+        return length;
+    }
+
+    pub fn getLengthWithPadding(self: EthernetFrame) u32 {
         var length: u32 = 0;
         length +|= @sizeOf(self.header);
         length +|= self.ethercat_frame.getLength();
         length +|= self.padding.len;
         return length;
+    }
+
+    /// write calcuated fields
+    pub fn calc(self: *EthernetFrame) void {
+        self.ethercat_frame.calc();
+    }
+
+    /// Get required number of padding bytes
+    /// for this frame.
+    /// Assumes no existing padding.
+    pub fn getRequiredPaddingLength(self: EthernetFrame) u8 {
+        return @as(u8, min_frame_length) -| self.getLengthWithoutPadding();
     }
 };
 
@@ -311,3 +346,4 @@ pub const EthernetFrame = struct {
 /// give to a raw socket send().)
 /// FCS is handled by hardware and not normally returned to user.
 pub const max_frame_length = @sizeOf(EthernetHeader) + 1500;
+pub const min_frame_length = 64;

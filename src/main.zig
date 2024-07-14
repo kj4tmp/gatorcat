@@ -1,5 +1,6 @@
 const std = @import("std");
 
+const commands = @import("commands.zig");
 const nic = @import("nic.zig");
 
 pub fn main() !void {
@@ -12,8 +13,18 @@ pub fn main() !void {
             std.debug.print("leaked!", .{});
         }
     }
-    var port = try nic.Port.init("enx00e04c681629", allocator, .{});
+    var port = try nic.Port.init("enx00e04c68191a", allocator, .{});
     defer port.deinit();
+
+    var data: [4]u8 = .{ 0, 0, 0, 0 };
+    const wkc = try commands.BRD(
+        &port,
+        .{ .position = 0, .offset = 0 },
+        data[0..],
+        3000,
+    );
+    std.debug.print("wkc: {d}", .{wkc});
+
     std.debug.print("connected to port", .{});
 }
 

@@ -1,3 +1,8 @@
+const std = @import("std");
+const big = std.builtin.Endian.big;
+const little = std.builtin.Endian.little;
+const lossyCast = @import("std").math.lossyCast;
+const assert = std.debug.assert;
 /// EtherCAT command, present in the EtherCAT datagram header.
 pub const Command = enum(u8) {
     /// No operation.
@@ -151,14 +156,14 @@ pub const Mailbox = struct {
 };
 
 /// Position Address (Auto Increment Address)
-pub const PositionAddress = packed struct {
+pub const PositionAddress = packed struct(u32) {
     /// Each subdevice increments this address. The subdevice is addressed if position=0.
     position: u16,
     /// local register address or local memory address of the ESC
     offset: u16,
 };
 
-pub const StationAddress = packed struct {
+pub const StationAddress = packed struct(u32) {
     /// The subdevice is addressed if its address corresponds to the configured station address
     /// or the configured station alias (if enabled).
     station_address: u16,
@@ -166,25 +171,19 @@ pub const StationAddress = packed struct {
     offset: u16,
 };
 
-pub const Address = packed union {
-    /// configured by FMMU's,
-    /// The subdevice is addressed if the FMMU configuration corresponds to the address field
-    logical_address: u32,
-    position_address: PositionAddress,
-    configured_station_address: StationAddress,
-};
+pub const LogicalAddress = u32;
 
 /// Datagram Header
 ///
 /// Ref: IEC 61158-4-12:2019 5.4.1.2
-pub const DatagramHeader = packed struct {
+pub const DatagramHeader = packed struct(u80) {
     /// service command, APRD etc.
     command: Command,
     /// used my maindevice to identify duplicate or lost datagrams
     idx: u8,
     /// auto-increment, configured station, or logical address
     /// when position addressing
-    address: Address,
+    address: u32,
     /// length of following data, in bytes
     length: u11,
     /// reserved, 0
@@ -230,21 +229,21 @@ pub const Datagram = struct {
     /// Saturates to max u16.
     fn getLength(self: Datagram) u16 {
         var length: u16 = 0;
-        length +|= @sizeOf(@TypeOf(self.header));
-        length +|= self.data.len;
-        length +|= @bitSizeOf(self.wkc) / 8;
+        length +|= @bitSizeOf(@TypeOf(self.header)) / 8;
+        length +|= lossyCast(u16, self.data.len);
+        length +|= @bitSizeOf(@TypeOf(self.wkc)) / 8;
         return length;
     }
     /// write calcuated fields (i.e. length field in header)
     fn calc(self: *Datagram) void {
-        self.header.length = self.data.len;
+        self.header.length = lossyCast(u11, self.data.len);
     }
 };
 
 /// EtherCAT Header
 ///
 /// Ref: IEC 61158-4-12:2019 5.3.3
-pub const EtherCATHeader = packed struct {
+pub const EtherCATHeader = packed struct(u16) {
     /// length of the following datagrams (not including this header)
     length: u11,
     reserved: u1 = 0,
@@ -264,7 +263,7 @@ pub const EtherCATFrame = struct {
 
     fn getLength(self: EtherCATFrame) u16 {
         var length: u16 = 0;
-        length +|= @sizeOf(@TypeOf(self.header));
+        length +|= @bitSizeOf(@TypeOf(self.header)) / 8;
         for (self.datagrams) |datagram| {
             length +|= datagram.getLength();
         }
@@ -276,7 +275,7 @@ pub const EtherCATFrame = struct {
     fn calc(self: *EtherCATFrame) void {
         var length: u11 = 0;
         for (self.datagrams) |*datagram| {
-            length +|= datagram.getLength();
+            length +|= lossyCast(u11, datagram.getLength());
             datagram.calc();
         }
         self.header.length = length;
@@ -293,10 +292,10 @@ pub const EtherType = enum(u16) {
 /// Ethernet Header
 ///
 /// Ref: IEC 61158-4-12:2019 5.3.1
-pub const EthernetHeader = packed struct {
+pub const EthernetHeader = packed struct(u112) {
     dest_mac: u48,
     src_mac: u48,
-    ether_type: EtherType,
+    ether_type: u16,
 };
 
 /// Ethernet Frame
@@ -313,11 +312,18 @@ pub const EthernetFrame = struct {
 
     /// calcuate the length of the frame in bytes
     /// without padding
-    pub fn getLengthWithoutPadding(self: EthernetFrame) u32 {
-        var length: u32 = 0;
-        length +|= @sizeOf(@TypeOf(self.header));
+    pub fn getLengthWithoutPadding(self: EthernetFrame) u16 {
+        var length: u16 = 0;
+        length +|= @bitSizeOf(@TypeOf(self.header)) / 8;
         length +|= self.ethercat_frame.getLength();
         return length;
+    }
+
+    /// Get required number of padding bytes
+    /// for this frame.
+    /// Assumes no existing padding.
+    pub fn getRequiredPaddingLength(self: EthernetFrame) u16 {
+        return @as(u16, min_frame_length) -| self.getLengthWithoutPadding();
     }
 
     pub fn getLengthWithPadding(self: EthernetFrame) u32 {
@@ -333,11 +339,10 @@ pub const EthernetFrame = struct {
         self.ethercat_frame.calc();
     }
 
-    /// Get required number of padding bytes
-    /// for this frame.
-    /// Assumes no existing padding.
-    pub fn getRequiredPaddingLength(self: EthernetFrame) u8 {
-        return @as(u8, min_frame_length) -| self.getLengthWithoutPadding();
+    /// assign idx to first datagram for frame identification
+    /// in nic
+    pub fn assignIdx(self: *EthernetFrame, idx: u8) void {
+        self.ethercat_frame.datagrams[0].header.idx = idx;
     }
 };
 
@@ -346,4 +351,4 @@ pub const EthernetFrame = struct {
 /// give to a raw socket send().)
 /// FCS is handled by hardware and not normally returned to user.
 pub const max_frame_length = @sizeOf(EthernetHeader) + 1500;
-pub const min_frame_length = 64;
+pub const min_frame_length = 60;

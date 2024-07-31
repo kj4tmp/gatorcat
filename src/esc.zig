@@ -3,6 +3,10 @@ pub const RegisterMap = enum(u16) {
     station_address = 0x0010,
     DL_control = 0x0100,
     DL_status = 0x0110,
+    AL_control = 0x0120,
+    AL_status = 0x0130,
+    PDI_control = 0x0140,
+    // sync_configuration = 0x0150, where is this in R8?
     external_event_mask = 0x0200,
     DL_user_event_mask = 0x0204,
     external_event = 0x0210,
@@ -122,6 +126,118 @@ pub const DLControlRegister = packed struct {
     reserved3: u7 = 0,
 };
 
+pub const ALState = enum(u4) {
+    INIT = 1,
+    PREOP = 2,
+    BOOT = 3,
+    SAFEOP = 4,
+    OP = 5,
+};
+
+/// AL Control Register
+///
+/// Ref: IEC 61158-6-12:2019 5.3.1
+pub const ALControlRegister = packed struct(u16) {
+    state: ALState,
+    ack: bool,
+    request_id: bool,
+    reserved: u10 = 0,
+};
+
+/// AL Status Codes
+///
+/// Ref: IEC 61158-6-12:2019 5.3.2
+pub const ALStatusCode = enum(u16) {
+    no_error = 0x0000,
+    unspecified_error = 0x0001,
+    no_memory = 0x0002,
+    invalid_device_setup = 0x0003,
+    reserved = 0x0005,
+    invalid_requested_state_change = 0x0011,
+    unknown_requested_state = 0x0012,
+    bootstrap_not_supported = 0x0013,
+    no_valid_firmware = 0x0014,
+    invalid_mailbox_configuration_BOOT = 0x0015,
+    invalid_mailbox_configuration_PREOP = 0x0016,
+    invalid_sync_manager_configuration = 0x0017,
+    no_valid_inputs_available = 0x0018,
+    no_valid_outputs = 0x0019,
+    synchronization_error = 0x001A,
+    sync_mandager_watchdog = 0x001B,
+    invalid_sync_manager_types = 0x001C,
+    invalid_output_configiration = 0x001D,
+    invalid_input_configuration = 0x001E,
+    invalid_watchdog_configuration = 0x001F,
+    need_cold_start = 0x0020,
+    need_INIT = 0x0021,
+    need_PREOP = 0x0021,
+    need_SAFEOP = 0x0023,
+    invalid_input_mapping = 0x0024,
+    invalid_output_mapping = 0x0025,
+    inconsistent_settings = 0x0026,
+    freerun_not_supported = 0x0027,
+    syncmode_not_support = 0x0028,
+    freerun_needs_3buffer_bode = 0x0029,
+    background_watchdog = 0x002A,
+    no_valid_inputs_and_outputs = 0x002B,
+    fatal_sync_error = 0x002C,
+    no_sync_error = 0x002D,
+    invalid_DC_SYNC_configuration = 0x0030,
+    invalid_DC_latch_configuration = 0x0031,
+    PLL_error = 0x0032,
+    DC_sync_IO_error = 0x0033,
+    DC_sync_timeout = 0x0034,
+    DC_invalid_sync_cycle_time = 0x0035,
+    DC_sync0_cycle_time = 0x0036,
+    DC_sync1_cycle_time = 0x0037,
+    MBX_AOE = 0x0041,
+    MBX_EOE = 0x0042,
+    MBX_COE = 0x0043,
+    MBX_FOE = 0x0044,
+    MBX_SOE = 0x0045,
+    MBX_VOE = 0x004F,
+    EEPROM_no_access = 0x0050,
+    restarted_locally = 0x0060,
+    device_identification_value_updated = 0x0061,
+    // 0x0062..0x00EF reserved
+    application_controller_available = 0x00F0,
+    // < 0x8000 other codes
+    // 0x8000..0xFFFF vendor sepcific
+    _,
+};
+
+/// AL Status Register
+///
+/// Ref: IEC 61158-6-12:2019 5.3.2
+pub const ALStatusRegister = packed struct(u48) {
+    state: ALState,
+    err: bool,
+    id_loaded: bool,
+    reserved: u26 = 0,
+    status_code: ALStatusCode,
+};
+
+/// PDI Control Register
+///
+/// Ref: IEC 61158-6-12:2019 5.3.4
+pub const PDIControlRegister = packed struct(u16) {
+    PDI_type: u8,
+    emulated: bool,
+    reserved: u7 = 0,
+};
+
+/// Sync Configuration Register
+///
+/// Ref: IEC 61158-6-12:2019 5.3.4
+pub const SyncConfigurationRegister = packed struct(u8) {
+    signal_conditioning_sync0: u2,
+    enable_sync0: bool,
+    enable_interrupt_sync0: bool,
+    signal_conditioning_sync1: u2,
+    enable_sync1: bool,
+    enable_interrupt_sync1: bool,
+};
+
 /// DL Status Register
 ///
 /// The DL Status register is used to indicate the state of the DL ports and state
@@ -132,7 +248,7 @@ pub const DLStatusRegister = packed struct {
     pdi_operational: bool,
     watchdog_ok: bool,
     exteded_link_detection: bool,
-    reserved: u1,
+    reserved: u1 = 0,
     /// true when physical link on port0
     port0_link_status: bool,
     /// true when physical link on port1
@@ -197,7 +313,7 @@ pub const ExternalEventRegister = packed struct {
     DL_status_change: bool,
     R3_or_R4_change: bool,
     SM_ch_events: [8]bool,
-    reserved2: u4,
+    reserved2: u4 = 0,
 };
 
 /// External Event Mask Register

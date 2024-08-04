@@ -24,18 +24,11 @@ fn sendDatagram(
             .wkc = 0,
         },
     };
-    const result = try port.send_recv_datagrams(
+    try port.send_recv_datagrams(
         &datagrams,
         timeout_us,
     );
-    defer port.release_frame_buffer(result.idx);
-    switch (command) {
-        .APRD, .APRW, .FPRD, .FPRW, .BRD, .BRW, .LRD, .LRW, .ARMW, .FRMW => {
-            @memcpy(data, result.recv_datagrams[0].data);
-        },
-        .APWR, .FPWR, .BWR, .LWR => {},
-    }
-    return result.recv_datagrams[0].wkc;
+    return datagrams[0].wkc;
 }
 
 /// No operation.
@@ -154,13 +147,14 @@ pub fn FPRW(
 /// position field.
 pub fn BRD(
     port: *nic.Port,
+    address: telegram.PositionAddress,
     data: []u8,
     timeout_us: u32,
 ) !u16 {
     return sendDatagram(
         port,
         telegram.Command.BRD,
-        0,
+        @bitCast(address),
         data,
         timeout_us,
     );
@@ -169,13 +163,14 @@ pub fn BRD(
 /// All subdevices write data to a memory area. All subdevices increment the position field.
 pub fn BWR(
     port: *nic.Port,
-    data: []const u8,
+    address: telegram.PositionAddress,
+    data: []u8,
     timeout_us: u32,
 ) !u16 {
     return sendDatagram(
         port,
         telegram.Command.BWR,
-        0,
+        @bitCast(address),
         data,
         timeout_us,
     );

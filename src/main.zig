@@ -4,16 +4,16 @@ const commands = @import("commands.zig");
 const nic = @import("nic.zig");
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    defer {
-        const deinit_status = gpa.deinit();
-        //fail test; can't try in defer as defer is executed after we return
-        if (deinit_status == .leak) {
-            std.debug.print("leaked!", .{});
-        }
-    }
-    var port = try nic.Port.init("enx00e04c68191a", allocator, .{});
+    // var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    // const allocator = gpa.allocator();
+    // defer {
+    //     const deinit_status = gpa.deinit();
+    //     //fail test; can't try in defer as defer is executed after we return
+    //     if (deinit_status == .leak) {
+    //         std.debug.print("leaked!", .{});
+    //     }
+    // }
+    var port = try nic.Port.init("enx00e04c68191a");
     defer port.deinit();
 
     var data: [4]u8 = .{ 0, 0, 0, 0 };
@@ -25,15 +25,14 @@ pub fn main() !void {
     );
     std.log.debug("data: {x}", .{data});
     std.log.debug("wkc: {d}", .{wkc});
-    var data2: [4]u8 = .{ 0, 0, 0, 0 };
-    const wkc2 = try commands.BWR(
-        &port,
-        .{ .position = 0, .offset = 0 },
-        data2[0..],
-        10000,
-    );
-    std.log.debug("data2: {x}", .{data2});
-    std.log.debug("wkc2: {d}", .{wkc2});
+    // var data2: [4]u8 = .{ 0, 0, 0, 0 };
+    // const wkc2 = try commands.BWR(
+    //     &port,
+    //     data2[0..],
+    //     10000,
+    // );
+    // std.log.debug("data2: {x}", .{data2});
+    // std.log.debug("wkc2: {d}", .{wkc2});
 }
 
 test "byteswap enum field" {

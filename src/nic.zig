@@ -226,17 +226,17 @@ test "serialization / deserialization" {
 }
 
 pub const Port = struct {
-    frame_status_mutex: Mutex = .{},
+    recv_datagrams_status_mutex: Mutex = .{},
     send_mutex: Mutex = .{},
     recv_mutex: Mutex = .{},
     socket: std.posix.socket_t,
-    recv_frames: [128]?[]telegram.datagram = [null]*128,
-    recv_frames_status: [128]FrameStatus,
+    recv_datagrams: [128][]telegram.Datagram = undefined,
+    recv_datagrams_status: [128]FrameStatus = [_]FrameStatus{FrameStatus.available}**128,
 
     pub fn init(
         ifname: []const u8,
     ) !Port {
-        assert(ifname.len > std.posix.IFNAMESIZE - 1); // ifname too long
+        assert(ifname.len <= std.posix.IFNAMESIZE - 1); // ifname too long
         const socket: std.posix.socket_t = try std.posix.socket(
             std.posix.AF.PACKET,
             std.posix.SOCK.RAW,
@@ -311,39 +311,42 @@ pub const Port = struct {
         };
     }
     pub fn deinit(self: *Port) void {
-        self.allocator.free(self.frames);
+        _ = self;
+        // TODO: de init socket
     }
 
     /// claim transaction
     /// 
     /// claim a transaction idx with the ethercat bus.
-    pub fn claim_transaction(self: *Port) error{NoFrameBufferAvailable}!u8 {
-        self.frame_status_mutex.lock();
-        defer self.frame_status_mutex.unlock();
+    pub fn claim_transaction(self: *Port) error{NoTransactionAvailable}!u8 {
+        self.recv_datagrams_status_mutex.lock();
+        defer self.recv_datagrams_status_mutex.unlock();
 
-        for (&self.recv_frame_status, 0..) |*status, idx| {
+        for (&self.recv_datagrams_status, 0..) |*status, idx| {
             if (status.* == FrameStatus.available) {
                 status.* = FrameStatus.in_use;
                 return @intCast(idx);
             }
         } else {
-            return error.NoFrameBufferAvailable;
+            return error.NoTransactionAvailable;
         }
     }
 
-    /// Begin a transaction with the ethercat bus.
+    /// Send a transaction with the ethercat bus.
     /// 
     /// Parameter send_datagram is the datagram to be sent.
     /// Parameter recv_datagram is where the received datagram will 
     /// be deserialized into.
-    pub fn begin_transaction(self: *Port, idx: u8, send_datagrams: []const telegram.Datagram, recv_datagrams: []telegram.Datagram) !void {
+    pub fn send_transaction(self: *Port, idx: u8, send_datagrams: []telegram.Datagram) !void {
         assert(send_datagrams.len != 0); // no datagrams
         assert(send_datagrams.len <= 15); // too many datagrams
-        assert(send_datagrams.len == recv_datagrams.len);
-        assert(self.recv_frames_status[idx] == FrameStatus.in_use); // should claim transaction first
+        assert(self.recv_datagrams_status[idx] == FrameStatus.in_use); // should claim transaction first
 
         // store pointer to where to deserialize frames later
-        self.recv_frames[idx] = recv_datagrams;
+        self.recv_datagrams[idx] = send_datagrams;
+
+        // assign identity of frame as first datagram idx
+        send_datagrams[0].header.idx = idx;
 
         const padding = std.mem.zeroes([46]u8);
         var frame = telegram.EthernetFrame{
@@ -369,16 +372,11 @@ pub const Port = struct {
             _ = try std.posix.write(self.socket, out);
         }
         {
-            self.frame_status_mutex.lock();
-            defer self.frame_status_mutex.unlock();
-            self.recv_frames_status[idx] = FrameStatus.in_use_receivable;
+            self.recv_datagrams_status_mutex.lock();
+            defer self.recv_datagrams_status_mutex.unlock();
+            self.recv_datagrams_status[idx] = FrameStatus.in_use_receivable;
         }
-        return idx;
     }
-
-    pub const TransactionError = error{
-        CurruptedFrame,
-    };
 
     /// fetch a frame by receiving bytes
     ///
@@ -386,29 +384,30 @@ pub const Port = struct {
     ///
     /// call using idx from claim transaction and used by begin transaction
     /// 
-    /// Returns true if return frame was not found (call again to try to recieve it)
-    /// else returns false
-    pub fn continue_transaction(self: *Port, idx: u8) TransactionError!bool {
-        switch (self.recv_frames_status[idx]) {
+    /// Returns false if return frame was not found (call again to try to recieve it).
+    /// 
+    /// Returns true when frame has been deserailized successfully.
+    pub fn continue_transaction(self: *Port, idx: u8) !bool {
+        switch (self.recv_datagrams_status[idx]) {
             .available => unreachable,
             .in_use => unreachable,
             .in_use_receivable => {},
-            .in_use_received => return false,
+            .in_use_received => return true,
             .in_use_currupted => return error.CurruptedFrame,
         }
-        try self.recv_frame();
-        switch (self.recv_frames_status[idx]) {
+        self.recv_frame() catch |err| switch (err) {
+            error.FrameNotFound => return false,
+            else => return err,
+        };
+        switch (self.recv_datagrams_status[idx]) {
             .available => unreachable,
             .in_use => unreachable,
-            .in_use_receivable => return true,
-            .in_use_received => return false,
+            .in_use_receivable => return false,
+            .in_use_received => return true,
             .in_use_currupted => return error.CurruptedFrame,
         }
 
     }
-    // pub fn release_transaction(idx: u8) void {
-        
-    // }
 
     fn recv_frame(self: *Port) !void {
         std.log.debug("attempting to recv...", .{});
@@ -419,7 +418,9 @@ pub const Port = struct {
             defer self.recv_mutex.unlock();
             n_bytes_read = std.posix.read(self.socket, &buf) catch |err| switch (err) {
                 error.WouldBlock => return error.FrameNotFound,
-                else => return err,
+                else => {
+                    std.log.err("Socket error: {}", .{err});
+                    return error.SocketError;},
             };
         }
         if (n_bytes_read == 0) {
@@ -430,20 +431,17 @@ pub const Port = struct {
         std.log.debug("recv: {x}, len: {}", .{ bytes_read, bytes_read.len });
         const recv_frame_idx = try Port.identify_frame(bytes_read);
         std.log.debug("identified frame as idx: {}", .{recv_frame_idx});
-        if (recv_frame_idx >= self.frames.len) {
-            return;
-        }
 
-        switch (self.frames[recv_frame_idx].status) {
+        switch (self.recv_datagrams_status[recv_frame_idx]) {
             .in_use_receivable => {
-                self.frame_status_mutex.lock();
-                defer self.frame_status_mutex.unlock();
-                const frame_res = self.frames[recv_frame_idx].deserialize_frame(bytes_read);
+                self.recv_datagrams_status_mutex.lock();
+                defer self.recv_datagrams_status_mutex.unlock();
+                const frame_res = deserialize_frame(bytes_read, self.recv_datagrams[recv_frame_idx]);
                 if (frame_res) {
-                    self.frames[recv_frame_idx].status = FrameStatus.in_use_received;
+                    self.recv_datagrams_status[recv_frame_idx] = FrameStatus.in_use_received;
                 } else |err| switch (err) {
                     else => {
-                        self.frames[recv_frame_idx].status = FrameStatus.in_use_currupted;
+                        self.recv_datagrams_status[recv_frame_idx] = FrameStatus.in_use_currupted;
                         return;
                     },
                 }
@@ -482,17 +480,17 @@ pub const Port = struct {
         return datagram_header.idx;
     }
 
-    /// Release Frame Buffer
+    /// Release transaction idx.
     ///
-    /// Releases a frame buffer so it can be claimed by others.
+    /// Releases a transaction so it can be used by others.
     ///
     /// Caller is inteded to use the idx returned by a previous
     /// call to send_frame.
-    pub fn release_frame_buffer(self: *Port, idx: u8) void {
+    pub fn release_transaction(self: *Port, idx: u8) void {
         {
-            self.frame_status_mutex.lock();
-            defer self.frame_status_mutex.unlock();
-            self.frames[idx].status = FrameStatus.available;
+            self.recv_datagrams_status_mutex.lock();
+            defer self.recv_datagrams_status_mutex.unlock();
+            self.recv_datagrams_status[idx] = FrameStatus.available;
         }
     }
 
@@ -506,38 +504,30 @@ pub const Port = struct {
         };
     }
 
-    const SendRecvResult = struct {
-        recv_datagrams: []telegram.datagram,
-        idx: u8
-    };
+    pub fn send_recv_datagrams(self: *Port, send_datagrams: []telegram.Datagram, timeout_us: u32,) !void {
+        assert(send_datagrams.len != 0); // no datagrams
+        assert(send_datagrams.len <= 15); // too many datagrams
 
-    /// caller is responsible for releasing frame buffer using 
-    /// idx returned
-    pub fn send_recv_datagrams(self: *Port, datagrams: []telegram.Datagram, timeout_us: u32) !SendRecvResult {
         var timer = try Timer.start();
         var idx: u8 = undefined;
         while (timer.read() < timeout_us * ns_per_us) {
-            idx = self.send_datagrams(&datagrams) catch |err| switch (err) {
-                error.NoFrameBufferAvailable => continue,
+            idx = self.claim_transaction() catch |err| switch (err) {
+                error.NoTransactionAvailable => continue
             };
             break;
         } else {
-            return error.Timeout;
+            return error.NoTransactionAvailableTimeout;
         }
-        errdefer self.release_frame_buffer(idx);
-        var recv_datagrams: []telegram.Datagram = undefined;
+        defer self.release_transaction(idx);
+
+        try self.send_transaction(idx, send_datagrams);
+        
         while (timer.read() < timeout_us * 1000) {
-            recv_datagrams = self.fetch_datagrams(idx) catch |err| switch (err) {
-                error.FrameNotFound => {
-                    std.log.err("failed to find frame", .{});
-                    continue;
-                },
-                else => return err,
-            };
+            if (try self.continue_transaction(idx)){
+                return;
+            }
+        } else {
+            return error.RecvTimeout;
         }
-        return SendRecvResult{
-            .recv_datagrams = recv_datagrams,
-            .idx = idx,
-        };
     }
 };

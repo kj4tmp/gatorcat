@@ -20,8 +20,24 @@ pub const MainDevice = struct {
     /// Initialize the ethercat bus.
     ///
     /// Sets all subdevices to the init state.
-    pub fn bus_init() !void {
-        commands.BWR(Port, data: []const u8, timeout_us: u32)
+    pub fn bus_init(self: *MainDevice) !void {
+
+        // disable alias address
+        commands.BWR(
+            self.port,
+            .{
+                .position = 0,
+                .offset = esc.RegisterMap.DL_control_enable_alias_address,
+            },
+            &[_]u8{0},
+            self.settings.timeout_recv_us,
+        );
+
+        // command init state
+        const init_cmd = esc.ALControlRegister{
+            .state = .INIT,
+            .ack = true,
+            .request_id = false,
+        };
     }
 };
-

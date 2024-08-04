@@ -83,3 +83,49 @@ test "byteswap enum field" {
 //     // the 0, 0 at the end should not be there!                          ^  ^ bad!!
 //     try std.testing.expect(fbs.getWritten().len == 112 / 8);
 // }
+
+const native_endian = @import("builtin").target.cpu.arch.endian();
+
+fn packed_struct_to_bytes_little(comptime T: type, packed_struct: T) [@divExact(@bitSizeOf(T), 8)]u8 {
+    comptime std.debug.assert(@typeInfo(T).Struct.layout == .@"packed"); // must be a packed struct
+    var bytes: [@divExact(@bitSizeOf(T), 8)]u8 = undefined;
+
+    switch (native_endian) {
+        .little => {
+            bytes = @bitCast(packed_struct);
+        },
+        .big => {
+            std.mem.writePackedInt(
+                @typeInfo(T).Struct.backing_integer.?,
+                &bytes,
+                0,
+                @bitCast(packed_struct),
+                .little,
+            );
+        },
+    }
+    return bytes;
+}
+
+test "write packed struct" {
+    const Command = packed struct(u16) {
+        flag: bool,
+        reserved: u7 = 0,
+        num: u8,
+    };
+
+    const my_command = Command{
+        .flag = true,
+        .num = 7,
+    };
+
+    const command_bytes = packed_struct_to_bytes_little(
+        Command,
+        my_command,
+    );
+
+    try std.testing.expectEqual(
+        [_]u8{ 1, 7 },
+        command_bytes,
+    );
+}

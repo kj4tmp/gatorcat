@@ -2,6 +2,7 @@ pub const RegisterMap = enum(u16) {
     DL_information = 0x0000,
     station_address = 0x0010,
     DL_control = 0x0100,
+    DL_control_enable_alias_address = 0x0103,
     DL_status = 0x0110,
     AL_control = 0x0120,
     AL_status = 0x0130,

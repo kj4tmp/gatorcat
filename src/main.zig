@@ -129,3 +129,31 @@ test "write packed struct" {
         command_bytes,
     );
 }
+
+test "mem layout packed struct" {
+    const Pack = packed struct(u48) {
+        num1: u16 = 0x1234,
+        num2: u16 = 0x5678,
+        num3: u9 = 0b1_00000000,
+        num4: bool = true,
+        pad: u6 = 0,
+    };
+
+    const memory: [6]u8 = @bitCast(Pack{});
+    switch (native_endian) {
+        .big => {
+            try std.testing.expectEqual(
+                [6]u8{ 0x03, 0x00, 0x56, 0x78, 0x12, 0x34 },
+                memory,
+            );
+            std.log.warn("ran big endian test!", .{});
+        },
+        .little => {
+            try std.testing.expectEqual(
+                [6]u8{ 0x34, 0x12, 0x78, 0x56, 0x00, 0x03 },
+                memory,
+            );
+            std.log.warn("ran little endian test!", .{});
+        },
+    }
+}

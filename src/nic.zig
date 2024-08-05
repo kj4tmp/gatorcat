@@ -6,6 +6,7 @@ const big = std.builtin.Endian.big;
 const little = std.builtin.Endian.little;
 const Timer = std.time.Timer;
 const ns_per_us = std.time.ns_per_us;
+const native_endian = @import("builtin").target.cpu.arch.endian();
 
 const telegram = @import("telegram.zig");
 
@@ -224,6 +225,99 @@ test "serialization / deserialization" {
 
     try std.testing.expectEqualDeep(frame.ethercat_frame.datagrams, &datagrams2);
 }
+
+/// convert a packed struct to bytes that can be sent via ethercat
+/// 
+/// the packed struct must have bitwidth that is a multiple of 8
+pub fn pack_to_ecat(packed_struct: anytype) [@divExact(@bitSizeOf(@TypeOf(packed_struct)), 8)]u8 {
+    comptime std.debug.assert(@typeInfo(@TypeOf(packed_struct)).Struct.layout == .@"packed"); // must be a packed struct
+    var bytes: [@divExact(@bitSizeOf(@TypeOf(packed_struct)), 8)]u8 = undefined;
+
+    switch (native_endian) {
+        .little => {
+            bytes = @bitCast(packed_struct);
+        },
+        .big => {
+            bytes = @bitCast(packed_struct);
+            std.mem.reverse(u8, &bytes);
+        },
+    }
+    return bytes;
+}
+
+test "pack_to_ecat" {
+    const Command = packed struct(u8) {
+        flag: bool = true,
+        reserved: u7 = 0,
+    };
+    try std.testing.expectEqual(
+        [_]u8{1},
+        pack_to_ecat(Command{}),
+    );
+
+    const Command2 = packed struct(u16) {
+        flag: bool = true,
+        reserved: u7 = 0,
+        num: u8 = 7,
+    };
+    try std.testing.expectEqual(
+        [_]u8{1, 7},
+        pack_to_ecat(Command2{}),
+    );
+
+    const Command3 = packed struct(u24) {
+        flag: bool = true,
+        reserved: u7 = 0,
+        num: u16 = 0x1122,
+    };
+    try std.testing.expectEqual(
+        [_]u8{1, 0x22, 0x11},
+        pack_to_ecat(Command3{}),
+    );
+
+    const Command4 = packed struct(u32) {
+        flag: bool = true,
+        reserved: u7 = 0,
+        num: u16 = 0x1122,
+        num2: u5 = 0x03,
+        num3: u3 = 0,
+    };
+    try std.testing.expectEqual(
+        [_]u8{1, 0x22, 0x11, 0x03},
+        pack_to_ecat(Command4{}),
+    );
+    const Command5 = packed struct(u40) {
+        flag: bool = true,
+        reserved: u7 = 0,
+        num: u16 = 0x1122,
+        num2: u5 = 0x03,
+        num3: u3 = 0,
+        num4: u8 = 0xAB,
+    };
+    try std.testing.expectEqual(
+        [_]u8{1, 0x22, 0x11, 0x03, 0xAB},
+        pack_to_ecat(Command5{}),
+    );
+}
+
+// 
+// pub fn ecat_to_pack(comptime T: type, ecat_bytes: []u8, packed_struct: T) [@divExact(@bitSizeOf(@TypeOf(packed_struct)), 8)]u8 {
+//     comptime std.debug.assert(@typeInfo(@TypeOf(packed_struct)).Struct.layout == .@"packed"); // must be a packed struct
+//     var bytes: [@divExact(@bitSizeOf(@TypeOf(packed_struct)), 8)]u8 = undefined;
+
+//     switch (native_endian) {
+//         .little => {
+//             bytes = @bitCast(packed_struct);
+//         },
+//         .big => {
+//             bytes = @bitCast(packed_struct);
+//             std.mem.reverse(u8, &bytes);
+//         },
+//     }
+//     return bytes;
+// }
+
+
 
 pub const Port = struct {
     recv_datagrams_status_mutex: Mutex = .{},

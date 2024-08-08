@@ -245,6 +245,11 @@ pub fn pack_to_ecat(packed_struct: anytype) [@divExact(@bitSizeOf(@TypeOf(packed
     return bytes;
 }
 
+pub fn pack_to_ecat_zeros(comptime T: type) [@divExact(@bitSizeOf(T), 8)]u8 {
+    comptime std.debug.assert(@typeInfo(T).Struct.layout == .@"packed"); // must be a packed struct
+    return std.mem.zeroes([@divExact(@bitSizeOf(T), 8)]u8);
+}
+
 test "pack_to_ecat" {
     const Command = packed struct(u8) {
         flag: bool = true,
@@ -301,21 +306,77 @@ test "pack_to_ecat" {
 }
 
 // 
-// pub fn ecat_to_pack(comptime T: type, ecat_bytes: []u8, packed_struct: T) [@divExact(@bitSizeOf(@TypeOf(packed_struct)), 8)]u8 {
-//     comptime std.debug.assert(@typeInfo(@TypeOf(packed_struct)).Struct.layout == .@"packed"); // must be a packed struct
-//     var bytes: [@divExact(@bitSizeOf(@TypeOf(packed_struct)), 8)]u8 = undefined;
+pub fn ecat_to_pack(comptime T: type, ecat_bytes: [@divExact(@bitSizeOf(T), 8)]u8) T {
+    comptime std.debug.assert(@typeInfo(T).Struct.layout == .@"packed"); // must be a packed struct
 
-//     switch (native_endian) {
-//         .little => {
-//             bytes = @bitCast(packed_struct);
-//         },
-//         .big => {
-//             bytes = @bitCast(packed_struct);
-//             std.mem.reverse(u8, &bytes);
-//         },
-//     }
-//     return bytes;
-// }
+    switch (native_endian) {
+        .little => {
+            return @bitCast(ecat_bytes);
+        },
+        .big => {
+            var bytes_copy = ecat_bytes;
+            std.mem.reverse(u8, &bytes_copy);
+            return @bitCast(bytes_copy);
+        },
+    }
+    unreachable;
+}
+
+test "ecat_to_pack" {
+    const Command = packed struct(u8) {
+        flag: bool = true,
+        reserved: u7 = 0,
+    };
+    try std.testing.expectEqual(
+        Command{},
+        ecat_to_pack(Command, [_]u8{1}),
+    );
+
+    const Command2 = packed struct(u16) {
+        flag: bool = true,
+        reserved: u7 = 0,
+        num: u8 = 7,
+    };
+    try std.testing.expectEqual(
+        Command2{},
+        ecat_to_pack(Command2, [_]u8{1, 7}),
+    );
+
+    const Command3 = packed struct(u24) {
+        flag: bool = true,
+        reserved: u7 = 0,
+        num: u16 = 0x1122,
+    };
+    try std.testing.expectEqual(
+        Command3{},
+        ecat_to_pack(Command3, [_]u8{1, 0x22, 0x11}),
+    );
+
+    const Command4 = packed struct(u32) {
+        flag: bool = true,
+        reserved: u7 = 0,
+        num: u16 = 0x1122,
+        num2: u5 = 0x03,
+        num3: u3 = 0,
+    };
+    try std.testing.expectEqual(
+        Command4{},
+        ecat_to_pack(Command4, [_]u8{1, 0x22, 0x11, 0x03}),
+        
+    );
+    const Command5 = packed struct(u40) {
+        flag: bool = true,
+        reserved: u7 = 0,
+        num: u16 = 0x1122,
+        num2: u5 = 0x03,
+        num3: u3 = 0,
+        num4: u8 = 0xAB,
+    };
+    try std.testing.expectEqual(
+        Command5{},
+        ecat_to_pack(Command5, [_]u8{1, 0x22, 0x11, 0x03, 0xAB}),
+    );
+}
 
 
 

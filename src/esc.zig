@@ -127,19 +127,32 @@ pub const DLControlRegister = packed struct {
     reserved3: u7 = 0,
 };
 
-pub const ALState = enum(u4) {
+/// Smaller version of the DLControlRegister with fewer settings.
+pub const DLControlRegisterCompact = packed struct {
+    /// false: Non-ethercat frames are forwarded unmodified. true: non-ethercat frames are destroyed.
+    forwarding_rule: bool,
+    /// false: loop control settings are permanent, true: loop contorl settings are temporary (approx. 1 second)
+    temporary_loop_control: bool,
+    reserved: u6 = 0,
+    loop_control_port0: LoopControlSettings,
+    loop_control_port1: LoopControlSettings,
+    loop_control_port2: LoopControlSettings,
+    loop_control_port3: LoopControlSettings,
+};
+
+pub const ALStateControl = enum(u4) {
     INIT = 1,
     PREOP = 2,
     BOOT = 3,
     SAFEOP = 4,
-    OP = 5,
+    OP = 8,
 };
 
 /// AL Control Register
 ///
 /// Ref: IEC 61158-6-12:2019 5.3.1
 pub const ALControlRegister = packed struct(u16) {
-    state: ALState,
+    state: ALStateControl,
     ack: bool,
     request_id: bool,
     reserved: u10 = 0,
@@ -171,7 +184,7 @@ pub const ALStatusCode = enum(u16) {
     invalid_watchdog_configuration = 0x001F,
     need_cold_start = 0x0020,
     need_INIT = 0x0021,
-    need_PREOP = 0x0021,
+    need_PREOP = 0x0022,
     need_SAFEOP = 0x0023,
     invalid_input_mapping = 0x0024,
     invalid_output_mapping = 0x0025,
@@ -207,11 +220,20 @@ pub const ALStatusCode = enum(u16) {
     _,
 };
 
+pub const ALStateStatus = enum(u4) {
+    INIT = 1,
+    PREOP = 2,
+    BOOT = 3,
+    SAFEOP = 4,
+    OP = 8,
+    _,
+};
+
 /// AL Status Register
 ///
 /// Ref: IEC 61158-6-12:2019 5.3.2
 pub const ALStatusRegister = packed struct(u48) {
-    state: ALState,
+    state: ALStateStatus,
     err: bool,
     id_loaded: bool,
     reserved: u26 = 0,

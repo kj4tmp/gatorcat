@@ -42,7 +42,7 @@ pub fn main() !void {
 const zecm = struct {
     // Optional description of the program.
     pub const description =
-        \\The Zig EtherCAT Master CLI.
+        \\The Zig EtherCAT MainDevice CLI.
     ;
     // sub commands
     command: union(enum) {

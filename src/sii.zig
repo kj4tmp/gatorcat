@@ -2,6 +2,11 @@
 //!
 //! Address is word (two-byte) address.
 
+const nic = @import("nic.zig");
+const Port = nic.Port;
+const eCatFromPack = nic.eCatFromPack;
+const packFromECat = nic.packFromECat;
+
 pub const ParameterMap = enum(u16) {
     PDI_control = 0x0000,
     PDI_configuration = 0x0001,

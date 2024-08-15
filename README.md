@@ -4,6 +4,8 @@ zig annoyances
 
 1. Cannot tell if my tests have run or not (even with --summary all)
 2. Packed structs are not well described in the language reference
+3. Where to I look for the implementation of flags.parse? root.zig? I don't know where
+anything is!
 
 
 
@@ -26,7 +28,7 @@ I'm writing a binary protocol to be sent over a network interface. I think I hav
 /// convert a packed struct to bytes that can be sent via ethercat
 /// 
 /// the packed struct must have bitwidth that is a multiple of 8
-pub fn pack_to_ecat(comptime T: type, packed_struct: T) [@divExact(@bitSizeOf(T), 8)]u8 {
+pub fn eCatFromPack(comptime T: type, packed_struct: T) [@divExact(@bitSizeOf(T), 8)]u8 {
     comptime std.debug.assert(@typeInfo(T).Struct.layout == .@"packed"); // must be a packed struct
     var bytes: [@divExact(@bitSizeOf(T), 8)]u8 = undefined;
 
@@ -42,14 +44,14 @@ pub fn pack_to_ecat(comptime T: type, packed_struct: T) [@divExact(@bitSizeOf(T)
     return bytes;
 }
 
-test "pack_to_ecat" {
+test "eCatFromPack" {
     const Command = packed struct(u8) {
         flag: bool = true,
         reserved: u7 = 0,
     };
     try std.testing.expectEqual(
         [_]u8{1},
-        pack_to_ecat(Command, Command{}),
+        eCatFromPack(Command, Command{}),
     );
 
     const Command2 = packed struct(u16) {
@@ -59,7 +61,7 @@ test "pack_to_ecat" {
     };
     try std.testing.expectEqual(
         [_]u8{1, 7},
-        pack_to_ecat(Command2, Command2{}),
+        eCatFromPack(Command2, Command2{}),
     );
 
     const Command3 = packed struct(u24) {
@@ -69,7 +71,7 @@ test "pack_to_ecat" {
     };
     try std.testing.expectEqual(
         [_]u8{1, 0x22, 0x11},
-        pack_to_ecat(Command3, Command3{}),
+        eCatFromPack(Command3, Command3{}),
     );
 
     const Command4 = packed struct(u32) {
@@ -81,7 +83,7 @@ test "pack_to_ecat" {
     };
     try std.testing.expectEqual(
         [_]u8{1, 0x22, 0x11, 0x03},
-        pack_to_ecat(Command4, Command4{}),
+        eCatFromPack(Command4, Command4{}),
     );
     const Command5 = packed struct(u40) {
         flag: bool = true,
@@ -93,7 +95,7 @@ test "pack_to_ecat" {
     };
     try std.testing.expectEqual(
         [_]u8{1, 0x22, 0x11, 0x03, 0xAB},
-        pack_to_ecat(Command5, Command5{}),
+        eCatFromPack(Command5, Command5{}),
     );
 }
 ```

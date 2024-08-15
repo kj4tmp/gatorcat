@@ -27,6 +27,10 @@
             .url = "https://github.com/n0s4/flags/archive/refs/tags/v0.7.0.tar.gz",
             .hash = "12206c2e1a9d8c1597a2b98064085c1f6207b31dfa3ccfaff2e54726c39db41d27ea",
         },
+        .zigfsm = .{
+            .url = "git+https://github.com/cryptocode/zigfsm#acc4055e71fa40b47c7afb4b5e8fb0c5664e7d32",
+            .hash = "122061393df342b970952ac89699535572119da4b1ef275902ae6762669cc8c9be59",
+        },
     },
     .paths = .{
         "build.zig",

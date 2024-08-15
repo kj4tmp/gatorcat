@@ -158,7 +158,7 @@ pub const Mailbox = struct {
 /// Position Address (Auto Increment Address)
 pub const PositionAddress = packed struct(u32) {
     /// Each subdevice increments this address. The subdevice is addressed if position=0.
-    position: u16,
+    autoinc_address: u16,
     /// local register address or local memory address of the ESC
     offset: u16,
 };

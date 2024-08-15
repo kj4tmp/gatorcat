@@ -468,13 +468,17 @@ pub const SIIAccessOwner = enum(u1) {
 ///
 /// Ref: IEC 61158-4-12:2019 6.4.2
 pub const SIIAccessRegister = packed struct {
-    /// 0: EtherCAT DL
-    /// 1: PDI
     owner: SIIAccessOwner,
     lock: bool,
     reserved: u6 = 0,
     access_PDI: bool,
     reserved2: u7 = 0,
+};
+
+pub const SIIAccessRegisterCompact = packed struct(u8) {
+    owner: SIIAccessOwner,
+    lock: bool,
+    reserved: u6 = 0,
 };
 
 pub const SIIReadSize = enum(u1) {
@@ -508,6 +512,23 @@ pub const SIIControlStatusRegister = packed struct {
     busy: bool,
 };
 
+pub const SIIControlStatusAddressRegister = packed struct {
+    write_access: bool,
+    reserved: u4 = 0,
+    EEPROM_emulation: bool,
+    read_size: SIIReadSize,
+    address_algorithm: SIIAddressAlgorithm,
+    read_operation: bool,
+    write_operation: bool,
+    reload_operation: bool,
+    checksum_error: bool,
+    device_info_error: bool,
+    command_error: bool,
+    write_error: bool,
+    busy: bool,
+    sii_address: u16,
+};
+
 /// SII Address Register
 ///
 /// The SII Address register contains the address for the
@@ -535,8 +556,12 @@ pub const SIIAddressRegister = packed struct {
 /// is used.
 ///
 /// Ref: IEC 61158-4-12:2019 6.4.5
-pub const SIIDataRegister = packed struct {
+pub const SIIDataRegister4Byte = packed struct {
     data: u32,
+};
+
+pub const SIIDataRegister8Byte = packed struct {
+    data: u64,
 };
 
 /// MII Control / Status Register

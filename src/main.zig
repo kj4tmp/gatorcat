@@ -6,6 +6,11 @@ const commands = @import("commands.zig");
 const nic = @import("nic.zig");
 const MainDevice = @import("maindevice.zig").MainDevice;
 
+pub const std_options = .{
+    // Set the log level to info
+    .log_level = .warn,
+};
+
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -31,9 +36,9 @@ pub fn main() !void {
                 .{ .timeout_recv_us = 2000 },
             );
 
-            const wkc = try main_device.bus_init();
+            try main_device.scan();
 
-            std.log.warn("found {} subdevices", .{wkc});
+            //std.log.warn("found {} subdevices", .{wkc});
         },
     }
 }

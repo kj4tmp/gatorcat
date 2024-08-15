@@ -42,6 +42,11 @@ pub fn build(b: *std.Build) void {
     });
     exe.root_module.addImport("flags", flags.module("flags"));
 
+    exe.root_module.addImport("zigfsm", b.dependency("zigfsm", .{
+        .target = target,
+        .optimize = optimize,
+    }).module("zigfsm"));
+
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default
     // step when running `zig build`).

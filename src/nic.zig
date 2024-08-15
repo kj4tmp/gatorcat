@@ -229,7 +229,7 @@ test "serialization / deserialization" {
 /// convert a packed struct to bytes that can be sent via ethercat
 /// 
 /// the packed struct must have bitwidth that is a multiple of 8
-pub fn pack_to_ecat(packed_struct: anytype) [@divExact(@bitSizeOf(@TypeOf(packed_struct)), 8)]u8 {
+pub fn eCatFromPack(packed_struct: anytype) [@divExact(@bitSizeOf(@TypeOf(packed_struct)), 8)]u8 {
     comptime std.debug.assert(@typeInfo(@TypeOf(packed_struct)).Struct.layout == .@"packed"); // must be a packed struct
     var bytes: [@divExact(@bitSizeOf(@TypeOf(packed_struct)), 8)]u8 = undefined;
 
@@ -245,19 +245,19 @@ pub fn pack_to_ecat(packed_struct: anytype) [@divExact(@bitSizeOf(@TypeOf(packed
     return bytes;
 }
 
-pub fn pack_to_ecat_zeros(comptime T: type) [@divExact(@bitSizeOf(T), 8)]u8 {
+pub fn zerosFromPack(comptime T: type) [@divExact(@bitSizeOf(T), 8)]u8 {
     comptime std.debug.assert(@typeInfo(T).Struct.layout == .@"packed"); // must be a packed struct
     return std.mem.zeroes([@divExact(@bitSizeOf(T), 8)]u8);
 }
 
-test "pack_to_ecat" {
+test "eCatFromPack" {
     const Command = packed struct(u8) {
         flag: bool = true,
         reserved: u7 = 0,
     };
     try std.testing.expectEqual(
         [_]u8{1},
-        pack_to_ecat(Command{}),
+        eCatFromPack(Command{}),
     );
 
     const Command2 = packed struct(u16) {
@@ -267,7 +267,7 @@ test "pack_to_ecat" {
     };
     try std.testing.expectEqual(
         [_]u8{1, 7},
-        pack_to_ecat(Command2{}),
+        eCatFromPack(Command2{}),
     );
 
     const Command3 = packed struct(u24) {
@@ -277,7 +277,7 @@ test "pack_to_ecat" {
     };
     try std.testing.expectEqual(
         [_]u8{1, 0x22, 0x11},
-        pack_to_ecat(Command3{}),
+        eCatFromPack(Command3{}),
     );
 
     const Command4 = packed struct(u32) {
@@ -289,7 +289,7 @@ test "pack_to_ecat" {
     };
     try std.testing.expectEqual(
         [_]u8{1, 0x22, 0x11, 0x03},
-        pack_to_ecat(Command4{}),
+        eCatFromPack(Command4{}),
     );
     const Command5 = packed struct(u40) {
         flag: bool = true,
@@ -301,13 +301,13 @@ test "pack_to_ecat" {
     };
     try std.testing.expectEqual(
         [_]u8{1, 0x22, 0x11, 0x03, 0xAB},
-        pack_to_ecat(Command5{}),
+        eCatFromPack(Command5{}),
     );
 }
 
 // 
-pub fn ecat_to_pack(comptime T: type, ecat_bytes: [@divExact(@bitSizeOf(T), 8)]u8) T {
-    comptime std.debug.assert(@typeInfo(T).Struct.layout == .@"packed"); // must be a packed struct
+pub fn packFromECat(comptime T: type, ecat_bytes: [@divExact(@bitSizeOf(T), 8)]u8) T {
+    // comptime std.debug.assert(@typeInfo(T).Struct.layout == .@"packed"); // must be a packed struct or int
 
     switch (native_endian) {
         .little => {
@@ -322,14 +322,14 @@ pub fn ecat_to_pack(comptime T: type, ecat_bytes: [@divExact(@bitSizeOf(T), 8)]u
     unreachable;
 }
 
-test "ecat_to_pack" {
+test "packFromECat" {
     const Command = packed struct(u8) {
         flag: bool = true,
         reserved: u7 = 0,
     };
     try std.testing.expectEqual(
         Command{},
-        ecat_to_pack(Command, [_]u8{1}),
+        packFromECat(Command, [_]u8{1}),
     );
 
     const Command2 = packed struct(u16) {
@@ -339,7 +339,7 @@ test "ecat_to_pack" {
     };
     try std.testing.expectEqual(
         Command2{},
-        ecat_to_pack(Command2, [_]u8{1, 7}),
+        packFromECat(Command2, [_]u8{1, 7}),
     );
 
     const Command3 = packed struct(u24) {
@@ -349,7 +349,7 @@ test "ecat_to_pack" {
     };
     try std.testing.expectEqual(
         Command3{},
-        ecat_to_pack(Command3, [_]u8{1, 0x22, 0x11}),
+        packFromECat(Command3, [_]u8{1, 0x22, 0x11}),
     );
 
     const Command4 = packed struct(u32) {
@@ -361,7 +361,7 @@ test "ecat_to_pack" {
     };
     try std.testing.expectEqual(
         Command4{},
-        ecat_to_pack(Command4, [_]u8{1, 0x22, 0x11, 0x03}),
+        packFromECat(Command4, [_]u8{1, 0x22, 0x11, 0x03}),
         
     );
     const Command5 = packed struct(u40) {
@@ -374,7 +374,7 @@ test "ecat_to_pack" {
     };
     try std.testing.expectEqual(
         Command5{},
-        ecat_to_pack(Command5, [_]u8{1, 0x22, 0x11, 0x03, 0xAB}),
+        packFromECat(Command5, [_]u8{1, 0x22, 0x11, 0x03, 0xAB}),
     );
 }
 

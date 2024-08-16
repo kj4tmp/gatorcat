@@ -305,9 +305,16 @@ test "eCatFromPack" {
     );
 }
 
-// 
+
 pub fn packFromECat(comptime T: type, ecat_bytes: [@divExact(@bitSizeOf(T), 8)]u8) T {
-    // comptime std.debug.assert(@typeInfo(T).Struct.layout == .@"packed"); // must be a packed struct or int
+    comptime switch (@typeInfo(T)) {
+        .Struct => |strct|{
+            std.debug.assert(strct.layout == .@"packed"); // must be a packed struct
+        },
+        .Int, .Float => {},
+        else => {unreachable;},
+
+    };
 
     switch (native_endian) {
         .little => {

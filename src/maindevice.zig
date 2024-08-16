@@ -6,7 +6,6 @@ const packFromECat = @import("nic.zig").packFromECat;
 const zerosFromPack = @import("nic.zig").zerosFromPack;
 const commands = @import("commands.zig");
 const esc = @import("esc.zig");
-const readSII4Byte_ps = @import("fsm_sii.zig").readSII4Byte_ps;
 const sii = @import("sii.zig");
 pub const MainDeviceSettings = struct {
     timeout_recv_us: u32 = 2000,
@@ -140,47 +139,22 @@ pub const MainDevice = struct {
         }
         var i: u16 = 0;
         while (i < wkc) : (i += 1) {
-            const sub_info = try commands.APRD_ps(
+            const identity = try sii.readSII_ps(
                 self.port,
-                esc.DLInformationRegister,
-                .{
-                    .autoinc_address = calc_autoinc_addr(i),
-                    .offset = @intFromEnum(
-                        esc.RegisterMap.DL_information,
-                    ),
-                },
-                self.settings.timeout_recv_us,
-            );
-            std.log.info("pos: {}, info: {}", .{ i, sub_info.ps });
-
-            const vendor_id = try readSII4Byte_ps(
-                self.port,
-                u32,
+                sii.SubdeviceIdentity,
                 calc_autoinc_addr(i),
                 @intFromEnum(sii.ParameterMap.vendor_id),
-                10000,
-            );
-            const product_code = try readSII4Byte_ps(
-                self.port,
-                u32,
-                calc_autoinc_addr(i),
-                @intFromEnum(sii.ParameterMap.product_code),
-                10000,
-            );
-            const revision = try readSII4Byte_ps(
-                self.port,
-                u32,
-                calc_autoinc_addr(i),
-                @intFromEnum(sii.ParameterMap.revision_number),
+                3,
+                self.settings.timeout_recv_us,
                 10000,
             );
             std.log.warn(
                 "pos: {}, vendor id: 0x{x}, product code: 0x{x}, revision: 0x{x}",
                 .{
                     i,
-                    vendor_id,
-                    product_code,
-                    revision,
+                    identity.vendor_id,
+                    identity.product_code,
+                    identity.revision_number,
                 },
             );
         }

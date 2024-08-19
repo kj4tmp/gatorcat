@@ -2,9 +2,9 @@ const std = @import("std");
 
 const flags = @import("flags");
 
-const commands = @import("commands.zig");
-const nic = @import("nic.zig");
-const MainDevice = @import("maindevice.zig").MainDevice;
+const ecm = @import("ecm");
+const nic = ecm.nic;
+const MainDevice = ecm.MainDevice;
 
 pub const std_options = .{
     // Set the log level to info

@@ -4,7 +4,7 @@ const nic = @import("ecm").nic;
 const MainDevice = @import("ecm").MainDevice;
 
 pub const std_options = .{
-    .log_level = .warn,
+    .log_level = .info,
 };
 
 pub fn main() !void {
@@ -16,5 +16,5 @@ pub fn main() !void {
         .{ .timeout_recv_us = 2000 },
     );
 
-    try main_device.scan();
+    try main_device.bus_init();
 }

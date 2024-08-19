@@ -7,6 +7,8 @@ const zerosFromPack = @import("nic.zig").zerosFromPack;
 const commands = @import("commands.zig");
 const esc = @import("esc.zig");
 const sii = @import("sii.zig");
+const BusConfiguration = @import("configuration.zig").BusConfiguration;
+
 pub const MainDeviceSettings = struct {
     timeout_recv_us: u32 = 2000,
 };
@@ -14,15 +16,24 @@ pub const MainDeviceSettings = struct {
 pub const MainDevice = struct {
     port: *Port,
     settings: MainDeviceSettings,
+    bus_config: ?BusConfiguration,
 
-    pub fn init(port: *Port, settings: MainDeviceSettings) MainDevice {
+    pub fn init(
+        port: *Port,
+        settings: MainDeviceSettings,
+        bus_config: ?BusConfiguration,
+    ) MainDevice {
         return MainDevice{
             .port = port,
             .settings = settings,
+            .bus_config = bus_config,
         };
     }
 
-    fn detect_subdevices(self: *MainDevice) !u16 {
+    /// Initialize the ethercat bus.
+    ///
+    /// Sets all subdevices to the INIT state.
+    pub fn bus_init(self: *MainDevice) !u16 {
         // disable alias address on all subdevices
         var data = [_]u8{0};
         var wkc = try commands.BWR(
@@ -35,54 +46,7 @@ pub const MainDevice = struct {
             self.settings.timeout_recv_us,
         );
 
-        // command INIT on all subdevices twice
-        var init_cmd = eCatFromPack(esc.ALControlRegister{
-            .state = .INIT,
-            .ack = true, // ack errors
-            .request_id = false,
-        });
-        wkc = try commands.BWR(
-            self.port,
-            .{
-                .autoinc_address = 0,
-                .offset = @intFromEnum(esc.RegisterMap.AL_control),
-            },
-            &init_cmd,
-            self.settings.timeout_recv_us,
-        );
-
-        var init_cmd2 = eCatFromPack(esc.ALControlRegister{
-            .state = .INIT,
-            .ack = true, // ack errors
-            .request_id = false,
-        });
-        wkc = try commands.BWR(
-            self.port,
-            .{
-                .autoinc_address = 0,
-                .offset = @intFromEnum(esc.RegisterMap.AL_control),
-            },
-            &init_cmd2,
-            self.settings.timeout_recv_us,
-        );
-
-        // count subdevices
-        var data2 = [1]u8{0};
-        wkc = try commands.BRD(
-            self.port,
-            .{
-                .autoinc_address = 0,
-                .offset = 0,
-            },
-            &data2,
-            self.settings.timeout_recv_us,
-        );
-        return wkc;
-    }
-
-    fn init_subdevices_to_default(self: *MainDevice) !u16 {
-
-        // configure port forwarding settings
+        // open all the ports
         var port_cmd = eCatFromPack(esc.DLControlRegisterCompact{
             .forwarding_rule = true, // destroy non-ecat frames
             .temporary_loop_control = false, // permanent settings
@@ -91,28 +55,50 @@ pub const MainDevice = struct {
             .loop_control_port2 = .auto,
             .loop_control_port3 = .auto,
         });
-        const wkc = try commands.BWR(
+        wkc = try commands.BWR(
             self.port,
             .{
                 .autoinc_address = 0,
-                .offset = esc.RegisterMap.DL_control,
+                .offset = @intFromEnum(esc.RegisterMap.DL_control),
             },
             &port_cmd,
             self.settings.timeout_recv_us,
         );
 
-        //
-        return wkc;
-    }
+        // command INIT on all subdevices, twice
+        // SOEM does this, something about netX100
 
-    /// Initialize the ethercat bus.
-    ///
-    /// Sets all subdevices to the INIT state.
-    pub fn bus_init(self: *MainDevice) !u16 {
-        var wkc = try self.detect_subdevices();
-        if (wkc == 0) {
-            return error.NoSubdevicesFound;
+        for (0..1) |_| {
+            var init_cmd = eCatFromPack(esc.ALControlRegister{
+                .state = .INIT,
+                .ack = true, // ack errors
+                .request_id = false,
+            });
+            wkc = try commands.BWR(
+                self.port,
+                .{
+                    .autoinc_address = 0,
+                    .offset = @intFromEnum(esc.RegisterMap.AL_control),
+                },
+                &init_cmd,
+                self.settings.timeout_recv_us,
+            );
         }
+
+        // // count subdevices
+        // wkc = try commands.BRD(
+        //     self.port,
+        //     .{
+        //         .autoinc_address = 0,
+        //         .offset = 0,
+        //     },
+        //     &.{0},
+        //     self.settings.timeout_recv_us,
+        // );
+        // std.log.info("detected {} subdevices", .{wkc});
+        // if (wkc == 0) {
+        //     return error.NoSubdevicesFound;
+        // }
 
         // read state of subdevices
         var state_check = zerosFromPack(esc.ALStatusRegister);
@@ -131,34 +117,34 @@ pub const MainDevice = struct {
         return wkc;
     }
 
-    pub fn scan(self: *MainDevice) !void {
-        const wkc = try self.detect_subdevices();
-        std.log.warn("detected {} subdevices", .{wkc});
-        if (wkc == 0) {
-            return error.NoSubdevicesFound;
-        }
-        var i: u16 = 0;
-        while (i < wkc) : (i += 1) {
-            const identity = try sii.readSII_ps(
-                self.port,
-                sii.SubdeviceIdentity,
-                calc_autoinc_addr(i),
-                @intFromEnum(sii.ParameterMap.vendor_id),
-                3,
-                self.settings.timeout_recv_us,
-                10000,
-            );
-            std.log.warn(
-                "pos: {}, vendor id: 0x{x}, product code: 0x{x}, revision: 0x{x}",
-                .{
-                    i,
-                    identity.vendor_id,
-                    identity.product_code,
-                    identity.revision_number,
-                },
-            );
-        }
-    }
+    // pub fn scan(self: *MainDevice) !void {
+    //     const wkc = try self.detect_subdevices();
+
+    //     if (wkc == 0) {
+    //         return error.NoSubdevicesFound;
+    //     }
+    //     var i: u16 = 0;
+    //     while (i < wkc) : (i += 1) {
+    //         const identity = try sii.readSII_ps(
+    //             self.port,
+    //             sii.SubdeviceIdentity,
+    //             calc_autoinc_addr(i),
+    //             @intFromEnum(sii.ParameterMap.vendor_id),
+    //             3,
+    //             self.settings.timeout_recv_us,
+    //             10000,
+    //         );
+    //         std.log.info(
+    //             "pos: {}, vendor id: 0x{x}, product code: 0x{x}, revision: 0x{x}",
+    //             .{
+    //                 i,
+    //                 identity.vendor_id,
+    //                 identity.product_code,
+    //                 identity.revision_number,
+    //             },
+    //         );
+    //     }
+    // }
 };
 
 /// Calcuate the auto increment address of a subdevice

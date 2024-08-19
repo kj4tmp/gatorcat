@@ -496,9 +496,8 @@ pub const Port = struct {
 
     /// Send a transaction with the ethercat bus.
     /// 
-    /// Parameter send_datagram is the datagram to be sent.
-    /// Parameter recv_datagram is where the received datagram will 
-    /// be deserialized into.
+    /// Parameter send_datagram is the datagram to be sent
+    /// and is used to deserialize the data on response.
     pub fn send_transaction(self: *Port, idx: u8, send_datagrams: []telegram.Datagram) !void {
         assert(send_datagrams.len != 0); // no datagrams
         assert(send_datagrams.len <= 15); // too many datagrams

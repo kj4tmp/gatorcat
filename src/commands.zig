@@ -140,7 +140,7 @@ pub fn FPRD(
     data: []u8,
     timeout_us: u32,
 ) !u16 {
-    sendDatagram(
+    return sendDatagram(
         port,
         telegram.Command.FPRD,
         @bitCast(address),
@@ -167,7 +167,7 @@ pub fn FPRD_ps(
 pub fn FPWR(
     port: *nic.Port,
     address: telegram.StationAddress,
-    data: []const u8,
+    data: []u8,
     timeout_us: u32,
 ) !u16 {
     return sendDatagram(

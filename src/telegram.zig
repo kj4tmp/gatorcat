@@ -350,5 +350,5 @@ pub const EthernetFrame = struct {
 /// Includes header, but not FCS (intended to be the max allowable size to
 /// give to a raw socket send().)
 /// FCS is handled by hardware and not normally returned to user.
-pub const max_frame_length = @sizeOf(EthernetHeader) + 1500;
+pub const max_frame_length = @divExact(@bitSizeOf(EthernetHeader), 8) + 1500;
 pub const min_frame_length = 60;

@@ -16,5 +16,5 @@ pub const Subdevice = struct {
 };
 
 pub const BusConfiguration = struct {
-    subdevices: []Subdevice,
+    subdevices: []const Subdevice,
 };

@@ -28,10 +28,11 @@ pub const RegisterMap = enum(u16) {
     MII_address = 0x0512,
     MII_data = 0x0514,
     MII_access = 0x0516,
-    FMMUs = 0x0600,
-    SMs = 0x0800,
+    FMMU0 = 0x0600,
+    SM0 = 0x0800,
     DC = 0x0900,
     DC_user = 0x0980,
+    DC_sync_activation = 0x0981,
 };
 
 pub const PortDescriptor = enum(u2) {
@@ -89,6 +90,10 @@ pub const StationAddressRegister = packed struct {
     configured_station_alias: u16, // initialized with SII word 4
 };
 
+pub const ConfiguredStationAddressRegister = packed struct(u16) {
+    configured_station_address: u16,
+};
+
 /// Loop Control Settings
 ///
 /// Loop control settings for the ports of a subdevice as part of the DL Control register.
@@ -138,6 +143,11 @@ pub const DLControlRegisterCompact = packed struct {
     loop_control_port1: LoopControlSettings,
     loop_control_port2: LoopControlSettings,
     loop_control_port3: LoopControlSettings,
+};
+
+pub const DLControlEnableAliasAddressRegister = packed struct(u8) {
+    enable_alias_address: bool,
+    reserved: u7 = 0,
 };
 
 pub const ALStateControl = enum(u4) {
@@ -646,7 +656,22 @@ pub const FMMUAttributes = packed struct {
 ///
 /// Ref: IEC 61158-4-12:2019 6.6.2
 pub const FMMURegister = packed struct {
-    FMMUs: [16]FMMUAttributes,
+    FMMU0: FMMUAttributes,
+    FMMU1: FMMUAttributes,
+    FMMU2: FMMUAttributes,
+    FMMU3: FMMUAttributes,
+    FMMU4: FMMUAttributes,
+    FMMU5: FMMUAttributes,
+    FMMU6: FMMUAttributes,
+    FMMU7: FMMUAttributes,
+    FMMU8: FMMUAttributes,
+    FMMU9: FMMUAttributes,
+    FMMU10: FMMUAttributes,
+    FMMU11: FMMUAttributes,
+    FMMU12: FMMUAttributes,
+    FMMU13: FMMUAttributes,
+    FMMU14: FMMUAttributes,
+    FMMU15: FMMUAttributes,
 };
 
 pub const SyncManagerBufferType = enum(u2) {
@@ -715,7 +740,22 @@ pub const SyncManagerAttributes = packed struct {
 ///
 /// Ref: 61158-4-12:2019 6.7.2
 pub const SMRegister = packed struct {
-    SMs: [16]SyncManagerAttributes,
+    SM0: SyncManagerAttributes,
+    SM1: SyncManagerAttributes,
+    SM2: SyncManagerAttributes,
+    SM3: SyncManagerAttributes,
+    SM4: SyncManagerAttributes,
+    SM5: SyncManagerAttributes,
+    SM6: SyncManagerAttributes,
+    SM7: SyncManagerAttributes,
+    SM8: SyncManagerAttributes,
+    SM9: SyncManagerAttributes,
+    SM10: SyncManagerAttributes,
+    SM11: SyncManagerAttributes,
+    SM12: SyncManagerAttributes,
+    SM13: SyncManagerAttributes,
+    SM14: SyncManagerAttributes,
+    SM15: SyncManagerAttributes,
 };
 
 // TODO: verify representation of sys time difference
@@ -764,4 +804,16 @@ pub const DCUserRegister = packed struct {
     reserved7: u32 = 0,
     DC_user_P12: u32,
     reserved8: u32 = 0,
+};
+
+/// DC Sync Activation Register
+///
+/// Mapped to DC User P1
+///
+/// Ref: IEC 61158-6-12:2019 5.5
+const DCSyncActivationRegister = packed struct(u8) {
+    enable_cylic_operation: bool,
+    generate_sync0: bool,
+    generate_sync1: bool,
+    reserved: u5 = 0,
 };

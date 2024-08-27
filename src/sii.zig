@@ -14,6 +14,7 @@ const Timer = std.time.Timer;
 const ns_per_us = std.time.ns_per_us;
 const esc = @import("esc.zig");
 const commands = @import("commands.zig");
+const assert = std.debug.assert;
 
 pub const ParameterMap = enum(u16) {
     PDI_control = 0x0000,
@@ -301,7 +302,9 @@ pub const FindCatagoryResult = struct {
 };
 
 /// find the word address of a catagory in the eeprom, uses station addressing.
-pub fn findCatagoryFP(port: *Port, station_address: u16, catagory: CatagoryType, retries: u32, recv_timeout_us: u32, eeprom_timeout_us: u32) !FindCatagoryResult {
+///
+/// Returns null if catagory is not found.
+pub fn findCatagoryFP(port: *Port, station_address: u16, catagory: CatagoryType, retries: u32, recv_timeout_us: u32, eeprom_timeout_us: u32) !?FindCatagoryResult {
 
     // there shouldn't be more than 1000 catagories..right??
     var word_address: u16 = @intFromEnum(ParameterMap.first_catagory_header);
@@ -322,7 +325,7 @@ pub fn findCatagoryFP(port: *Port, station_address: u16, catagory: CatagoryType,
             // + 2 for catagory header, byte length = 2 * word length
             return .{ .word_address = word_address + 2, .byte_length = word_address << 1 };
         } else if (catagory_header.catagory_type == .end_of_file) {
-            return error.NotFound;
+            return null;
         } else {
             word_address += catagory_header.word_size + 2; // + 2 for catagory header
             continue;
@@ -330,170 +333,7 @@ pub fn findCatagoryFP(port: *Port, station_address: u16, catagory: CatagoryType,
         unreachable;
     } else {
         std.log.err("SII catagory {} not found.", .{catagory});
-        return error.NotFound;
-    }
-}
-
-/// read a packed struct from SII, using autoincrement addressing
-pub fn readSIIAP_ps(
-    port: *Port,
-    comptime T: type,
-    autoinc_address: u16,
-    eeprom_address: u16,
-    retries: u32,
-    recv_timeout_us: u32,
-    eeprom_timeout_us: u32,
-) !T {
-    const n_4_bytes = @divExact(@bitSizeOf(T), 32);
-    var bytes: [@divExact(@bitSizeOf(T), 8)]u8 = undefined;
-
-    for (0..n_4_bytes) |i| {
-        const source = try readSII4ByteAP(
-            port,
-            autoinc_address,
-            eeprom_address + 2 * @as(u16, @intCast(i)), // eeprom address is WORD address
-            retries,
-            recv_timeout_us,
-            eeprom_timeout_us,
-        );
-        @memcpy(bytes[i * 4 .. i * 4 + 4], &source);
-    }
-
-    return nic.packFromECat(T, bytes);
-}
-
-/// read 4 bytes from SII, using autoincrement addressing
-pub fn readSII4ByteAP(
-    port: *Port,
-    autoinc_address: u16,
-    eeprom_address: u16,
-    retries: u32,
-    recv_timeout_us: u32,
-    eeprom_timeout_us: u32,
-) ![4]u8 {
-
-    // set eeprom access to main device
-    for (0..retries) |_| {
-        const wkc = try commands.APWR_ps(
-            port,
-            esc.SIIAccessRegisterCompact{
-                .owner = .ethercat_DL,
-                .lock = false,
-            },
-            .{
-                .autoinc_address = autoinc_address,
-                .offset = @intFromEnum(esc.RegisterMap.SII_access),
-            },
-            recv_timeout_us,
-        );
-        if (wkc == 1) {
-            break;
-        }
-    } else {
-        return error.SubdeviceUnresponsive;
-    }
-
-    // ensure there is a rising edge in the read command by first sending zeros
-    for (0..retries) |_| {
-        var data = nic.zerosFromPack(esc.SIIControlStatusRegister);
-        const wkc = try commands.APWR(
-            port,
-            .{
-                .autoinc_address = autoinc_address,
-                .offset = @intFromEnum(esc.RegisterMap.SII_control_status),
-            },
-            &data,
-            recv_timeout_us,
-        );
-        if (wkc == 1) {
-            break;
-        }
-    } else {
-        return error.SubdeviceUnresponsive;
-    }
-
-    // send read command
-    for (0..retries) |_| {
-        const wkc = try commands.APWR_ps(
-            port,
-            esc.SIIControlStatusAddressRegister{
-                .write_access = false,
-                .EEPROM_emulation = false,
-                .read_size = .four_bytes,
-                .address_algorithm = .one_byte_address,
-                .read_operation = true, // <-- cmd
-                .write_operation = false,
-                .reload_operation = false,
-                .checksum_error = false,
-                .device_info_error = false,
-                .command_error = false,
-                .write_error = false,
-                .busy = false,
-                .sii_address = eeprom_address,
-            },
-            .{
-                .autoinc_address = autoinc_address,
-                .offset = @intFromEnum(esc.RegisterMap.SII_control_status),
-            },
-            recv_timeout_us,
-        );
-        if (wkc == 1) {
-            break;
-        }
-    } else {
-        return error.SubdeviceUnresponsive;
-    }
-
-    var timer = try Timer.start();
-    // wait for eeprom to be not busy
-    while (timer.read() < eeprom_timeout_us * ns_per_us) {
-        const sii_status = try commands.APRD_ps(
-            port,
-            esc.SIIControlStatusRegister,
-            .{
-                .autoinc_address = autoinc_address,
-                .offset = @intFromEnum(
-                    esc.RegisterMap.SII_control_status,
-                ),
-            },
-            recv_timeout_us,
-        );
-
-        if (sii_status.wkc != 1) {
-            continue;
-        }
-        if (sii_status.ps.busy) {
-            continue;
-        } else {
-            // check for eeprom nack
-            if (sii_status.ps.command_error) {
-                return error.eepromCommandError;
-            }
-            break;
-        }
-    } else {
-        return error.eepromTimeout;
-    }
-
-    // attempt read 3 times
-    for (0..retries) |_| {
-        var data = [4]u8{ 0, 0, 0, 0 };
-        const wkc = try commands.APRD(
-            port,
-            .{
-                .autoinc_address = autoinc_address,
-                .offset = @intFromEnum(
-                    esc.RegisterMap.SII_data,
-                ),
-            },
-            &data,
-            recv_timeout_us,
-        );
-        if (wkc == 1) {
-            return data;
-        }
-    } else {
-        return error.SubdeviceUnresponsive;
+        return null;
     }
 }
 
@@ -507,11 +347,13 @@ pub fn readSIIFP_ps(
     recv_timeout_us: u32,
     eeprom_timeout_us: u32,
 ) !T {
-    const n_4_bytes = @divExact(@bitSizeOf(T), 32);
+    const n_4_bytes = comptime try std.math.divCeil(comptime_int, @bitSizeOf(T), 32);
     var bytes: [@divExact(@bitSizeOf(T), 8)]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&bytes);
+    var writer = fbs.writer();
 
     for (0..n_4_bytes) |i| {
-        const source = try readSII4ByteFP(
+        const source: [4]u8 = try readSII4ByteFP(
             port,
             station_address,
             eeprom_address + 2 * @as(u16, @intCast(i)), // eeprom address is WORD address
@@ -519,11 +361,152 @@ pub fn readSIIFP_ps(
             recv_timeout_us,
             eeprom_timeout_us,
         );
-        @memcpy(bytes[i * 4 .. i * 4 + 4], &source);
+        for (source) |byte| {
+            writer.writeByte(byte) catch |err| switch (err) {
+                error.NoSpaceLeft => {
+                    assert(i == n_4_bytes - 1);
+                    break;
+                },
+            };
+        }
     }
 
     return nic.packFromECat(T, bytes);
 }
+
+/// read bytes from SII into slice, uses station addressing
+pub fn readSIIString(port: *Port, station_address: u16, string_idx: u8, out: []u8, retries: u32, recv_timeout_us: u32, eeprom_timeout_us: u32) !void {
+    const str_catagory = try findCatagoryFP(
+        port,
+        station_address,
+        CatagoryType.strings,
+        retries,
+        recv_timeout_us,
+        eeprom_timeout_us,
+    );
+
+    var buf: [128]u8 = undefined;
+
+    if (str_catagory) |catagory| {
+        const res = readSII4ByteFP(
+            port,
+            station_address,
+            catagory.word_address,
+            retries,
+            recv_timeout_us,
+            eeprom_timeout_us,
+        );
+        const n_strings: u8 = res[0];
+
+        if (n_strings < string_idx) {
+            return error.StringIdxNotFound;
+        }
+
+        var eeprom_word_offset: u16 = 0;
+        var current_string_length: u8 = res[1];
+        for (0..n_strings) |i| {
+            if (i + 1 == string_idx) {}
+        }
+    } else {
+        return error.NoStringCatagory;
+    }
+}
+
+pub fn readSIIBytes(
+    port: *Port,
+    station_address: u16,
+    eeprom_address: u16,
+    skip_first_byte: bool,
+    out: []u8,
+    retries: u32,
+    recv_timeout_us: u32,
+    eeprom_timeout_us: u32,
+) !void {
+    const n_4_bytes = try std.math.divCeil(usize, out.len, 4);
+    var fbs = std.io.fixedBufferStream(out);
+    var writer = fbs.writer();
+
+    for (0..n_4_bytes) |i| {
+        const source: [4]u8 = try readSII4ByteFP(
+            port,
+            station_address,
+            eeprom_address + 2 * @as(u16, @intCast(i)), // eeprom address is WORD address
+            retries,
+            recv_timeout_us,
+            eeprom_timeout_us,
+        );
+        for (source, 0..eeprom_address) |byte, position| {
+            if (i == 0 and position == 0 and skip_first_byte) continue;
+            writer.writeByte(byte) catch |err| switch (err) {
+                error.NoSpaceLeft => {
+                    assert(i == n_4_bytes - 1);
+                    break;
+                },
+            };
+        }
+    }
+}
+
+pub const SIIStream = struct {
+    port: *Port,
+    station_address: u16,
+    retries: u32,
+    recv_timeout_us: u32,
+    eeprom_timeout_us: u32,
+    eeprom_address: u32, // WORD (2-byte) address
+
+    last_four_bytes: [4]u8 = .{ 0, 0, 0, 0 },
+    remainder: u2 = 0,
+
+    pub fn init(
+        port: *Port,
+        station_address: u16,
+        eeprom_address: u16,
+        retries: u32,
+        recv_timeout_us: u32,
+        eeprom_timeout_us: u32,
+    ) SIIStream {
+        return SIIStream{
+            .port = port,
+            .station_address = station_address,
+            .eeprom_address = eeprom_address,
+            .retries = retries,
+            .recv_timeout_us = recv_timeout_us,
+            .eeprom_timeout_us = eeprom_timeout_us,
+        };
+    }
+
+    const ReadError = error{};
+
+    pub fn reader(self: *SIIStream) std.io.Reader {
+        return std.io.AnyReader(@This(), @This().ReadError, read);
+    }
+
+    fn read(self: *SIIStream, buf: []u8) !usize {
+        if (self.remainder == 0) {
+            self.last_four_bytes = try readSII4ByteFP(
+                self.port,
+                self.station_address,
+                self.eeprom_address, // eeprom address is WORD address
+                self.retries,
+                self.recv_timeout_us,
+                self.eeprom_timeout_us,
+            );
+            self.eeprom_address += 2;
+        }
+
+        if (buf.len >= 4) {
+            @memcpy(buf[0..4], self.last_four_bytes);
+            self.remainder = 0;
+
+            return 4;
+        } else {
+            @memcpy(buf, self.last_four_bytes[0..buf.len]);
+            self.remainder -%= @as(u2, @intCast(buf.len));
+            return buf.len;
+        }
+    }
+};
 
 /// read 4 bytes from SII, using station addressing
 pub fn readSII4ByteFP(

@@ -4,6 +4,7 @@ const nic = @import("ecm").nic;
 const MainDevice = @import("ecm").MainDevice;
 const BusConfiguration = @import("ecm").BusConfiguration;
 const Subdevice = @import("ecm").Subdevice;
+const SubdeviceRuntimeInfo = @import("ecm").SubdeviceRuntimeInfo;
 
 pub const std_options = .{
     .log_level = .info,
@@ -21,6 +22,8 @@ const bus_config = BusConfiguration{
     },
 };
 
+var bus = [3]SubdeviceRuntimeInfo{ .{}, .{}, .{} };
+
 pub fn main() !void {
     var port = try nic.Port.init("enx00e04c68191a");
     defer port.deinit();
@@ -29,6 +32,7 @@ pub fn main() !void {
         &port,
         .{ .timeout_recv_us = 2000 },
         bus_config,
+        &bus,
     );
 
     try main_device.bus_init();

@@ -9,20 +9,25 @@ const esc = @import("esc.zig");
 const sii = @import("sii.zig");
 const assert = std.debug.assert;
 const BusConfiguration = @import("configuration.zig").BusConfiguration;
+const SubdeviceRuntimeInfo = @import("configuration.zig").SubdeviceRuntimeInfo;
 
 pub const MainDeviceSettings = struct {
     timeout_recv_us: u32 = 2000,
+    retries: u32 = 3,
+    eeprom_timeout_us: u32 = 10000,
 };
 
 pub const MainDevice = struct {
     port: *Port,
     settings: MainDeviceSettings,
     bus_config: BusConfiguration,
+    bus: []SubdeviceRuntimeInfo,
 
     pub fn init(
         port: *Port,
         settings: MainDeviceSettings,
         bus_config: BusConfiguration,
+        bus: []SubdeviceRuntimeInfo,
     ) MainDevice {
         assert(bus_config.subdevices.len > 0); // no subdevices  in config
         assert(bus_config.subdevices.len < 65537); // too many subdevices
@@ -31,6 +36,7 @@ pub const MainDevice = struct {
             .port = port,
             .settings = settings,
             .bus_config = bus_config,
+            .bus = bus,
         };
     }
 
@@ -81,13 +87,15 @@ pub const MainDevice = struct {
         // assign configured station addresses
         var i: u16 = 0;
         while (i < self.bus_config.subdevices.len) : (i += 1) {
+            const assigned_station_address = calc_station_addr(i);
+            const autoinc_address = calc_autoinc_addr(i);
             wkc = try commands.APWR_ps(
                 self.port,
                 esc.ConfiguredStationAddressRegister{
-                    .configured_station_address = calc_station_addr(i),
+                    .configured_station_address = assigned_station_address,
                 },
                 telegram.PositionAddress{
-                    .autoinc_address = calc_autoinc_addr(i),
+                    .autoinc_address = autoinc_address,
                     .offset = @intFromEnum(esc.RegisterMap.station_address),
                 },
                 self.settings.timeout_recv_us,
@@ -95,19 +103,24 @@ pub const MainDevice = struct {
             if (wkc != 1) {
                 std.log.err("WKCError on station address config: expected wkc 1, got {}.", .{wkc});
                 return error.WKCError;
+            } else {
+                self.bus[i].station_address = assigned_station_address;
+                self.bus[i].autoinc_address = autoinc_address;
             }
         }
 
-        // check subdevice identities
         for (self.bus_config.subdevices, 0..) |expected_subdevice, position| {
+            assert(self.bus[position].station_address != null); // should be set prior
+
+            // check subdevice identities
             const identity = try sii.readSIIFP_ps(
                 self.port,
                 sii.SubdeviceIdentity,
-                calc_station_addr(@intCast(position)),
+                self.bus[position].station_address.?,
                 @intFromEnum(sii.ParameterMap.vendor_id),
-                3,
+                self.settings.retries,
                 self.settings.timeout_recv_us,
-                10000,
+                self.settings.eeprom_timeout_us,
             );
             std.log.info(
                 "Identified subdevice pos: {}, vendor id: 0x{x}, product code: 0x{x}, revision: 0x{x}",
@@ -138,17 +151,69 @@ pub const MainDevice = struct {
                 return error.UnexpectedSubdevice;
             }
 
-            _ = sii.findCatagoryFP(
+            const gen_catagory = try sii.findCatagoryFP(
                 self.port,
-                calc_station_addr(@intCast(position)),
+                self.bus[position].station_address.?,
                 sii.CatagoryType.general,
                 3,
                 self.settings.timeout_recv_us,
                 10000,
-            ) catch |err| switch (err) {
-                error.NotFound => {},
-                else => return err,
-            };
+            );
+
+            if (gen_catagory) |catagory| {
+                if (catagory.byte_length < @divExact(@bitSizeOf(sii.CatagoryGeneral), 8)) {
+                    std.log.err(
+                        "Subdevice station addr: 0x{x} has invalid eeprom sii general length: {}. Expected >= {}",
+                        .{ self.bus[position].station_address.?, catagory.byte_length, @divExact(@bitSizeOf(sii.CatagoryGeneral), 8) },
+                    );
+                    return error.InvalidSubdeviceEEPROM;
+                }
+
+                const general = try sii.readSIIFP_ps(
+                    self.port,
+                    sii.CatagoryGeneral,
+                    self.bus[position].station_address.?,
+                    catagory.word_address,
+                    self.settings.retries,
+                    self.settings.timeout_recv_us,
+                    self.settings.eeprom_timeout_us,
+                );
+
+                std.log.info("subdevice station addr: 0x{x}, general: {}", .{ self.bus[position].station_address.?, general });
+            }
+
+            const str_catagory = try sii.findCatagoryFP(
+                self.port,
+                self.bus[position].station_address.?,
+                sii.CatagoryType.strings,
+                3,
+                self.settings.timeout_recv_us,
+                10000,
+            );
+
+            if (str_catagory) |catagory| {
+                if (catagory.byte_length < @divExact(@bitSizeOf(sii.CatagoryString), 8)) {
+                    std.log.err(
+                        "Subdevice station addr: 0x{x} has invalid eeprom sii string length: {}. Expected >= {}",
+                        .{ self.bus[position].station_address.?, catagory.byte_length, @divExact(@bitSizeOf(sii.CatagoryString), 8) },
+                    );
+                    return error.InvalidSubdeviceEEPROM;
+                }
+
+                const str = try sii.readSIIFP_ps(
+                    self.port,
+                    sii.CatagoryString,
+                    self.bus[position].station_address.?,
+                    catagory.word_address,
+                    self.settings.retries,
+                    self.settings.timeout_recv_us,
+                    self.settings.eeprom_timeout_us,
+                );
+
+                std.log.info("subdevice station addr: 0x{x}, str: {}", .{ self.bus[position].station_address.?, str });
+
+                for (0..str.n_strings) |_| {}
+            }
         }
 
         // TODO: write-mailbox address and size

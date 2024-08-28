@@ -525,12 +525,14 @@ pub const Port = struct {
         frame.calc();
 
         var out_buf: [telegram.max_frame_length]u8 = undefined;
-        const out = try serialize_frame(&frame, &out_buf);
+        const out = serialize_frame(&frame, &out_buf) catch |err| switch (err) {
+            error.NoSpaceLeft => return error.FrameSerializationFailure,
+        };
         std.log.debug("send: {x}, len: {}", .{ out, out.len });
         {
             self.send_mutex.lock();
             defer self.send_mutex.unlock();
-            _ = try std.posix.write(self.socket, out);
+            _ = std.posix.write(self.socket, out) catch return error.SocketError;
         }
         {
             self.recv_datagrams_status_mutex.lock();
@@ -557,8 +559,9 @@ pub const Port = struct {
             .in_use_currupted => return error.CurruptedFrame,
         }
         self.recv_frame() catch |err| switch (err) {
-            error.FrameNotFound => return false,
-            else => return err,
+            error.FrameNotFound => {},
+            error.SocketError => {return error.SocketError;},
+            error.InvalidFrame => {},
         };
         switch (self.recv_datagrams_status[idx]) {
             .available => unreachable,
@@ -590,7 +593,7 @@ pub const Port = struct {
         }
         const bytes_read: []const u8 = buf[0..n_bytes_read];
         std.log.debug("recv: {x}, len: {}", .{ bytes_read, bytes_read.len });
-        const recv_frame_idx = try Port.identify_frame(bytes_read);
+        const recv_frame_idx = Port.identify_frame(bytes_read) catch return error.InvalidFrame;
         std.log.debug("identified frame as idx: {}", .{recv_frame_idx});
 
         switch (self.recv_datagrams_status[recv_frame_idx]) {
@@ -669,7 +672,9 @@ pub const Port = struct {
         assert(send_datagrams.len != 0); // no datagrams
         assert(send_datagrams.len <= 15); // too many datagrams
 
-        var timer = try Timer.start();
+        var timer = Timer.start() catch |err| switch (err) {
+            error.TimerUnsupported => @panic("timer unsupported"),
+        };
         var idx: u8 = undefined;
         while (timer.read() < timeout_us * ns_per_us) {
             idx = self.claim_transaction() catch |err| switch (err) {

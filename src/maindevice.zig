@@ -10,6 +10,7 @@ const sii = @import("sii.zig");
 const assert = std.debug.assert;
 const BusConfiguration = @import("configuration.zig").BusConfiguration;
 const SubdeviceRuntimeInfo = @import("configuration.zig").SubdeviceRuntimeInfo;
+const SIIStream = @import("sii.zig").SIIStream;
 
 pub const MainDeviceSettings = struct {
     timeout_recv_us: u32 = 2000,
@@ -212,7 +213,23 @@ pub const MainDevice = struct {
 
                 std.log.info("subdevice station addr: 0x{x}, str: {}", .{ self.bus[position].station_address.?, str });
 
-                for (0..str.n_strings) |_| {}
+                //for (0..str.n_strings) |_| {}
+
+                var stream = SIIStream.init(
+                    self.port,
+                    self.bus[position].station_address.?,
+                    @intFromEnum(sii.ParameterMap.vendor_id),
+                    self.settings.retries,
+                    self.settings.timeout_recv_us,
+                    self.settings.eeprom_timeout_us,
+                );
+
+                var reader = stream.reader();
+
+                var bytes = std.mem.zeroes([16]u8);
+                const n_bytes = try reader.read(&bytes);
+
+                std.log.info("n bytes: {}, bytes {any}", .{ n_bytes, bytes });
             }
         }
 

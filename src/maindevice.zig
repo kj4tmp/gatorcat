@@ -180,6 +180,20 @@ pub const MainDevice = struct {
                     self.settings.eeprom_timeout_us,
                 );
 
+                if (general.name_idx != 0) {
+                    const name = try sii.readSIIString(
+                        self.port,
+                        self.bus[position].station_address.?,
+                        general.name_idx,
+                        self.settings.retries,
+                        self.settings.timeout_recv_us,
+                        self.settings.eeprom_timeout_us,
+                    );
+                    if (name) |name_res| {
+                        std.log.info("subdevice station addr: 0x{x}, name: {s}", .{ self.bus[position].station_address.?, name_res.slice() });
+                    }
+                }
+
                 std.log.info("subdevice station addr: 0x{x}, general: {}", .{ self.bus[position].station_address.?, general });
             }
 

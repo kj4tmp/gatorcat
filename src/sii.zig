@@ -301,33 +301,95 @@ pub const FindCatagoryResult = struct {
     byte_length: u17,
 };
 
+pub fn readSIIString(
+    port: *Port,
+    station_address: u16,
+    index: u8,
+    retries: u32,
+    recv_timeout_us: u32,
+    eeprom_timeout_us: u32,
+) !?std.BoundedArray(u8, 255) {
+    if (index == 0) {
+        return null;
+    }
+
+    const catagory_res = try findCatagoryFP(
+        port,
+        station_address,
+        CatagoryType.strings,
+        retries,
+        recv_timeout_us,
+        eeprom_timeout_us,
+    );
+
+    if (catagory_res) |catagory| {
+        var stream = SIIStream.init(
+            port,
+            station_address,
+            catagory.word_address,
+            retries,
+            recv_timeout_us,
+            eeprom_timeout_us,
+        );
+        var reader = stream.reader();
+
+        const n_strings: u8 = try reader.readByte();
+        std.log.info("sii strings n_strings: {}", .{n_strings});
+
+        if (n_strings < index) {
+            return null;
+        }
+
+        var string_buf: [255]u8 = undefined;
+        var str_len: u8 = undefined;
+        for (0..index) |_| {
+            str_len = try reader.readByte();
+            std.log.info("sii strings str len: {}", .{str_len});
+            try reader.readNoEof(string_buf[0..str_len]);
+            std.log.info("sii strings str: {s}", .{string_buf[0..str_len]});
+        } else {
+            var arr = try std.BoundedArray(u8, 255).init(0);
+            try arr.appendSlice(string_buf[0..str_len]);
+            return arr;
+        }
+        unreachable;
+    } else {
+        return null;
+    }
+}
+
 /// find the word address of a catagory in the eeprom, uses station addressing.
 ///
 /// Returns null if catagory is not found.
 pub fn findCatagoryFP(port: *Port, station_address: u16, catagory: CatagoryType, retries: u32, recv_timeout_us: u32, eeprom_timeout_us: u32) !?FindCatagoryResult {
 
     // there shouldn't be more than 1000 catagories..right??
-    var word_address: u16 = @intFromEnum(ParameterMap.first_catagory_header);
+    const word_address: u16 = @intFromEnum(ParameterMap.first_catagory_header);
+    var stream = SIIStream.init(
+        port,
+        station_address,
+        word_address,
+        retries,
+        recv_timeout_us,
+        eeprom_timeout_us,
+    );
+
+    const reader = stream.reader();
     for (0..1000) |_| {
-        const catagory_header = try readSIIFP_ps(
-            port,
-            CatagoryHeader,
-            station_address,
-            word_address,
-            retries,
-            recv_timeout_us,
-            eeprom_timeout_us,
-        );
+        const catagory_header = try nic.packFromECatReader(CatagoryHeader, reader.any());
+
         std.log.info("station_address: 0x{x}, got catagory header: {}", .{ station_address, catagory_header });
 
         if (catagory_header.catagory_type == catagory) {
             std.log.info("found catagory: {}", .{catagory_header});
             // + 2 for catagory header, byte length = 2 * word length
-            return .{ .word_address = word_address + 2, .byte_length = word_address << 1 };
+            // return .{ .word_address = word_address + 2, .byte_length = word_address << 1 };
+            return .{ .word_address = stream.eeprom_address, .byte_length = catagory_header.word_size << 1 };
         } else if (catagory_header.catagory_type == .end_of_file) {
             return null;
         } else {
-            word_address += catagory_header.word_size + 2; // + 2 for catagory header
+            //word_address += catagory_header.word_size + 2; // + 2 for catagory header
+            stream.seekByWord(catagory_header.word_size);
             continue;
         }
         unreachable;
@@ -443,7 +505,7 @@ pub const SIIStream = struct {
     eeprom_address: u16, // WORD (2-byte) address
 
     last_four_bytes: [4]u8 = .{ 0, 0, 0, 0 },
-    remainder: u2 = 0,
+    remainder: u8 = 0,
 
     pub fn init(
         port: *Port,
@@ -468,6 +530,10 @@ pub const SIIStream = struct {
         SocketError,
     };
 
+    // pub fn reader(self: *SIIStream) std.io.AnyReader {
+    //     return .{ .context = self, .readFn = read };
+    // }
+
     pub fn reader(self: *SIIStream) std.io.GenericReader(*@This(), ReadError, read) {
         return .{ .context = self };
     }
@@ -483,20 +549,35 @@ pub const SIIStream = struct {
                 self.eeprom_timeout_us,
             );
             self.eeprom_address += 2;
+
+            self.remainder = 4;
         }
 
-        if (buf.len >= 4) {
-            @memcpy(buf[0..4], self.last_four_bytes[0..]);
-            self.remainder = 0;
+        var fbs = std.io.fixedBufferStream(buf);
+        var writer = fbs.writer();
 
-            return 4;
+        while (self.remainder != 0) {
+            writer.writeByte(self.last_four_bytes[4 - self.remainder]) catch return fbs.getWritten().len;
+            self.remainder -= 1;
         } else {
-            @memcpy(buf, self.last_four_bytes[0..buf.len]);
-            self.remainder -%= @as(u2, @intCast(buf.len));
-            return buf.len;
+            return fbs.getWritten().len;
         }
+        unreachable;
+    }
+
+    pub fn seekByWord(self: *SIIStream, amt: u16) void {
+        self.eeprom_address += amt;
+        self.remainder = 0; // next call to read will always read eeprom
     }
 };
+
+pub fn seek(address: u16, amount: i16) u16 {
+    return address +% amount;
+}
+
+test {
+    try std.testing.expectEqual(@as(u16, 3), seek(0, 3));
+}
 
 pub const ReadSIIError = error{
     Timeout,

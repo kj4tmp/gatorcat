@@ -75,7 +75,7 @@ pub const DLInformationRegister = packed struct {
     LRWNotSupported: bool,
     BRW_APRW_FPRW_NotSupported: bool,
     SpecialFMMU_SM_Configuration: bool,
-    reserved: u4,
+    reserved: u4 = 0,
 };
 
 /// Station Address Register

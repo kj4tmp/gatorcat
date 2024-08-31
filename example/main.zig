@@ -30,7 +30,7 @@ pub fn main() !void {
 
     var main_device = MainDevice.init(
         &port,
-        .{ .timeout_recv_us = 2000 },
+        .{},
         bus_config,
         &bus,
     );

@@ -85,6 +85,30 @@ pub const SubdeviceInfo = packed struct {
     version: u16,
 };
 
+pub const SubdeviceInfoCompact = packed struct {
+    PDI_control: u16,
+    PDI_configuration: u16,
+    sync_inpulse_length_10ns: u16,
+    PDI_configuation2: u16,
+    configured_station_alias: u16,
+    reserved: u32 = 0,
+    checksum: u16,
+    vendor_id: u32,
+    product_code: u32,
+    revision_number: u32,
+    serial_number: u32,
+    reserved2: u64 = 0,
+    bootstrap_recv_mbx_offset: u16,
+    bootstrap_recv_mbx_size: u16,
+    bootstrap_send_mbx_offset: u16,
+    bootstrap_send_mbx_size: u16,
+    std_recv_mbx_offset: u16,
+    std_recv_mbx_size: u16,
+    std_send_mbx_offset: u16,
+    std_send_mbx_size: u16,
+    mbx_protocol: MailboxProtocolSupported,
+};
+
 pub const SubdeviceIdentity = packed struct {
     vendor_id: u32,
     product_code: u32,
@@ -181,7 +205,7 @@ pub const CatagoryGeneral = packed struct {
     group_idx: u8,
     /// image name (vendor specific), index to STRINGS
     image_idx: u8,
-    /// order idx (vnedor specific), index to STRINGS
+    /// order idx (vendor specific), index to STRINGS
     order_idx: u8,
     /// device name information (vendor specific), index to STRINGS
     name_idx: u8,
@@ -301,6 +325,8 @@ pub const FindCatagoryResult = struct {
     byte_length: u17,
 };
 
+pub const SIIString = std.BoundedArray(u8, 255);
+
 pub fn readSIIString(
     port: *Port,
     station_address: u16,
@@ -308,7 +334,7 @@ pub fn readSIIString(
     retries: u32,
     recv_timeout_us: u32,
     eeprom_timeout_us: u32,
-) !?std.BoundedArray(u8, 255) {
+) !?SIIString {
     if (index == 0) {
         return null;
     }
@@ -334,7 +360,6 @@ pub fn readSIIString(
         var reader = stream.reader();
 
         const n_strings: u8 = try reader.readByte();
-        std.log.info("sii strings n_strings: {}", .{n_strings});
 
         if (n_strings < index) {
             return null;
@@ -344,11 +369,9 @@ pub fn readSIIString(
         var str_len: u8 = undefined;
         for (0..index) |_| {
             str_len = try reader.readByte();
-            std.log.info("sii strings str len: {}", .{str_len});
             try reader.readNoEof(string_buf[0..str_len]);
-            std.log.info("sii strings str: {s}", .{string_buf[0..str_len]});
         } else {
-            var arr = try std.BoundedArray(u8, 255).init(0);
+            var arr = try SIIString.init(0);
             try arr.appendSlice(string_buf[0..str_len]);
             return arr;
         }
@@ -356,6 +379,41 @@ pub fn readSIIString(
     } else {
         return null;
     }
+}
+
+pub fn readGeneralCatagory(port: *Port, station_address: u16, retries: u32, recv_timeout_us: u32, eeprom_timeout_us: u32) !?CatagoryGeneral {
+    const gen_catagory = try findCatagoryFP(
+        port,
+        station_address,
+        CatagoryType.general,
+        3,
+        recv_timeout_us,
+        eeprom_timeout_us,
+    );
+
+    if (gen_catagory) |catagory| {
+        if (catagory.byte_length < @divExact(@bitSizeOf(CatagoryGeneral), 8)) {
+            std.log.err(
+                "Subdevice station addr: 0x{x} has invalid eeprom sii general length: {}. Expected >= {}",
+                .{ station_address, catagory.byte_length, @divExact(@bitSizeOf(CatagoryGeneral), 8) },
+            );
+            return error.InvalidSubdeviceEEPROM;
+        }
+
+        const general = try readSIIFP_ps(
+            port,
+            CatagoryGeneral,
+            station_address,
+            catagory.word_address,
+            retries,
+            recv_timeout_us,
+            eeprom_timeout_us,
+        );
+        return general;
+    } else {
+        return null;
+    }
+    unreachable;
 }
 
 /// find the word address of a catagory in the eeprom, uses station addressing.
@@ -378,10 +436,7 @@ pub fn findCatagoryFP(port: *Port, station_address: u16, catagory: CatagoryType,
     for (0..1000) |_| {
         const catagory_header = try nic.packFromECatReader(CatagoryHeader, reader.any());
 
-        std.log.info("station_address: 0x{x}, got catagory header: {}", .{ station_address, catagory_header });
-
         if (catagory_header.catagory_type == catagory) {
-            std.log.info("found catagory: {}", .{catagory_header});
             // + 2 for catagory header, byte length = 2 * word length
             // return .{ .word_address = word_address + 2, .byte_length = word_address << 1 };
             return .{ .word_address = stream.eeprom_address, .byte_length = catagory_header.word_size << 1 };
@@ -394,7 +449,6 @@ pub fn findCatagoryFP(port: *Port, station_address: u16, catagory: CatagoryType,
         }
         unreachable;
     } else {
-        std.log.err("SII catagory {} not found.", .{catagory});
         return null;
     }
 }

@@ -8,12 +8,12 @@ const commands = @import("commands.zig");
 const esc = @import("esc.zig");
 const sii = @import("sii.zig");
 const assert = std.debug.assert;
-const BusConfiguration = @import("configuration.zig").BusConfiguration;
-const SubdeviceRuntimeInfo = @import("configuration.zig").SubdeviceRuntimeInfo;
+const config = @import("config.zig");
+const SubdeviceRuntimeInfo = config.SubdeviceRuntimeInfo;
 const SIIStream = @import("sii.zig").SIIStream;
 
 pub const MainDeviceSettings = struct {
-    timeout_recv_us: u32 = 2000,
+    recv_timeout_us: u32 = 2000,
     retries: u32 = 3,
     eeprom_timeout_us: u32 = 10000,
 };
@@ -21,13 +21,13 @@ pub const MainDeviceSettings = struct {
 pub const MainDevice = struct {
     port: *Port,
     settings: MainDeviceSettings,
-    bus_config: BusConfiguration,
+    bus_config: config.BusConfiguration,
     bus: []SubdeviceRuntimeInfo,
 
     pub fn init(
         port: *Port,
         settings: MainDeviceSettings,
-        bus_config: BusConfiguration,
+        bus_config: config.BusConfiguration,
         bus: []SubdeviceRuntimeInfo,
     ) MainDevice {
         assert(bus_config.subdevices.len > 0); // no subdevices  in config
@@ -65,7 +65,7 @@ pub const MainDevice = struct {
                     .autoinc_address = 0,
                     .offset = @intFromEnum(esc.RegisterMap.AL_control),
                 },
-                self.settings.timeout_recv_us,
+                self.settings.recv_timeout_us,
             );
         }
         // count subdevices
@@ -77,7 +77,7 @@ pub const MainDevice = struct {
                 .offset = 0,
             },
             &dummy_data,
-            self.settings.timeout_recv_us,
+            self.settings.recv_timeout_us,
         );
         std.log.info("detected {} subdevices", .{wkc});
         if (wkc != self.bus_config.subdevices.len) {
@@ -99,7 +99,7 @@ pub const MainDevice = struct {
                     .autoinc_address = autoinc_address,
                     .offset = @intFromEnum(esc.RegisterMap.station_address),
                 },
-                self.settings.timeout_recv_us,
+                self.settings.recv_timeout_us,
             );
             if (wkc != 1) {
                 std.log.err("WKCError on station address config: expected wkc 1, got {}.", .{wkc});
@@ -110,156 +110,10 @@ pub const MainDevice = struct {
             }
         }
 
-        for (self.bus_config.subdevices, 0..) |expected_subdevice, position| {
-            assert(self.bus[position].station_address != null); // should be set prior
-
-            // check subdevice identities
-            const identity = try sii.readSIIFP_ps(
-                self.port,
-                sii.SubdeviceIdentity,
-                self.bus[position].station_address.?,
-                @intFromEnum(sii.ParameterMap.vendor_id),
-                self.settings.retries,
-                self.settings.timeout_recv_us,
-                self.settings.eeprom_timeout_us,
-            );
-            std.log.info(
-                "Identified subdevice pos: {}, vendor id: 0x{x}, product code: 0x{x}, revision: 0x{x}",
-                .{
-                    i,
-                    identity.vendor_id,
-                    identity.product_code,
-                    identity.revision_number,
-                },
-            );
-
-            if (identity.vendor_id != expected_subdevice.vendor_id or
-                identity.product_code != expected_subdevice.product_code or
-                identity.revision_number != expected_subdevice.revision_number)
-            {
-                std.log.err(
-                    "Identified subdevice pos: {}, vendor id: 0x{x}, product code: 0x{x}, revision: 0x{x}, expected vendor id: 0x{x}, product code: 0x{x}, revision: 0x{x}",
-                    .{
-                        position,
-                        identity.vendor_id,
-                        identity.product_code,
-                        identity.revision_number,
-                        expected_subdevice.vendor_id,
-                        expected_subdevice.product_code,
-                        expected_subdevice.revision_number,
-                    },
-                );
-                return error.UnexpectedSubdevice;
-            }
-
-            const gen_catagory = try sii.findCatagoryFP(
-                self.port,
-                self.bus[position].station_address.?,
-                sii.CatagoryType.general,
-                3,
-                self.settings.timeout_recv_us,
-                10000,
-            );
-
-            if (gen_catagory) |catagory| {
-                if (catagory.byte_length < @divExact(@bitSizeOf(sii.CatagoryGeneral), 8)) {
-                    std.log.err(
-                        "Subdevice station addr: 0x{x} has invalid eeprom sii general length: {}. Expected >= {}",
-                        .{ self.bus[position].station_address.?, catagory.byte_length, @divExact(@bitSizeOf(sii.CatagoryGeneral), 8) },
-                    );
-                    return error.InvalidSubdeviceEEPROM;
-                }
-
-                const general = try sii.readSIIFP_ps(
-                    self.port,
-                    sii.CatagoryGeneral,
-                    self.bus[position].station_address.?,
-                    catagory.word_address,
-                    self.settings.retries,
-                    self.settings.timeout_recv_us,
-                    self.settings.eeprom_timeout_us,
-                );
-
-                if (general.name_idx != 0) {
-                    const name = try sii.readSIIString(
-                        self.port,
-                        self.bus[position].station_address.?,
-                        general.name_idx,
-                        self.settings.retries,
-                        self.settings.timeout_recv_us,
-                        self.settings.eeprom_timeout_us,
-                    );
-                    if (name) |name_res| {
-                        std.log.info("subdevice station addr: 0x{x}, name: {s}", .{ self.bus[position].station_address.?, name_res.slice() });
-                    }
-                }
-
-                std.log.info("subdevice station addr: 0x{x}, general: {}", .{ self.bus[position].station_address.?, general });
-            }
-
-            const str_catagory = try sii.findCatagoryFP(
-                self.port,
-                self.bus[position].station_address.?,
-                sii.CatagoryType.strings,
-                3,
-                self.settings.timeout_recv_us,
-                10000,
-            );
-
-            if (str_catagory) |catagory| {
-                if (catagory.byte_length < @divExact(@bitSizeOf(sii.CatagoryString), 8)) {
-                    std.log.err(
-                        "Subdevice station addr: 0x{x} has invalid eeprom sii string length: {}. Expected >= {}",
-                        .{ self.bus[position].station_address.?, catagory.byte_length, @divExact(@bitSizeOf(sii.CatagoryString), 8) },
-                    );
-                    return error.InvalidSubdeviceEEPROM;
-                }
-
-                const str = try sii.readSIIFP_ps(
-                    self.port,
-                    sii.CatagoryString,
-                    self.bus[position].station_address.?,
-                    catagory.word_address,
-                    self.settings.retries,
-                    self.settings.timeout_recv_us,
-                    self.settings.eeprom_timeout_us,
-                );
-
-                std.log.info("subdevice station addr: 0x{x}, str: {}", .{ self.bus[position].station_address.?, str });
-
-                //for (0..str.n_strings) |_| {}
-
-                var stream = SIIStream.init(
-                    self.port,
-                    self.bus[position].station_address.?,
-                    @intFromEnum(sii.ParameterMap.vendor_id),
-                    self.settings.retries,
-                    self.settings.timeout_recv_us,
-                    self.settings.eeprom_timeout_us,
-                );
-
-                var reader = stream.reader();
-
-                var bytes = std.mem.zeroes([16]u8);
-                const n_bytes = try reader.read(&bytes);
-
-                std.log.info("n bytes: {}, bytes {any}", .{ n_bytes, bytes });
-            }
+        for (self.bus_config.subdevices, self.bus) |expected_subdevice, *runtime_info| {
+            try self.subdevice_init(expected_subdevice, runtime_info);
         }
 
-        // TODO: write-mailbox address and size
-        // TODO: read-mailbox offset
-        // TODO: read-mailbox length
-        // TODO: mailbox protocols
-        // TODO: DC support
-        // TODO: topology
-        // TODO: physical type
-        // TODO: active ports
-
-        // TODO: require transition to init
-
-        // TODO: default mailbox configuration
-        // TODO: SII
         // read state of subdevices
         var state_check = zerosFromPack(esc.ALStatusRegister);
         wkc = try commands.BRD(
@@ -269,12 +123,120 @@ pub const MainDevice = struct {
                 .offset = @intFromEnum(esc.RegisterMap.AL_status),
             },
             &state_check,
-            self.settings.timeout_recv_us,
+            self.settings.recv_timeout_us,
         );
         const state_check_res = packFromECat(esc.ALStatusRegister, state_check);
         std.log.warn("state check: {}", .{state_check_res});
 
         // return wkc;
+    }
+
+    /// The maindevice should perform these tasks before commanding the IP transition in the subdevice.
+    ///
+    /// Clear FMMUs.
+    /// Clear SMs.
+    /// Set fixed physical address.
+    /// Set SM0 for mailbox out.
+    /// Set SM1 for mailbox in.
+    ///
+    /// If DCSupported, setup DC system time:
+    /// Delay compensation
+    /// Offset compensation
+    /// Static drive compensation
+    ///
+    ///
+    /// Ref: EtherCAT Device Protocol Poster
+    fn subdevice_IP_tasks(self: *MainDevice, expected_subdevice: config.Subdevice, runtime_info: *SubdeviceRuntimeInfo) !void {
+        assert(runtime_info.station_address != null); // should be set prior
+
+        const info = try sii.readSIIFP_ps(
+            self.port,
+            sii.SubdeviceInfoCompact,
+            runtime_info.station_address.?,
+            @intFromEnum(sii.ParameterMap.PDI_control),
+            self.settings.retries,
+            self.settings.recv_timeout_us,
+            self.settings.eeprom_timeout_us,
+        );
+        runtime_info.info = info;
+
+        if (info.vendor_id != expected_subdevice.vendor_id or
+            info.product_code != expected_subdevice.product_code or
+            info.revision_number != expected_subdevice.revision_number)
+        {
+            std.log.err(
+                "Identified subdevice: vendor id: 0x{x}, product code: 0x{x}, revision: 0x{x}, expected vendor id: 0x{x}, product code: 0x{x}, revision: 0x{x}",
+                .{
+                    info.vendor_id,
+                    info.product_code,
+                    info.revision_number,
+                    expected_subdevice.vendor_id,
+                    expected_subdevice.product_code,
+                    expected_subdevice.revision_number,
+                },
+            );
+            return error.UnexpectedSubdevice;
+        }
+        const dl_info_res = try commands.FPRD_ps(
+            self.port,
+            esc.DLInformationRegister,
+            .{
+                .station_address = runtime_info.station_address.?,
+                .offset = @intFromEnum(esc.RegisterMap.DL_information),
+            },
+            self.settings.recv_timeout_us,
+        );
+        if (dl_info_res.wkc == 1) {
+            runtime_info.dl_info = dl_info_res.ps;
+        } else {
+            return error.WKCError;
+        }
+
+        runtime_info.general = try sii.readGeneralCatagory(
+            self.port,
+            runtime_info.station_address.?,
+            self.settings.retries,
+            self.settings.recv_timeout_us,
+            self.settings.eeprom_timeout_us,
+        );
+
+        if (runtime_info.general) |general| {
+            runtime_info.order_id = try sii.readSIIString(
+                self.port,
+                runtime_info.station_address.?,
+                general.order_idx,
+                self.settings.retries,
+                self.settings.recv_timeout_us,
+                self.settings.eeprom_timeout_us,
+            );
+
+            runtime_info.name = try sii.readSIIString(
+                self.port,
+                runtime_info.station_address.?,
+                general.name_idx,
+                self.settings.retries,
+                self.settings.recv_timeout_us,
+                self.settings.eeprom_timeout_us,
+            );
+
+            // std.log.info("subdevice station addr: 0x{x}, general: {}", .{ runtime_info.station_address.?, general });
+        }
+
+        var order_id: ?[]const u8 = null;
+        if (runtime_info.order_id) |order_id_array| {
+            order_id = order_id_array.slice();
+        }
+
+        std.log.warn("0x{x}: {s}", .{ runtime_info.station_address.?, order_id orelse "null" });
+        std.log.warn("    DCSupported: {}", .{runtime_info.dl_info.?.DCSupported});
+        // TODO: topology
+        // TODO: physical type
+        // TODO: active ports
+
+        // TODO: require transition to init
+
+        // TODO: default mailbox configuration
+        // TODO: SII
     }
 
     /// Put the bus in a known good starting configuration.
@@ -295,7 +257,7 @@ pub const MainDevice = struct {
                 .autoinc_address = 0,
                 .offset = @intFromEnum(esc.RegisterMap.DL_control),
             },
-            self.settings.timeout_recv_us,
+            self.settings.recv_timeout_us,
         );
         std.log.info("bus wipe open all ports wkc: {}", .{wkc});
 
@@ -322,7 +284,7 @@ pub const MainDevice = struct {
                     esc.RegisterMap.rx_error_counter,
                 ),
             },
-            self.settings.timeout_recv_us,
+            self.settings.recv_timeout_us,
         );
         std.log.info("bus wipe reset crc counters wkc: {}", .{wkc});
 
@@ -337,7 +299,7 @@ pub const MainDevice = struct {
                 ),
             },
             &zero_fmmus,
-            self.settings.timeout_recv_us,
+            self.settings.recv_timeout_us,
         );
         std.log.info("bus wipe zero fmmus wkc: {}", .{wkc});
 
@@ -352,7 +314,7 @@ pub const MainDevice = struct {
                 ),
             },
             &zero_sms,
-            self.settings.timeout_recv_us,
+            self.settings.recv_timeout_us,
         );
         std.log.info("bus wipe zero sms wkc: {}", .{wkc});
 
@@ -371,7 +333,7 @@ pub const MainDevice = struct {
                 .autoinc_address = 0,
                 .offset = @intFromEnum(esc.RegisterMap.DL_control_enable_alias_address),
             },
-            self.settings.timeout_recv_us,
+            self.settings.recv_timeout_us,
         );
         std.log.info("bus wipe disable alias wkc: {}", .{wkc});
 
@@ -387,7 +349,7 @@ pub const MainDevice = struct {
                 .autoinc_address = 0,
                 .offset = @intFromEnum(esc.RegisterMap.AL_control),
             },
-            self.settings.timeout_recv_us,
+            self.settings.recv_timeout_us,
         );
         std.log.info("bus wipe INIT wkc: {}", .{wkc});
 
@@ -402,7 +364,7 @@ pub const MainDevice = struct {
                 .autoinc_address = 0,
                 .offset = @intFromEnum(esc.RegisterMap.SII_access),
             },
-            self.settings.timeout_recv_us,
+            self.settings.recv_timeout_us,
         );
         std.log.info("bus wipe force eeprom wkc: {}", .{wkc});
 
@@ -417,39 +379,10 @@ pub const MainDevice = struct {
                 .autoinc_address = 0,
                 .offset = @intFromEnum(esc.RegisterMap.SII_access),
             },
-            self.settings.timeout_recv_us,
+            self.settings.recv_timeout_us,
         );
         std.log.info("bus wipe eeprom control to maindevice wkc: {}", .{wkc});
     }
-
-    // pub fn scan(self: *MainDevice) !void {
-    //     const wkc = try self.detect_subdevices();
-
-    //     if (wkc == 0) {
-    //         return error.NoSubdevicesFound;
-    //     }
-    //     var i: u16 = 0;
-    //     while (i < wkc) : (i += 1) {
-    //         const identity = try sii.readSII_ps(
-    //             self.port,
-    //             sii.SubdeviceIdentity,
-    //             calc_autoinc_addr(i),
-    //             @intFromEnum(sii.ParameterMap.vendor_id),
-    //             3,
-    //             self.settings.timeout_recv_us,
-    //             10000,
-    //         );
-    //         std.log.info(
-    //             "pos: {}, vendor id: 0x{x}, product code: 0x{x}, revision: 0x{x}",
-    //             .{
-    //                 i,
-    //                 identity.vendor_id,
-    //                 identity.product_code,
-    //                 identity.revision_number,
-    //             },
-    //         );
-    //     }
-    // }
 };
 
 /// Calcuate the auto increment address of a subdevice

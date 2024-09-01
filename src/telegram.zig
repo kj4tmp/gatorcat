@@ -53,12 +53,12 @@ pub const Command = enum(u8) {
     /// matches one of the FMMU areas configured for reading.
     LRD,
     /// Logical memory write.
-    /// Subdevices write data to their memory area if the address received matches one of
+    /// SubDevices write data to their memory area if the address received matches one of
     /// the FMMU areas configured for writing.
     LWR,
     /// Logical memory read write.
     /// A subdevice writes data it has read to the EtherCAT datagram if the address received
-    /// matches one of the FMMU areas configured for reading. Subdevices write data to their memory area
+    /// matches one of the FMMU areas configured for reading. SubDevices write data to their memory area
     /// if the address received matches one of the FMMU areas configured for writing.
     LRW,
     /// Auto increment physical read multiple write.
@@ -135,7 +135,7 @@ pub const MailboxHeader = packed struct {
     /// counter for the mailbox services
     /// zero is reserved. 1 is start value. next value after 7 is 1.
     ///
-    /// Subdevice shall increment the counter for each new mailbox service. The maindevice
+    /// SubDevice shall increment the counter for each new mailbox service. The maindevice
     /// shall check this for detection of lost mailbox services. The maindevice shall
     /// increment the counter value before retrying and the subdevice shall check for this
     /// for detection of repeat service. The subdevice shall not check the sequence of the

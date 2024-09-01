@@ -1,3 +1,5 @@
+const std = @import("std");
+
 pub const RegisterMap = enum(u16) {
     DL_information = 0x0000,
     station_address = 0x0010,
@@ -42,7 +44,7 @@ pub const PortDescriptor = enum(u2) {
     MII_RMII,
 };
 
-/// Subdevice Information (DL Info)
+/// SubDevice Information (DL Info)
 ///
 /// The DL information registers contain type, version, and supported resources of the subdevice controller (ESC).
 ///
@@ -474,7 +476,7 @@ pub const SIIAccessOwner = enum(u1) {
     PDI = 1,
 };
 
-/// Subdevice Information Interface (SII) Access Register
+/// SubDevice Information Interface (SII) Access Register
 ///
 /// Ref: IEC 61158-4-12:2019 6.4.2
 pub const SIIAccessRegister = packed struct {
@@ -693,20 +695,16 @@ pub const SyncMangagerBufferedState = enum(u2) {
     buffer_locked = 0x03,
 };
 
-/// Sync Manager Attributes (Channels)
-///
-/// Configuration of a single sync manager.
-///
-/// Ref: IEC 61158-4-12:2019 6.7.2
-pub const SyncManagerAttributes = packed struct {
-    physical_start_address: u16,
-    length: u16,
+pub const SyncManagerControlRegister = packed struct(u8) {
     buffer_type: SyncManagerBufferType,
     direction: SyncManagerDirection,
     ECAT_event_enable: bool,
     DLS_user_event_enable: bool,
     watchdog_enable: bool,
     reserved: u1 = 0,
+};
+
+pub const SyncManagerStatusRegister = packed struct(u8) {
     write_event: bool,
     read_event: bool,
     reserved2: u1 = 0,
@@ -714,14 +712,80 @@ pub const SyncManagerAttributes = packed struct {
     buffered_state: SyncMangagerBufferedState,
     read_buffer_open: bool,
     write_buffer_open: bool,
+};
+pub const SyncManagerActivateRegister = packed struct(u8) {
     channel_enable: bool,
     repeat: bool,
     reserved3: u4 = 0,
     DC_event_0_bus_access: bool,
     DC_event_0_local_access: bool,
+};
+
+/// Sync Manager Attributes (Channels)
+///
+/// Configuration of a single sync manager.
+///
+/// Ref: IEC 61158-4-12:2019 6.7.2
+pub const SyncManagerAttributes = packed struct(u64) {
+    physical_start_address: u16,
+    length: u16,
+    control: SyncManagerControlRegister,
+    status: SyncManagerStatusRegister,
+    activate: SyncManagerActivateRegister,
     channel_enable_PDI: bool,
     repeat_ack: bool,
     reserved4: u6 = 0,
+
+    pub fn SM0_default_mbx(
+        physical_start_address: u16,
+        length: u16,
+    ) SyncManagerAttributes {
+        return SyncManagerAttributes{
+            .physical_start_address = physical_start_address,
+            .length = length,
+            .control = .{
+                .buffer_type = .mailbox,
+                .direction = .output,
+                .ECAT_event_enable = false,
+                .DLS_user_event_enable = true,
+                .watchdog_enable = false,
+            },
+            .status = @bitCast(@as(u8, 0)),
+            .activate = .{
+                .channel_enable = true,
+                .repeat = false,
+                .DC_event_0_bus_access = false,
+                .DC_event_0_local_access = false,
+            },
+            .channel_enable_PDI = false,
+            .repeat_ack = false,
+        };
+    }
+    pub fn SM1_default_mbx(
+        physical_start_address: u16,
+        length: u16,
+    ) SyncManagerAttributes {
+        return SyncManagerAttributes{
+            .physical_start_address = physical_start_address,
+            .length = length,
+            .control = .{
+                .buffer_type = .mailbox,
+                .direction = .input,
+                .ECAT_event_enable = false,
+                .DLS_user_event_enable = true,
+                .watchdog_enable = false,
+            },
+            .status = @bitCast(@as(u8, 0)),
+            .activate = .{
+                .channel_enable = true,
+                .repeat = false,
+                .DC_event_0_bus_access = false,
+                .DC_event_0_local_access = false,
+            },
+            .channel_enable_PDI = false,
+            .repeat_ack = false,
+        };
+    }
 };
 
 /// Sync Manager Register

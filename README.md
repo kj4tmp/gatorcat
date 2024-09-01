@@ -14,6 +14,8 @@ This library is in extremely early development.
 2. Packed structs are not well described in the language reference
 3. Where to I look for the implementation of flags.parse? root.zig? I don't know where
 anything is!
+4. Cannot have arrays in packed structs. (See SM and FMMU structs).
+5. For loops over slices / arrays: I have to loop up the syntax every time.
 
 ### zig wins
 
@@ -52,7 +54,7 @@ Do you think this is a good idea? This perhaps uses the features of zig's compti
 Here is some pseudo code:
 
 ```zig
-const Subdevice = struct {
+const SubDevice = struct {
 
     // this information serves only to identify the subdevice
     // in the network (provided by subdevice datasheet)
@@ -76,7 +78,7 @@ const Subdevice = struct {
 };
 
 // an example configuraion for a subdevice
-const EK1100Configuration = Subdevice{
+const EK1100Configuration = SubDevice{
     .vendor_id = 0x2,
     .product_code = 0x44c2c52,
     .revision_number = 0x110000,
@@ -88,7 +90,7 @@ const EK1100Configuration = Subdevice{
 
 // this is a module with 8 digital outputs, bit packed into a
 // single byte
-const EL2008Configuration = Subdevice{
+const EL2008Configuration = SubDevice{
     .vendor_id = 0x2,
     .product_code = 0xaa34da,
     .revision_number = 0x100000,
@@ -103,7 +105,7 @@ const EL2008Configuration = Subdevice{
 pub const BusConfiguration = struct {
     // the order of the subdevices in the ring is based on the order in
     // this array
-    subdevices: []Subdevice,
+    subdevices: []SubDevice,
     // bunch of other configuration parameters etc.
 };
 

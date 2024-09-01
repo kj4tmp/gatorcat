@@ -9,9 +9,9 @@ const sii = @import("sii.zig");
 
 pub const Transition = enum { IP, PS, PI, SP, SO, SI, OS, OP, OI, IB, BI, II, PP, SS };
 
-pub const SubdeviceRuntimeInfo = struct {
-    // info gathered at runtime from bus,
-    // will be filled in when available
+// info gathered at runtime from bus,
+// will be filled in when available
+pub const SubDeviceRuntimeInfo = struct {
     autoinc_address: ?u16 = null,
     station_address: ?u16 = null,
     status: ?esc.ALStatusRegister = null,
@@ -20,10 +20,16 @@ pub const SubdeviceRuntimeInfo = struct {
     dl_info: ?esc.DLInformationRegister = null,
 
     /// first part of the SII
-    info: ?sii.SubdeviceInfoCompact = null,
+    info: ?sii.SubDeviceInfoCompact = null,
 
     /// SII General Catagory
     general: ?sii.CatagoryGeneral = null,
+
+    /// Syncmanager configurations
+    sms: ?esc.SMRegister = null,
+
+    /// FMMU configurations
+    fmmus: ?[16]?sii.FMMUFunction = null,
 
     /// name string from the SII
     name: ?sii.SIIString = null,
@@ -31,7 +37,7 @@ pub const SubdeviceRuntimeInfo = struct {
     order_id: ?sii.SIIString = null,
 };
 
-pub const Subdevice = struct {
+pub const SubDevice = struct {
 
     // information required to be entered by user
     vendor_id: u32,
@@ -40,5 +46,5 @@ pub const Subdevice = struct {
 };
 
 pub const BusConfiguration = struct {
-    subdevices: []const Subdevice,
+    subdevices: []const SubDevice,
 };

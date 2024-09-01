@@ -305,7 +305,7 @@ test "eCatFromPack" {
     );
 }
 
-pub fn packFromECatReader(comptime T: type, reader: std.io.AnyReader) !T {
+pub fn packFromECatReader(comptime T: type, reader: anytype) !T {
     var bytes: [@divExact(@bitSizeOf(T), 8)]u8 = undefined;
     try reader.readNoEof(&bytes);
     return packFromECat(T, bytes);

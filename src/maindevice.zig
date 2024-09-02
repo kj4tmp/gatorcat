@@ -280,7 +280,7 @@ pub const MainDevice = struct {
     /// [ ] Set DC start time.
     /// [ ] Set DC SYNC OUT unit.
     /// [ ] Set DC LATCH IN unit.
-    /// [ ] Start continuous drive compensation.
+    /// [ ] Start continuous drift compensation.
     ///
     /// Start:
     /// [ ] Cyclic Process Data
@@ -307,7 +307,7 @@ pub const MainDevice = struct {
     /// TODO: If DCSupported, setup DC system time:
     /// [ ] Delay compensation
     /// [ ] Offset compensation
-    /// [ ] Static drive compensation
+    /// [ ] Static drift compensation
     ///
     ///
     /// Ref: EtherCAT Device Protocol Poster

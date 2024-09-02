@@ -7,6 +7,7 @@ This library is in extremely early development.
 ## Status
 
 - [ ] OS/HW Support
+  - [x] Big / Little Endianness
   - [x] linux
     - [x] link layers
       - [x] raw socket

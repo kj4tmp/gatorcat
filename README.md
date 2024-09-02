@@ -73,26 +73,26 @@ This library is in extremely early development.
       - [ ] Delay compensation
       - [ ] Offset compensation
       - [ ] Static drift compensation
-    - [ ] PREOP -> SAFEOP
-      - [ ] Set configuration objects via SDO.
-      - [ ] Set RxPDO / TxPDO Assignment.
-      - [ ] Set RxPDO / TxPDO Mapping.
-      - [ ] Set SM2 for outputs.
-      - [ ] Set SM3 for inputs.
-      - [ ] Set FMMU0 (map outputs).
-      - [ ] Set FMMU1 (map inputs).
-      - [ ] DC Configuration
-        - [ ] Configure Sync/LATCH unit.
-        - [ ] Set SYNC cycle time.
-        - [ ] Set DC start time.
-        - [ ] Set DC SYNC OUT unit.
-        - [ ] Set DC LATCH IN unit.
-        - [ ] Start continuous drive compensation.
-      - [ ] Begin cyclic process data.
-      - [ ] Provide valid inputs.
-    - [ ] SAFEOP -> OP
-      - [ ] Provide valid outputs.
-      - [ ] Maintain DC synchronization.
+  - [ ] PREOP -> SAFEOP
+    - [ ] Set configuration objects via SDO.
+    - [ ] Set RxPDO / TxPDO Assignment.
+    - [ ] Set RxPDO / TxPDO Mapping.
+    - [ ] Set SM2 for outputs.
+    - [ ] Set SM3 for inputs.
+    - [ ] Set FMMU0 (map outputs).
+    - [ ] Set FMMU1 (map inputs).
+    - [ ] DC Configuration
+      - [ ] Configure Sync/LATCH unit.
+      - [ ] Set SYNC cycle time.
+      - [ ] Set DC start time.
+      - [ ] Set DC SYNC OUT unit.
+      - [ ] Set DC LATCH IN unit.
+      - [ ] Start continuous drive compensation.
+    - [ ] Begin cyclic process data.
+    - [ ] Provide valid inputs.
+  - [ ] SAFEOP -> OP
+    - [ ] Provide valid outputs.
+    - [ ] Maintain DC synchronization.
 
 
 

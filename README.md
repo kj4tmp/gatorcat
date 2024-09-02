@@ -4,7 +4,6 @@ An EtherCAT MainDevice written in pure Zig.
 
 This library is in extremely early development.
 
-
 ## Status
 
 - [ ] OS/HW Support
@@ -94,14 +93,6 @@ This library is in extremely early development.
     - [ ] Provide valid outputs.
     - [ ] Maintain DC synchronization.
 
-
-
-
-    
-
-
-
-
 ## Notes
 
 ### zig annoyances
@@ -119,5 +110,3 @@ big endian archs tests:
 
 1. sudo apt install qemu-system-ppc qemu-utils binfmt-support qemu-user-static
 2. zig build -fqemu -Dtarget=powerpc64-linux test --summary all
-
-

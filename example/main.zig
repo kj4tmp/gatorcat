@@ -5,6 +5,7 @@ const MainDevice = @import("ecm").MainDevice;
 const BusConfiguration = @import("ecm").BusConfiguration;
 const SubDevice = @import("ecm").SubDevice;
 const SubDeviceRuntimeInfo = @import("ecm").SubDeviceRuntimeInfo;
+const coe = @import("ecm").coe;
 
 pub const std_options = .{
     .log_level = .info,
@@ -37,4 +38,5 @@ pub fn main() !void {
 
     try main_device.busINIT();
     try main_device.busPREOP();
+    try main_device.busSAFEOP();
 }

@@ -12,6 +12,7 @@ const config = @import("config.zig");
 const SubDeviceRuntimeInfo = config.SubDeviceRuntimeInfo;
 const SIIStream = @import("sii.zig").SIIStream;
 const subdevice = @import("subdevice.zig");
+const coe = @import("coe.zig");
 
 pub const MainDeviceSettings = struct {
     recv_timeout_us: u32 = 2000,
@@ -262,7 +263,17 @@ pub const MainDevice = struct {
         // return wkc;
     }
 
-    // pub fn busSAFEOP(self: *MainDevice) !void {}
+    pub fn busSAFEOP(self: *MainDevice) !void {
+        try coe.sdoReadExpedited(
+            self.port,
+            0x1001,
+            0x0,
+            0x0,
+            0x0,
+            self.settings.recv_timeout_us,
+            3000,
+        );
+    }
 
     /// The maindevice should perform these tasks before commanding the PS transision.
     ///
@@ -414,9 +425,6 @@ pub const MainDevice = struct {
             order_id = order_id_array.slice();
         }
 
-        std.log.info("0x{x}: {s}", .{ runtime_info.station_address.?, order_id orelse "null" });
-        std.log.info("    DCSupported: {}", .{runtime_info.dl_info.?.DCSupported});
-
         // reset FMMUs
         var zero_fmmus = zerosFromPack(esc.FMMURegister);
         wkc = try commands.FPWR(
@@ -452,13 +460,18 @@ pub const MainDevice = struct {
         }
 
         // Set default syncmanager configurations from sii info section
+
+        // Set default syncmanager configurations.
+        // If mailbox is supported:
+        // SM0 should be used for Mailbox Out (from maindevice)
+        // SM1 should be used for Mailbox In (from maindevice)
         runtime_info.sms = std.mem.zeroes(esc.SMRegister);
-        if (info.std_recv_mbx_offset > 0) {
-            runtime_info.sms.?.SM0 = esc.SyncManagerAttributes.SM0_default_mbx(
+        if (info.std_recv_mbx_offset > 0) { // mbx supported?
+            runtime_info.sms.?.SM0 = esc.SyncManagerAttributes.mbxOutDefaults(
                 info.bootstrap_recv_mbx_offset,
                 info.std_recv_mbx_size,
             );
-            runtime_info.sms.?.SM1 = esc.SyncManagerAttributes.SM1_default_mbx(
+            runtime_info.sms.?.SM1 = esc.SyncManagerAttributes.mbxInDefaults(
                 info.bootstrap_send_mbx_offset,
                 info.std_send_mbx_size,
             );
@@ -474,13 +487,8 @@ pub const MainDevice = struct {
         if (sii_sms) |sms| {
             runtime_info.sms = sii.escSMsFromSIISMs(sms);
         }
-        // std.log.info("sii sms: {any}", .{
-        //     std.json.fmt(sii_sms, .{
-        //         .whitespace = .indent_4,
-        //     }),
-        // });
 
-        // set SM
+        // write SM configuration to subdevice
         wkc = try commands.FPWR_ps(
             self.port,
             runtime_info.sms.?,
@@ -494,15 +502,7 @@ pub const MainDevice = struct {
             return error.WKCError;
         }
 
-        // runtime_info.sii_sms = try sii.readSMCatagory(
-        //     self.port,
-        //     assigned_station_address,
-        //     self.settings.retries,
-        //     self.settings.recv_timeout_us,
-        //     self.settings.eeprom_timeout_us,
-        // );
-        //std.log.info("sii sms: {any}", .{runtime_info.sms});
-
+        // TODO: FMMUs
         runtime_info.fmmus = try sii.readFMMUCatagory(
             self.port,
             assigned_station_address,
@@ -516,19 +516,40 @@ pub const MainDevice = struct {
         //     }),
         // });
 
-        // set SM0 for mailbox out
-        const has_mailbox: bool = info.std_send_mbx_size > 0;
-        std.log.info("    has mailbox: {}", .{has_mailbox});
-        if (has_mailbox) {} else {}
-
         // TODO: topology
         // TODO: physical type
         // TODO: active ports
 
         // TODO: require transition to init
 
-        // TODO: default mailbox configuration
-        // TODO: SII
+        std.log.info("0x{x}: {s}", .{ runtime_info.station_address.?, order_id orelse "null" });
+        std.log.info("    vendor_id: 0x{x}", .{runtime_info.info.?.vendor_id});
+        std.log.info("    product_code: 0x{x}", .{runtime_info.info.?.product_code});
+        std.log.info("    revision_number: 0x{x}", .{runtime_info.info.?.revision_number});
+        std.log.info("    autoinc_address: 0x{x}", .{runtime_info.autoinc_address.?});
+        std.log.info("    protocols: AoE: {}, EoE: {}, CoE: {}, FoE: {}, SoE: {}, VoE: {}", .{
+            runtime_info.info.?.mbx_protocol.AoE,
+            runtime_info.info.?.mbx_protocol.EoE,
+            runtime_info.info.?.mbx_protocol.CoE,
+            runtime_info.info.?.mbx_protocol.FoE,
+            runtime_info.info.?.mbx_protocol.SoE,
+            runtime_info.info.?.mbx_protocol.VoE,
+        });
+        std.log.info(
+            "    mbx_recv: offset: 0x{x}, size: {}",
+            .{
+                runtime_info.info.?.std_recv_mbx_offset,
+                runtime_info.info.?.std_recv_mbx_size,
+            },
+        );
+        std.log.info(
+            "    mbx_send: offset: 0x{x}, size: {}",
+            .{
+                runtime_info.info.?.std_send_mbx_offset,
+                runtime_info.info.?.std_send_mbx_size,
+            },
+        );
+        std.log.info("    DCSupported: {}", .{runtime_info.dl_info.?.DCSupported});
     }
 };
 

@@ -5,3 +5,5 @@ pub const SubDevice = @import("config.zig").SubDevice;
 pub const SubDeviceRuntimeInfo = @import("config.zig").SubDeviceRuntimeInfo;
 
 pub const SIIStream = @import("sii.zig").SIIStream;
+
+pub const coe = @import("coe.zig");

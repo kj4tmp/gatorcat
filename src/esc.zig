@@ -32,6 +32,21 @@ pub const RegisterMap = enum(u16) {
     MII_access = 0x0516,
     FMMU0 = 0x0600,
     SM0 = 0x0800,
+    SM1 = 0x0800 + 8 * 1,
+    SM2 = 0x0800 + 8 * 2,
+    SM3 = 0x0800 + 8 * 3,
+    SM4 = 0x0800 + 8 * 4,
+    SM5 = 0x0800 + 8 * 5,
+    SM6 = 0x0800 + 8 * 6,
+    SM7 = 0x0800 + 8 * 7,
+    SM8 = 0x0800 + 8 * 8,
+    SM9 = 0x0800 + 8 * 9,
+    SM10 = 0x0800 + 8 * 10,
+    SM11 = 0x0800 + 8 * 11,
+    SM12 = 0x0800 + 8 * 12,
+    SM13 = 0x0800 + 8 * 13,
+    SM14 = 0x0800 + 8 * 14,
+    SM15 = 0x0800 + 8 * 15,
     DC = 0x0900,
     DC_user = 0x0980,
     DC_sync_activation = 0x0981,
@@ -736,7 +751,7 @@ pub const SyncManagerAttributes = packed struct(u64) {
     repeat_ack: bool,
     reserved4: u6 = 0,
 
-    pub fn SM0_default_mbx(
+    pub fn mbxOutDefaults(
         physical_start_address: u16,
         length: u16,
     ) SyncManagerAttributes {
@@ -761,7 +776,7 @@ pub const SyncManagerAttributes = packed struct(u64) {
             .repeat_ack = false,
         };
     }
-    pub fn SM1_default_mbx(
+    pub fn mbxInDefaults(
         physical_start_address: u16,
         length: u16,
     ) SyncManagerAttributes {

@@ -1,6 +1,13 @@
+const std = @import("std");
+const Timer = std.time.Timer;
+const ns_per_us = std.time.ns_per_us;
+const assert = std.debug.assert;
+
 const commands = @import("commands.zig");
 const nic = @import("nic.zig");
 const config = @import("config.zig");
+const esc = @import("esc.zig");
+const telegram = @import("telegram.zig");
 
 /// CoE Services
 ///
@@ -97,7 +104,7 @@ pub const StationAddress = u16;
 /// Mailbox Header
 ///
 /// Ref: IEC 61158-4-12:2019 5.6
-pub const MailboxHeader = packed struct {
+pub const MailboxHeader = packed struct(u48) {
     /// length of mailbox service data
     length: u16,
     address: StationAddress,
@@ -199,11 +206,136 @@ pub const SDOUploadExpeditedResponse = packed struct(u128) {
     data: u32,
 };
 
+/// The maximum mailbox size is limited by the maximum data that can be
+/// read by a single datagram.
+pub const max_mailbox_size = 1486;
+comptime {
+    assert(max_mailbox_size == telegram.max_frame_length - // 1514
+        @divExact(@bitSizeOf(telegram.EthernetHeader), 8) - // u112
+        @divExact(@bitSizeOf(telegram.EtherCATHeader), 8) - // u16
+        @divExact(@bitSizeOf(telegram.DatagramHeader), 8) - // u80
+        @divExact(@bitSizeOf(u16), 8)); // wkc
+}
+
 pub fn sdoReadExpedited(
     port: *nic.Port,
     station_address: u16,
     index: u16,
     subindex: u8,
+    retries: u32,
     recv_timeout_us: u32,
     mbx_timeout_us: u32,
-) !void![4]u8 {}
+) !void {
+    _ = mbx_timeout_us;
+    _ = index;
+    _ = subindex;
+
+    // If mailbox in has got something in it, read mailbox to wipe it.
+    const mbx_in: esc.SyncManagerAttributes = blk: {
+        for (0..retries +% 1) |_| {
+            const sm1_res = try commands.FPRD_ps(
+                port,
+                esc.SyncManagerAttributes,
+                .{
+                    .station_address = station_address,
+                    .offset = @intFromEnum(esc.RegisterMap.SM1),
+                },
+                recv_timeout_us,
+            );
+            if (sm1_res.wkc == 1) {
+                std.log.info("sm1 status: {}", .{sm1_res.ps.status});
+                break :blk sm1_res.ps;
+            }
+        } else {
+            return error.SubDeviceUnresponsive;
+        }
+        unreachable;
+    };
+    // mailbox configured?
+    if (mbx_in.length == 0 or mbx_in.length > max_mailbox_size) {
+        return error.InvalidMailboxConfiguration;
+    }
+
+    if (mbx_in.status.mailbox_full) {
+        var buf = std.mem.zeroes([max_mailbox_size]u8); // yeet!
+        for (0..retries +% 1) |_| {
+            const wkc = try commands.FPRD(
+                port,
+                .{
+                    .station_address = station_address,
+                    .offset = mbx_in.physical_start_address,
+                },
+                &buf,
+                recv_timeout_us,
+            );
+            if (wkc == 1) {
+                break;
+            }
+        } else {
+            return error.SubDeviceUnresponsive;
+        }
+    }
+
+    const mbx_out: esc.SyncManagerAttributes = blk: {
+        for (0..retries +% 1) |_| {
+            const sm0_res = try commands.FPRD_ps(
+                port,
+                esc.SyncManagerAttributes,
+                .{
+                    .station_address = station_address,
+                    .offset = @intFromEnum(esc.RegisterMap.SM0),
+                },
+                recv_timeout_us,
+            );
+            if (sm0_res.wkc == 1) {
+                std.log.info("sm1 status: {}", .{sm0_res.ps.status});
+                break :blk sm0_res.ps;
+            }
+        } else {
+            return error.SubDeviceUnresponsive;
+        }
+        unreachable;
+    };
+    // mailbox configured?
+    if (mbx_out.length == 0 or mbx_out.length > max_mailbox_size) {
+        return error.InvalidMailboxConfiguration;
+    }
+}
+
+pub fn readMailbox(
+    port: *nic.Port,
+    station_address: u16,
+    retries: u32,
+    recv_timeout_us: u32,
+    mbx_timeout_us: u32,
+) !void {
+    _ = retries;
+    var timer = try Timer.start();
+
+    const mbx_in: esc.SyncManagerAttributes = blk: {
+        while (timer.read() < mbx_timeout_us * ns_per_us) {
+            const sm1_res = try commands.FPRD_ps(
+                port,
+                esc.SyncManagerAttributes,
+                .{
+                    .station_address = station_address,
+                    .offset = @intFromEnum(esc.RegisterMap.SM1),
+                },
+                recv_timeout_us,
+            );
+            if (sm1_res.wkc == 1) {
+                if (sm1_res.ps.status.mailbox_full) {
+                    break :blk sm1_res.ps;
+                }
+            }
+        } else {
+            return error.Timeout;
+        }
+    };
+    assert(mbx_in.status.mailbox_full);
+
+    // mailbox configured?
+    if (mbx_in.length == 0 or mbx_in.length > max_mailbox_size) {
+        return error.InvalidMailboxConfiguration;
+    }
+}

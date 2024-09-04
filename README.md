@@ -115,3 +115,4 @@ big endian archs tests:
 ## TODOs
 
 - [ ] align enums to style guide: <https://github.com/ziglang/zig/issues/2101>
+- [ ] adjust order of declatations in files

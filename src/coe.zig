@@ -46,6 +46,7 @@ pub const CommandSpecifier = enum(u3) {
     download_request = 0x01,
     upload_request_or_response = 0x02,
     download_response = 0x03,
+    abort_transfer_request = 0x04,
     _,
 };
 
@@ -132,30 +133,37 @@ pub const MailboxHeader = packed struct(u48) {
 ///
 /// Ref: IEC 61158-4-12:2019 5.6
 pub const Mailbox = struct {
-    header: MailboxHeader,
+    mbx_header: MailboxHeader,
     /// mailbox service data
     data: []u8,
+};
+
+/// SDO Header for mailbox communication.
+/// Common accross a couple of the mailbox schemas.
+///
+/// Ref: IEC 61158-6-12
+pub const InitSDOHeader = packed struct {
+    size_indicator: bool,
+    transfer_type: TransferType,
+    data_set_size: DataSetSize,
+    /// false: entry addressed with index and subindex will be downloaded.
+    /// true: complete object will be downlaoded. subindex shall be zero (when subindex zero
+    /// is to be included) or one (subindex 0 excluded)
+    complete_access: bool,
+    command: CommandSpecifier,
+    index: u16,
+    /// shall be zero or one if complete access is true.
+    subindex: u8,
 };
 
 /// SDO Download Expedited Request
 ///
 /// Ref: IEC 61158-6-12:2019 5.6.2.1.1
 pub const SDODownloadExpeditedRequest = packed struct(u128) {
-    header: MailboxHeader,
-    coe_header: CoEHeader = .{ .service = .sdo_request },
-    size_specified: bool = true,
-    transfer_type: TransferType = .expedited,
-    data_set_size: DataSetSize,
-    /// false: entry addressed with index and subindex will be downloaded.
-    /// true: complete object will be downlaoded. subindex shall be zero (when subindex zero
-    /// is to be included) or one (subindex 0 excluded)
-    complete_access: bool,
-    /// 0x01 = download request
-    command_specifier: CommandSpecifier = .download_request,
-    index: u16,
-    /// shal be zero or one if complete access is true.
-    subindex: u8,
-    /// 4 bytes, but in current zig, packed structs cannot contain arrays
+    mbx_header: MailboxHeader,
+    coe_header: CoEHeader,
+    sdo_header: InitSDOHeader,
+    /// un-used octets shall be zero.
     data: u32,
 };
 
@@ -163,30 +171,78 @@ pub const SDODownloadExpeditedRequest = packed struct(u128) {
 ///
 /// Ref: IEC 61158-6-12:2019 5.6.2.1.2
 pub const SDODownloadExpeditedResponse = packed struct(u128) {
-    header: MailboxHeader,
-    coe_header: CoEHeader = .{ .service = .sdo_response },
-    size_specified: bool = false,
-    transfer_type: u1 = 0,
-    data_set_size: u2 = 0,
-    complete_access: bool = false,
-    command_specifier: CommandSpecifier = .download_response,
-    index: u16,
-    /// shall be zero or one if complete access is true
-    subindex: u8,
+    mbx_header: MailboxHeader,
+    coe_header: CoEHeader,
+    sdo_header: InitSDOHeader,
     reserved: u32 = 0,
+};
+
+/// SDO Download Normal Request
+///
+/// Ref: IEC 61158-6-12:2019 5.6.2.2.1
+pub const SDODownloadNormalRequest = struct {
+    mbx_header: MailboxHeader,
+    coe_header: CoEHeader,
+    sdo_header: InitSDOHeader,
+    complete_size: u32,
+    data: []u8,
+};
+
+/// SDO Download Normal Response
+///
+/// Ref: IEC 61158-6-12:2019 5.6.2.2.2
+pub const SDODownloadNormalResponse = SDODownloadExpeditedResponse;
+
+pub const SegmentDataSize = enum(u3) {
+    seven_octets = 0x00,
+    six_octets = 0x01,
+    five_octets = 0x02,
+    four_octets = 0x03,
+    three_octets = 0x04,
+    two_octets = 0x05,
+    one_octet = 0x06,
+    zero_octets = 0x07,
+};
+
+/// SDO Segment Header
+///
+/// Ref: IEC 61158-6-12:2019 5.6.2.3.1
+pub const SDOSegmentHeader = packed struct {
+    more_follows: bool,
+    seg_data_size: SegmentDataSize,
+    /// shall toggle with every segment, starting with 0x00
+    toggle: bool,
+    command: CommandSpecifier,
+};
+
+/// SDO Download Seqment Request
+///
+/// Ref: IEC 61158-6-12:2019 5.6.2.3.1
+pub const SDODownloadSegmentRequest = struct {
+    mbx_header: MailboxHeader,
+    coe_header: CoEHeader,
+    seg_header: SDOSegmentHeader,
+    data: []u8,
+};
+
+/// SDO Download Segment Response
+///
+/// Ref: IEC 61158-6-12:2019 5.6.2.3.2
+pub const SDODownloadSegmentResponse = packed struct {
+    mbx_header: MailboxHeader,
+    coe_header: CoEHeader,
+    seg_header: SDOSegmentHeader,
+    /// 7 bytes
+    reserved: u56,
 };
 
 /// SDO Upload Expedited Request
 ///
 /// Ref: IEC 61158-6-12:2019 5.6.2.4.1
 pub const SDOUploadExpeditedRequest = packed struct(u128) {
-    header: MailboxHeader,
-    coe_header: CoEHeader = .{ .service = .sdo_request },
-    reserved: u4 = 0,
-    complete_access: bool,
-    command_specifier: CommandSpecifier = .upload_request_or_response,
-    index: u16,
-    subindex: u8,
+    mbx_header: MailboxHeader,
+    coe_header: CoEHeader,
+    sdo_header: InitSDOHeader,
     reserved2: u32 = 0,
 };
 
@@ -195,15 +251,311 @@ pub const SDOUploadExpeditedRequest = packed struct(u128) {
 /// Ref: IEC 61158-6-12:2019 5.6.2.4.2
 pub const SDOUploadExpeditedResponse = packed struct(u128) {
     header: MailboxHeader,
-    coe_header: CoEHeader = .{ .service = .sdo_response },
-    size_specified: bool = true,
-    transfer_type: TransferType = .expedited,
-    data_set_size: DataSetSize,
-    complete_access: bool,
-    command_specifer: CommandSpecifier = .upload_request_or_response,
+    coe_header: CoEHeader,
+    sdo_header: InitSDOHeader,
+    data: u32,
+};
+
+/// SDO Upload Normal Request
+///
+/// Ref: IEC 61158-6-12:2019 5.6.2.5.1
+pub const SDOUploadNormalRequest = SDOUploadExpeditedRequest;
+
+/// SDO Upload Normal Response
+///
+/// Ref: IEC 61158-6-12:2019 5.6.2.5.2
+pub const SDOUploadNormalResponse = struct {
+    mbx_header: MailboxHeader,
+    coe_header: CoEHeader,
+    sdo_header: InitSDOHeader,
+    complete_size: u23,
+    data: []u8,
+};
+
+/// SDO Upload Segment Request
+///
+/// Ref: IEC 61158-6-12:2019 5.6.2.6.1
+pub const SDOUploadSegmentRequest = packed struct {
+    mbx_header: MailboxHeader,
+    coe_header: CoEHeader,
+    seg_header: SDOSegmentHeader,
+    /// 7 bytes
+    reserved: u56 = 0,
+};
+
+/// SDO Upload Segment Response
+///
+/// Ref: IEC 61158-6-12:2019 5.6.2.6.2
+pub const SDOUploadSegmentResponse = struct {
+    mbx_header: MailboxHeader,
+    coe_header: CoEHeader,
+    seg_header: SDOSegmentHeader,
+    data: []u8,
+};
+
+/// SDO Abort Codes
+///
+/// Ref: IEC 61158-6-12:2019 5.6.2.7.2
+pub const SDOAbortCode = enum(u32) {
+    ToggleBitNotChanged = 0x05_03_00_00,
+    SdoProtocolTimeout = 0x05_04_00_00,
+    ClientServerCommandSpecifierNotValidOrUnknown = 0x05_04_00_01,
+    OutOfMemory = 0x05_04_00_05,
+    UnsupportedAccessToAnObject = 0x06_01_00_00,
+    AttemptToReadToAWriteOnlyObject = 0x06_01_00_01,
+    AttemptToWriteToAReadOnlyObject = 0x06_01_00_02,
+    SubindexCannotBeWritten = 0x06_01_00_03,
+    SdoCompleteAccessNotSupportedForVariableLengthObjects = 0x06_01_00_04,
+    ObjectLengthExceedsMailboxSize = 0x06_01_00_05,
+    ObjectMappedToRxPdoSdoDownloadBlocked = 0x06_01_00_06,
+    ObjectDoesNotExistInObjectDirectory = 0x06_02_00_00,
+    ObjectCannotBeMappedIntoPdo = 0x06_04_00_41,
+    NumberAndLengthOfObjectsExceedsPdoLength = 0x06_04_00_42,
+    GeneralParameterIncompatibilityReason = 0x06_04_00_43,
+    GeneralInternalIncompatibilityInDevice = 0x06_04_00_47,
+    AccessFailedDueToHardwareError = 0x06_06_00_00,
+    DataTypeMismatchLengthOfServiceParameterDoesNotMatch = 0x06_07_00_10,
+    DataTypeMismatchLengthOfServiceParameterTooHigh = 0x06_07_00_12,
+    DataTypeMismatchLengthOfServiceParameterTooLow = 0x06_07_00_13,
+    SubindexDoesNotExist = 0x06_09_00_11,
+    ValueRangeOfParameterExceeded = 0x06_09_00_30,
+    ValueOfParameterWrittenTooHigh = 0x06_09_00_31,
+    ValueOfParameterWrittenTooLow = 0x06_09_00_32,
+    MaximumValueLessThanMinimumValue = 0x06_09_00_36,
+    GeneralError = 0x08_00_00_00,
+    DataCannotBeTransferredOrStoredToApplication = 0x08_00_00_20,
+    DataCannotBeTransferredOrStoredDueToLocalControl = 0x08_00_00_21,
+    DataCannotBeTransferredOrStoredDueToESMState = 0x08_00_00_22,
+    ObjectDictionaryDynamicGenerationFailedOrNoObjectDictionaryPresent = 0x08_00_00_23,
+};
+
+/// Abort SDO Transfer Request
+///
+/// Ref: IEC 61158-6-12:2019 5.6.2.7.1
+pub const AbortSDOTransferRequest = packed struct {
+    mbx_header: MailboxHeader,
+    coe_header: CoEHeader,
+    sdo_header: InitSDOHeader,
+    abort_code: SDOAbortCode,
+};
+
+/// SDO Info Op Codes
+///
+/// Ref: IEC 61158-6-12:2019 5.6.3.2
+pub const SDOInfoOpCode = enum(u7) {
+    get_od_list_request = 0x01,
+    get_od_list_respoonse = 0x02,
+    get_object_description_request = 0x03,
+    get_object_description_response = 0x04,
+    get_entry_description_request = 0x05,
+    get_entry_description_response = 0x06,
+    sdo_info_error_request = 0x07,
+};
+
+/// SDO Info Header
+///
+/// Ref: IEC 61158-6-12:2019 5.6.3.2
+pub const SDOInfoHeader = packed struct {
+    opcode: SDOInfoOpCode,
+    incomplete: bool,
+    reserved: u8 = 0,
+    fragments_left: u16,
+};
+
+/// OD List Types
+///
+/// Ref: IEC 61158-6-12:2019 5.6.3.3.1
+pub const ODListType = enum(u16) {
+    num_object_in_5_lists = 0x00,
+    all_objects = 0x01,
+    rxpdo_mappable = 0x02,
+    txpdo_mappable = 0x03,
+    device_replacement_stored = 0x04, // what does this mean?
+    startup_parameters = 0x05,
+};
+
+/// Get OD List Request
+///
+/// Ref: IEC 61158-6-12:2019 5.6.3.3.1
+pub const GetODListReqest = packed struct {
+    mbx_header: MailboxHeader,
+    coe_header: CoEHeader,
+    sdo_info_header: SDOInfoHeader,
+    list_type: ODListType,
+};
+
+/// Get OD List Response
+///
+/// Ref: IEC 61158-6-12:2019 5.6.3.3.2
+pub const GetODListResponse = struct {
+    mbx_header: MailboxHeader,
+    coe_header: CoEHeader,
+    sdo_info_header: SDOInfoHeader,
+    list_type: ODListType,
+    index_list: []u16,
+};
+
+/// Get Object Description Request
+///
+/// Ref: IEC 61158-6-12:2019 5.6.3.5.1
+pub const GetObjectDescriptionRequest = packed struct {
+    mbx_header: MailboxHeader,
+    coe_header: CoEHeader,
+    sdo_info_header: SDOInfoHeader,
+    index: u16,
+};
+
+/// Object Code
+///
+/// Ref: IEC 61158-6-12:2019 5.6.3.5.2
+pub const ObjectCode = enum(u8) {
+    variable = 7,
+    array = 8,
+    record = 9,
+    _,
+};
+
+/// Get Object Description Response
+///
+/// Ref: IEC 61158-6-12:2019 5.6.3.5.2
+pub const GetObjectDescriptionResponse = struct {
+    mbx_header: MailboxHeader,
+    coe_header: CoEHeader,
+    sdo_info_header: SDOInfoHeader,
+    index: u16,
+    data_type: u16,
+    max_subindex: u8,
+    object_code: ObjectCode,
+    name: []u8,
+};
+
+/// Value Info
+///
+/// What info about the value will be included in the response.
+///
+/// Ref: IEC 61158-6-12:2019 5.6.3.6.1
+pub const ValueInfo = packed struct(u8) {
+    reserved: u3 = 0,
+    unit_type: bool,
+    default_value: bool,
+    minimum_value: bool,
+    maximum_value: bool,
+    reserved2: u1 = 0,
+};
+
+/// Get Entry Description Request
+///
+/// Ref: IEC 61158-6-12:2019 5.6.3.6.1
+pub const GetEntryDescriptionRequest = packed struct {
+    mbx_header: MailboxHeader,
+    coe_header: CoEHeader,
+    sdo_info_header: SDOInfoHeader,
     index: u16,
     subindex: u8,
-    data: u32,
+    value_info: ValueInfo,
+};
+
+/// Object Access
+///
+/// Ref: IEC 61158-6-12:2019 5.6.3.2
+pub const ObjectAccess = packed struct(u16) {
+    read_PREOP: bool,
+    read_SAFEOP: bool,
+    read_OP: bool,
+    write_PREOP: bool,
+    write_SAFEOP: bool,
+    write_OP: bool,
+    rxpdo_mappable: bool,
+    txpdo_mappable: bool,
+    backup: bool,
+    setting: bool,
+    reserved: u6 = 0,
+};
+
+/// Get Entry Description Response
+///
+/// Ref: IEC 61158-6-12:2019 5.6.3.2
+pub const GetEntryDescriptionResponse = struct {
+    mbx_header: MailboxHeader,
+    coe_header: CoEHeader,
+    sdo_info_header: SDOInfoHeader,
+    index: u16,
+    subindex: u8,
+    value_info: ValueInfo,
+    data_type: u16,
+    bit_length: u16,
+    object_access: ObjectAccess,
+    data: []u8,
+};
+
+/// SDO Info Error Request
+///
+/// Ref: IEC 61158-6-12:2019 5.6.3.8
+pub const SDOInfoErrorRequest = packed struct {
+    mbx_header: MailboxHeader,
+    coe_header: CoEHeader,
+    sdo_info_header: SDOInfoHeader,
+    abort_code: SDOAbortCode,
+};
+
+/// Emergency Request
+///
+/// Ref: IEC 61158-6-12:2019 5.6.4.1
+pub const EmergencyRequest = struct {
+    mbx_header: MailboxHeader,
+    coe_header: CoEHeader,
+    error_code: u16,
+    error_register: u8,
+    data: u40,
+    reserved: []u8,
+};
+
+/// RxPDO Mailbox Transmission
+///
+/// Ref: IEC 61158-6-12:2019 5.6.5.1
+pub const RxPDOTransmission = struct {
+    mbx_header: MailboxHeader,
+    coe_header: CoEHeader,
+    data: []u8,
+};
+
+/// TxPDO Mailbox Transmission
+///
+/// Ref: IEC 61158-6-12:2019 5.6.5.1
+pub const TxPDOTransmission = RxPDOTransmission;
+
+/// RxPDO Remote Transmission Request
+///
+/// Ref: IEC 61158-6-12:2019 5.6.5.3
+pub const RxPDORemoteTransmissionRequest = packed struct {
+    mbx_header: MailboxHeader,
+    coe_header: CoEHeader,
+};
+
+/// TxPDO Remote Transmission Request
+///
+/// Ref: IEC 61158-6-12:2019 5.6.5.4
+pub const TxPDORemoteTransmissionRequest = RxPDORemoteTransmissionRequest;
+
+pub const CommandStatus = enum(u8) {
+    completed_no_errors_no_reply = 0,
+    completed_no_errors_reply = 1,
+    complete_error_no_reply = 2,
+    complete_error_reply = 3,
+    executing = 255,
+    _,
+};
+
+/// Command Object Structure
+///
+/// Each command shall have data type 0x0025.
+///
+/// Ref: IEC 61158-6-12:2019 5.6.6
+pub const Command = struct {
+    n_entries: u8,
+    command: []u8,
+    status: u8,
+    reply: []u8,
 };
 
 /// The maximum mailbox size is limited by the maximum data that can be
@@ -339,3 +691,12 @@ pub fn readMailbox(
         return error.InvalidMailboxConfiguration;
     }
 }
+
+// fn deserializeMailboxData()
+
+// fn readMailbox(port: *nic.Port) !void {
+//     var buf = std.mem.zeroes([1486]u8); // yeet!
+//     // read raw mailbox data into the buffer
+//     read(port, &buf);
+//     _ = deserializeMialboxData(&buf);
+// }

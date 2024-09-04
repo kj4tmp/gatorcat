@@ -43,7 +43,7 @@ This library is in extremely early development.
   - [x] Read SII EEPROM
   - [ ] Write SII EEPROM
 - [ ] CoE
-  - [ ] CoE Structures
+  - [x] CoE Structures
   - [ ] SDO Read Expedited
   - [ ] SDO Read Normal
   - [ ] SDO Read Complete Access
@@ -111,3 +111,7 @@ big endian archs tests:
 
 1. sudo apt install qemu-system-ppc qemu-utils binfmt-support qemu-user-static
 2. zig build -fqemu -Dtarget=powerpc64-linux test --summary all
+
+## TODOs
+
+- [ ] align enums to style guide: <https://github.com/ziglang/zig/issues/2101>

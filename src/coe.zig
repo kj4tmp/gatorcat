@@ -68,6 +68,7 @@ pub const MailboxType = enum(u4) {
     SoE,
     /// Vendor Specfic over EtherCAT (VoE)
     VoE = 0x0f,
+    _,
 };
 
 pub const MailboxErrorCode = enum(u16) {
@@ -377,7 +378,7 @@ pub const ODListType = enum(u16) {
 /// Get OD List Request
 ///
 /// Ref: IEC 61158-6-12:2019 5.6.3.3.1
-pub const GetODListReqest = packed struct {
+pub const GetODListRequest = packed struct {
     mbx_header: MailboxHeader,
     coe_header: CoEHeader,
     sdo_info_header: SDOInfoHeader,
@@ -501,13 +502,12 @@ pub const SDOInfoErrorRequest = packed struct {
 /// Emergency Request
 ///
 /// Ref: IEC 61158-6-12:2019 5.6.4.1
-pub const EmergencyRequest = struct {
+pub const EmergencyRequest = packed struct {
     mbx_header: MailboxHeader,
     coe_header: CoEHeader,
     error_code: u16,
     error_register: u8,
     data: u40,
-    reserved: []u8,
 };
 
 /// RxPDO Mailbox Transmission
@@ -690,6 +690,93 @@ pub fn readMailbox(
     if (mbx_in.length == 0 or mbx_in.length > max_mailbox_size) {
         return error.InvalidMailboxConfiguration;
     }
+}
+
+/// Messages that can be read from mailbox in.
+///
+/// TODO: other mailbox protocols?
+pub const MailboxMessage = union(enum) {
+    ///sdo_download_expedited_request: SDODownloadExpeditedRequest,
+    sdo_download_expedited_response: SDODownloadExpeditedResponse,
+    ///sdo_download_normal_request: SDODownloadNormalRequest,
+    sdo_download_normal_response: SDODownloadNormalResponse,
+    sdo_download_segment_response: SDODownloadSegmentResponse,
+    sdo_upload_expedited_response: SDOUploadExpeditedResponse,
+    sdo_upload_normal_response: SDOUploadNormalResponse,
+    sdo_upload_segment_response: SDOUploadSegmentResponse,
+    abort_sdo_transfer_request: AbortSDOTransferRequest,
+    get_od_list_response: GetODListResponse,
+    get_object_description_response: GetObjectDescriptionResponse,
+    get_entry_description_response: GetEntryDescriptionResponse,
+    sdo_info_error_request: SDOInfoErrorRequest,
+    emergency_request: EmergencyRequest,
+    rxpdo: RxPDOTransmission,
+    txpdo: TxPDOTransmission,
+    rxpdo_remote_request: RxPDORemoteTransmissionRequest,
+    txpdo_remote_request: TxPDORemoteTransmissionRequest,
+
+    pub fn deserialize(buf: []const u8) !MailboxMessage {
+        var fbs = std.io.fixedBufferStream(buf);
+        var reader = fbs.reader();
+
+        const mbx_header = try nic.packFromECatReader(MailboxHeader, &reader);
+
+        if (mbx_header.length > buf.len - @divExact(@bitSizeOf(MailboxHeader), 8)) {
+            return error.InvalidMailboxHeaderLength;
+        }
+
+        switch (mbx_header.type) {
+            _ => return error.InvalidProtocol,
+            .ERR, .AoE, .EoE, .FoE, .SoE, .VoE => return error.UnsupportedProtocol,
+            .CoE => {
+                const coe_header = try nic.packFromECatReader(CoEHeader, &reader);
+
+                switch (coe_header.service) {
+                    .sdo_request => return error.NotImplemented,
+                    .emergency => {
+                        fbs.reset();
+                        const emergency_message = try nic.packFromECatReader(EmergencyRequest, &reader);
+                        return MailboxMessage{ .emergency_request = emergency_message };
+                    },
+
+                    else => return error.NotImplemented,
+                    // sdo_response = 0x03,
+                    // tx_pdo = 0x04,
+                    // rx_pdo = 0x05,
+                    // tx_pdo_remote_request = 0x06,
+                    // rx_pdo_remote_request = 0x07,
+                    // sdo_info = 0x08,
+                    // _,
+
+                }
+            },
+        }
+        unreachable;
+    }
+};
+
+test "deserialize emergency message" {
+    const expected = EmergencyRequest{
+        .mbx_header = .{
+            .length = 10,
+            .address = 0x1001,
+            .channel = 0,
+            .priority = 0x03,
+            .type = .CoE,
+            .cnt = 3,
+        },
+        .coe_header = .{
+            .number = 0,
+            .service = .emergency,
+        },
+        .error_code = 0x1234,
+        .error_register = 23,
+        .data = 12345,
+    };
+    const buf = nic.eCatFromPack(expected);
+    const actual = try MailboxMessage.deserialize(&buf);
+
+    try std.testing.expectEqualDeep(expected, actual.emergency_request);
 }
 
 // fn deserializeMailboxData()

@@ -6,4 +6,10 @@ pub const SubDeviceRuntimeInfo = @import("config.zig").SubDeviceRuntimeInfo;
 
 pub const SIIStream = @import("sii.zig").SIIStream;
 
-pub const coe = @import("coe.zig");
+pub const mailbox = @import("mailbox.zig");
+
+const std = @import("std");
+
+test {
+    std.testing.refAllDeclsRecursive(@This());
+}

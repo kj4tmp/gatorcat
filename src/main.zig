@@ -5,7 +5,7 @@ const flags = @import("flags");
 const ecm = @import("ecm");
 const nic = ecm.nic;
 const MainDevice = ecm.MainDevice;
-const coe = @import("ecm").coe;
+const coe = @import("ecm").mailbox;
 
 pub const std_options = .{
     // Set the log level to info

@@ -24,7 +24,7 @@ pub const Service = enum(u4) {
     _,
 };
 
-pub const CoEHeader = packed struct {
+pub const CoEHeader = packed struct(u16) {
     number: u9 = 0,
     reserved: u3 = 0,
     service: Service,
@@ -42,12 +42,36 @@ pub const DataSetSize = enum(u2) {
     one_octet = 0x03,
 };
 
-pub const CommandSpecifier = enum(u3) {
-    download_request = 0x01,
-    upload_request_or_response = 0x02,
-    download_response = 0x03,
-    abort_transfer_request = 0x04,
-    _,
+/// Client Command Specifer
+///
+/// Ref: IEC 61158-6-12:2019 5.6.2.1.1
+/// The spec refers to this as a "command specifier".
+/// CoE is a wrapper on CANopen. In the CANopen specificaiton,
+/// this is actually separated between client command specifier (CCS) and
+/// server command specifier (scs).
+///
+/// Ref: CiA 301 V4.2.0
+pub const ClientCommandSpecifier = enum(u3) {
+    download_segment_request = 0,
+    initiate_download_request = 1,
+    initiate_upload_request = 2,
+    upload_segment_request = 3,
+    abort_transfer_request = 4,
+    block_upload = 5,
+    block_download = 6,
+};
+
+/// Server Command Specifier
+///
+/// See Client Command Specifier.
+pub const ServerCommandSpecifier = enum(u3) {
+    upload_segment_response = 0,
+    download_segment_response = 1,
+    initiate_upload_response = 2,
+    initiate_download_response = 3,
+    abort_transfer_request = 4,
+    block_download = 5,
+    block_upload = 6,
 };
 
 /// Mailbox Types
@@ -139,11 +163,11 @@ pub const Mailbox = struct {
     data: []u8,
 };
 
-/// SDO Header for mailbox communication.
-/// Common accross a couple of the mailbox schemas.
+/// SDO Header for CoE for maindevice to subdevice (client to server)
+/// messages.
 ///
 /// Ref: IEC 61158-6-12
-pub const InitSDOHeader = packed struct {
+pub const SDOHeaderClient = packed struct(u32) {
     size_indicator: bool,
     transfer_type: TransferType,
     data_set_size: DataSetSize,
@@ -151,10 +175,222 @@ pub const InitSDOHeader = packed struct {
     /// true: complete object will be downlaoded. subindex shall be zero (when subindex zero
     /// is to be included) or one (subindex 0 excluded)
     complete_access: bool,
-    command: CommandSpecifier,
+    command: ClientCommandSpecifier,
     index: u16,
     /// shall be zero or one if complete access is true.
     subindex: u8,
+};
+
+/// SDO Header for CoE for subdevice to maindevice (server to client)
+/// messages.
+///
+/// Ref: IEC 61158-6-12
+pub const SDOHeaderServer = packed struct(u32) {
+    size_indicator: bool,
+    transfer_type: TransferType,
+    data_set_size: DataSetSize,
+    /// false: entry addressed with index and subindex will be downloaded.
+    /// true: complete object will be downlaoded. subindex shall be zero (when subindex zero
+    /// is to be included) or one (subindex 0 excluded)
+    complete_access: bool,
+    command: ServerCommandSpecifier,
+    index: u16,
+    /// shall be zero or one if complete access is true.
+    subindex: u8,
+};
+
+pub const SDOClientExpedited = packed struct(u128) {
+    mbx_header: MailboxHeader,
+    coe_header: CoEHeader,
+    sdo_header: SDOHeaderClient,
+    data: u32,
+
+    pub fn downloadInitiate(
+        cnt: u3,
+        index: u16,
+        subindex: u8,
+        data: []const u8,
+    ) SDOClientExpedited {
+        assert(data.len != 0);
+        assert(data.len < 5);
+
+        const size: DataSetSize = blk: {
+            if (data.len == 1) {
+                break :blk DataSetSize.one_octet;
+            } else if (data.len == 2) {
+                break :blk DataSetSize.two_octets;
+            } else if (data.len == 3) {
+                break :blk DataSetSize.three_octets;
+            } else {
+                break :blk DataSetSize.four_octets;
+            }
+        };
+
+        var data_buf = std.mem.zeroes([4]u8);
+        @memcpy(data_buf[0..data.len], data);
+
+        return SDOClientExpedited{
+            .mbx_header = .{
+                .length = 0x0A,
+                .address = 0,
+                .channel = 0,
+                .priority = 0,
+                .type = .CoE,
+                .cnt = cnt,
+            },
+            .coe_header = .{
+                .number = 0,
+                .service = .sdo_request,
+            },
+            .sdo_header = .{
+                .size_indicator = true,
+                .transfer_type = .expedited,
+                .data_set_size = size,
+                .complete_access = false,
+                .command = .initiate_download_request,
+                .index = index,
+                .subindex = subindex,
+            },
+            .data = @bitCast(data_buf),
+        };
+    }
+
+    pub fn uploadInitiate(
+        cnt: u3,
+        index: u16,
+        subindex: u8,
+    ) SDOClientExpedited {
+        return SDOClientExpedited{
+            .mbx_header = .{
+                .length = 0x0A,
+                .address = 0,
+                .channel = 0,
+                .priority = 0,
+                .type = .CoE,
+                .cnt = cnt,
+            },
+            .coe_header = .{
+                .number = 0,
+                .service = .sdo_request,
+            },
+            // first 4 bits are reserved to be zero
+            .sdo_header = .{
+                .size_indicator = @bitCast(@as(u1, 0)),
+                .transfer_type = @bitCast(@as(u1, 0)),
+                .data_set_size = @bitCast(@as(u2, 0)),
+                .complete_access = false,
+                .command = .initiate_upload_request,
+                .index = index,
+                .subindex = subindex,
+            },
+            // last 4 bytes are reserved as zero
+            .data = 0,
+        };
+    }
+};
+
+pub const SDOClientNormal = struct {
+    mbx_header: MailboxHeader,
+    coe_header: CoEHeader,
+    sdo_header: SDOHeaderClient,
+    complete_size: u32,
+    data: []const u8,
+
+    pub fn downloadInititate(
+        cnt: u3,
+        index: u16,
+        subindex: u8,
+        complete_size: u32,
+        data: []const u8,
+    ) SDOClientNormal {
+        return SDOClientNormal{
+            .mbx_header = .{
+                .length = @as(u16, @intCast(data.len)) + 10,
+                .address = 0x0,
+                .channel = 0,
+                .priority = 0,
+                .type = .CoE,
+                .cnt = cnt,
+            },
+            .coe_header = .{
+                .number = 0,
+                .service = .sdo_request,
+            },
+            .sdo_header = .{
+                .size_indicator = true,
+                .transfer_type = .normal,
+                .data_set_size = .four_octets,
+                .complete_access = false,
+                .command = .initiate_download_request,
+                .index = index,
+                .subindex = subindex,
+            },
+            .complete_size = complete_size,
+            .data = data,
+        };
+    }
+};
+
+pub const SDOClientSegment = packed struct(u128) {
+    mbx_header: MailboxHeader,
+    coe_header: CoEHeader,
+    sdo_seg_header: SDOSegmentHeaderClient,
+    data: []const u8,
+
+    pub fn download(
+        cnt: u3,
+        more_follows: bool,
+        toggle: bool,
+        data: []const u8,
+    ) SDOClientSegment {
+        const length = @max(10, @as(u16, @intCast(data.len + 3)));
+
+        const seg_data_size: SegmentDataSize = blk: {
+            if (length != 10) {
+                break :blk .seven_octets;
+            } else {
+                if (data.len == 0) {
+                    break :blk .zero_octets;
+                } else if (data.len == 1) {
+                    break :blk .one_octet;
+                } else if (data.len == 2) {
+                    break :blk .two_octets;
+                } else if (data.len == 3) {
+                    break :blk .three_octets;
+                } else if (data.len == 4) {
+                    break :blk .four_octets;
+                } else if (data.len == 5) {
+                    break :blk .five_octets;
+                } else if (data.len == 6) {
+                    break :blk .six_octets;
+                } else {
+                    break :blk .seven_octets;
+                }
+            }
+        };
+
+        return SDOClientSegment{
+            .mbx_header = .{
+                .length = length,
+                .address = 0x0,
+                .channel = 0,
+                .priority = 0,
+                .type = .CoE,
+                .cnt = cnt,
+            },
+            .coe_header = .{
+                .number = 0,
+                .service = .sdo_request,
+            },
+            .sdo_seg_header = .{
+                .more_follows = more_follows,
+                .seg_data_size = seg_data_size,
+                .toggle = toggle,
+                .command = .download_segment_request,
+            },
+            .data = data,
+        };
+    }
 };
 
 /// SDO Download Expedited Request
@@ -163,7 +399,7 @@ pub const InitSDOHeader = packed struct {
 pub const SDODownloadExpeditedRequest = packed struct(u128) {
     mbx_header: MailboxHeader,
     coe_header: CoEHeader,
-    sdo_header: InitSDOHeader,
+    sdo_header: SDOHeaderClient,
     /// un-used octets shall be zero.
     data: u32,
 };
@@ -174,7 +410,7 @@ pub const SDODownloadExpeditedRequest = packed struct(u128) {
 pub const SDODownloadExpeditedResponse = packed struct(u128) {
     mbx_header: MailboxHeader,
     coe_header: CoEHeader,
-    sdo_header: InitSDOHeader,
+    sdo_header: SDOHeaderServer,
     reserved: u32 = 0,
 };
 
@@ -184,7 +420,7 @@ pub const SDODownloadExpeditedResponse = packed struct(u128) {
 pub const SDODownloadNormalRequest = struct {
     mbx_header: MailboxHeader,
     coe_header: CoEHeader,
-    sdo_header: InitSDOHeader,
+    sdo_header: SDOHeaderClient,
     complete_size: u32,
     data: []u8,
 };
@@ -205,15 +441,30 @@ pub const SegmentDataSize = enum(u3) {
     zero_octets = 0x07,
 };
 
-/// SDO Segment Header
+/// SDO Segment Header Client
+///
+/// Client / server language is from CANopen.
 ///
 /// Ref: IEC 61158-6-12:2019 5.6.2.3.1
-pub const SDOSegmentHeader = packed struct {
+pub const SDOSegmentHeaderClient = packed struct {
     more_follows: bool,
     seg_data_size: SegmentDataSize,
     /// shall toggle with every segment, starting with 0x00
     toggle: bool,
-    command: CommandSpecifier,
+    command: ClientCommandSpecifier,
+};
+
+/// SDO Segment Header Server
+///
+/// Client / server language is from CANopen.
+///
+/// Ref: IEC 61158-6-12:2019 5.6.2.3.1
+pub const SDOSegmentHeaderServer = packed struct {
+    more_follows: bool,
+    seg_data_size: SegmentDataSize,
+    /// shall toggle with every segment, starting with 0x00
+    toggle: bool,
+    command: ServerCommandSpecifier,
 };
 
 /// SDO Download Seqment Request
@@ -222,7 +473,7 @@ pub const SDOSegmentHeader = packed struct {
 pub const SDODownloadSegmentRequest = struct {
     mbx_header: MailboxHeader,
     coe_header: CoEHeader,
-    seg_header: SDOSegmentHeader,
+    seg_header: SDOSegmentHeaderClient,
     data: []u8,
 };
 
@@ -232,7 +483,7 @@ pub const SDODownloadSegmentRequest = struct {
 pub const SDODownloadSegmentResponse = packed struct {
     mbx_header: MailboxHeader,
     coe_header: CoEHeader,
-    seg_header: SDOSegmentHeader,
+    seg_header: SDOSegmentHeaderServer,
     /// 7 bytes
     reserved: u56,
 };
@@ -243,7 +494,7 @@ pub const SDODownloadSegmentResponse = packed struct {
 pub const SDOUploadExpeditedRequest = packed struct(u128) {
     mbx_header: MailboxHeader,
     coe_header: CoEHeader,
-    sdo_header: InitSDOHeader,
+    sdo_header: SDOHeaderClient,
     reserved2: u32 = 0,
 };
 
@@ -253,7 +504,7 @@ pub const SDOUploadExpeditedRequest = packed struct(u128) {
 pub const SDOUploadExpeditedResponse = packed struct(u128) {
     header: MailboxHeader,
     coe_header: CoEHeader,
-    sdo_header: InitSDOHeader,
+    sdo_header: SDOHeaderServer,
     data: u32,
 };
 
@@ -268,7 +519,7 @@ pub const SDOUploadNormalRequest = SDOUploadExpeditedRequest;
 pub const SDOUploadNormalResponse = struct {
     mbx_header: MailboxHeader,
     coe_header: CoEHeader,
-    sdo_header: InitSDOHeader,
+    sdo_header: SDOHeaderServer,
     complete_size: u23,
     data: []u8,
 };
@@ -279,7 +530,7 @@ pub const SDOUploadNormalResponse = struct {
 pub const SDOUploadSegmentRequest = packed struct {
     mbx_header: MailboxHeader,
     coe_header: CoEHeader,
-    seg_header: SDOSegmentHeader,
+    seg_header: SDOSegmentHeaderClient,
     /// 7 bytes
     reserved: u56 = 0,
 };
@@ -290,7 +541,7 @@ pub const SDOUploadSegmentRequest = packed struct {
 pub const SDOUploadSegmentResponse = struct {
     mbx_header: MailboxHeader,
     coe_header: CoEHeader,
-    seg_header: SDOSegmentHeader,
+    seg_header: SDOSegmentHeaderServer,
     data: []u8,
 };
 
@@ -336,7 +587,9 @@ pub const SDOAbortCode = enum(u32) {
 pub const AbortSDOTransferRequest = packed struct {
     mbx_header: MailboxHeader,
     coe_header: CoEHeader,
-    sdo_header: InitSDOHeader,
+    /// SDOHeaderClient is arbitrarily chosen here.
+    /// Abort has no concept of client / server.
+    sdo_header: SDOHeaderClient,
     abort_code: SDOAbortCode,
 };
 
@@ -696,24 +949,24 @@ pub fn readMailbox(
 ///
 /// TODO: other mailbox protocols?
 pub const MailboxMessage = union(enum) {
-    ///sdo_download_expedited_request: SDODownloadExpeditedRequest,
+    sdo_download_expedited_request: SDODownloadExpeditedRequest,
     sdo_download_expedited_response: SDODownloadExpeditedResponse,
-    ///sdo_download_normal_request: SDODownloadNormalRequest,
-    sdo_download_normal_response: SDODownloadNormalResponse,
-    sdo_download_segment_response: SDODownloadSegmentResponse,
-    sdo_upload_expedited_response: SDOUploadExpeditedResponse,
-    sdo_upload_normal_response: SDOUploadNormalResponse,
-    sdo_upload_segment_response: SDOUploadSegmentResponse,
-    abort_sdo_transfer_request: AbortSDOTransferRequest,
-    get_od_list_response: GetODListResponse,
-    get_object_description_response: GetObjectDescriptionResponse,
-    get_entry_description_response: GetEntryDescriptionResponse,
-    sdo_info_error_request: SDOInfoErrorRequest,
+    // // sdo_download_normal_request: SDODownloadNormalRequest,
+    // sdo_download_normal_response: SDODownloadNormalResponse,
+    // sdo_download_segment_response: SDODownloadSegmentResponse,
+    // sdo_upload_expedited_response: SDOUploadExpeditedResponse,
+    // sdo_upload_normal_response: SDOUploadNormalResponse,
+    // sdo_upload_segment_response: SDOUploadSegmentResponse,
+    // abort_sdo_transfer_request: AbortSDOTransferRequest,
+    // get_od_list_response: GetODListResponse,
+    // get_object_description_response: GetObjectDescriptionResponse,
+    // get_entry_description_response: GetEntryDescriptionResponse,
+    // sdo_info_error_request: SDOInfoErrorRequest,
     emergency_request: EmergencyRequest,
-    rxpdo: RxPDOTransmission,
-    txpdo: TxPDOTransmission,
-    rxpdo_remote_request: RxPDORemoteTransmissionRequest,
-    txpdo_remote_request: TxPDORemoteTransmissionRequest,
+    // rxpdo: RxPDOTransmission,
+    // txpdo: TxPDOTransmission,
+    // rxpdo_remote_request: RxPDORemoteTransmissionRequest,
+    // txpdo_remote_request: TxPDORemoteTransmissionRequest,
 
     pub fn deserialize(buf: []const u8) !MailboxMessage {
         var fbs = std.io.fixedBufferStream(buf);
@@ -727,27 +980,51 @@ pub const MailboxMessage = union(enum) {
 
         switch (mbx_header.type) {
             _ => return error.InvalidProtocol,
-            .ERR, .AoE, .EoE, .FoE, .SoE, .VoE => return error.UnsupportedProtocol,
+            .ERR, .AoE, .EoE, .FoE, .SoE, .VoE => return error.UnsupportedMailboxProtocol,
             .CoE => {
                 const coe_header = try nic.packFromECatReader(CoEHeader, &reader);
 
                 switch (coe_header.service) {
-                    .sdo_request => return error.NotImplemented,
+                    _ => return error.InvalidService,
+                    .sdo_request => {
+                        const sdo_header = try nic.packFromECatReader(SDOHeaderClient, &reader);
+
+                        switch (sdo_header.command) {
+                            .download_request => {
+                                switch (sdo_header.transfer_type) {
+                                    .expedited => {
+                                        fbs.reset();
+                                        const sdo_download_expedited_request = try nic.packFromECatReader(SDODownloadExpeditedRequest, &reader);
+                                        return MailboxMessage{ .sdo_download_expedited_request = sdo_download_expedited_request };
+                                    },
+                                    .normal => {
+                                        return error.NotImplemented;
+                                    },
+                                }
+                            },
+                        }
+                    },
+                    // .sdo_response => {
+                    //     const sdo_header = try nic.packFromECatReader(SDOHeader, &reader);
+                    //     switch (sdo_header.command) {
+                    //         .download_response => {
+                    //             fbs.reset();
+                    //             const sdo_download_expedited_response = try nic.packFromECatReader(SDODownloadExpeditedResponse, &reader);
+                    //             return MailboxMessage{ .sdo_download_expedited_response = sdo_download_expedited_response };
+                    //         },
+                    //     }
+                    // },
                     .emergency => {
                         fbs.reset();
                         const emergency_message = try nic.packFromECatReader(EmergencyRequest, &reader);
                         return MailboxMessage{ .emergency_request = emergency_message };
                     },
-
-                    else => return error.NotImplemented,
-                    // sdo_response = 0x03,
-                    // tx_pdo = 0x04,
-                    // rx_pdo = 0x05,
-                    // tx_pdo_remote_request = 0x06,
-                    // rx_pdo_remote_request = 0x07,
-                    // sdo_info = 0x08,
-                    // _,
-
+                    .sdo_response => error.NotImplemented,
+                    .tx_pdo => return error.NotImplemented,
+                    .rx_pdo => return error.NotImplemented,
+                    .tx_pdo_remote_request => return error.NotImplemented,
+                    .rx_pdo_remote_request => return error.NotImplemented,
+                    .sdo_info => return error.NotImplemented,
                 }
             },
         }
@@ -774,9 +1051,44 @@ test "deserialize emergency message" {
         .data = 12345,
     };
     const buf = nic.eCatFromPack(expected);
-    const actual = try MailboxMessage.deserialize(&buf);
+    var zero_buf = std.mem.zeroes([100]u8);
+    @memcpy(zero_buf[0..16], buf[0..16]);
+    const actual = try MailboxMessage.deserialize(&zero_buf);
 
     try std.testing.expectEqualDeep(expected, actual.emergency_request);
+}
+
+test "deserialized sdo download expedited request" {
+    const expected = SDODownloadExpeditedRequest{
+        .mbx_header = .{
+            .length = 10,
+            .address = 0x1001,
+            .channel = 0,
+            .priority = 0x01,
+            .type = .CoE,
+            .cnt = 2,
+        },
+        .coe_header = .{
+            .number = 0,
+            .service = .sdo_request,
+        },
+        .sdo_header = .{
+            .size_indicator = true,
+            .transfer_type = .expedited,
+            .data_set_size = .one_octet,
+            .complete_access = false,
+            .command = .download_request,
+            .index = 0x6000,
+            .subindex = 34,
+        },
+        .data = @bitCast([4]u8{ 1, 2, 3, 4 }),
+    };
+    const buf = nic.eCatFromPack(expected);
+    var zero_buf = std.mem.zeroes([100]u8);
+    @memcpy(zero_buf[0..16], buf[0..16]);
+    const actual = try MailboxMessage.deserialize(&zero_buf);
+
+    try std.testing.expectEqualDeep(expected, actual.sdo_download_expedited_request);
 }
 
 // fn deserializeMailboxData()

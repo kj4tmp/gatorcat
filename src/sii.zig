@@ -783,7 +783,7 @@ pub const SIIStream = struct {
     }
 };
 
-pub fn seek(address: u16, amount: i16) u16 {
+pub fn seek(address: u16, amount: u15) u16 {
     return address +% amount;
 }
 

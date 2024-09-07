@@ -25,15 +25,15 @@ pub fn build(b: *std.Build) void {
     cli_tool.root_module.addImport("flags", flags.module("flags"));
     b.installArtifact(cli_tool);
 
-    // CLI tool unit tests
-    const cli_tool_unit_tests = b.addTest(.{
-        .root_source_file = b.path("src/main.zig"),
+    // root module unit tests
+    const root_unit_tests = b.addTest(.{
+        .root_source_file = b.path("src/root.zig"),
         .target = target,
         .optimize = optimize,
     });
-    const run_cli_tool_unit_tests = b.addRunArtifact(cli_tool_unit_tests);
+    const run_root_unit_tests = b.addRunArtifact(root_unit_tests);
     const test_step = b.step("test", "Run unit tests");
-    test_step.dependOn(&run_cli_tool_unit_tests.step);
+    test_step.dependOn(&run_root_unit_tests.step);
 
     // example
     const example_step = b.step("example", "Build example");

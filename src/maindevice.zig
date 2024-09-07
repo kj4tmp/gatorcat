@@ -12,7 +12,6 @@ const config = @import("config.zig");
 const SubDeviceRuntimeInfo = config.SubDeviceRuntimeInfo;
 const SIIStream = @import("sii.zig").SIIStream;
 const subdevice = @import("subdevice.zig");
-const coe = @import("coe.zig");
 
 pub const MainDeviceSettings = struct {
     recv_timeout_us: u32 = 2000,
@@ -264,15 +263,7 @@ pub const MainDevice = struct {
     }
 
     pub fn busSAFEOP(self: *MainDevice) !void {
-        try coe.sdoReadExpedited(
-            self.port,
-            0x1001,
-            0x0,
-            0x0,
-            0x0,
-            self.settings.recv_timeout_us,
-            3000,
-        );
+        _ = self;
     }
 
     /// The maindevice should perform these tasks before commanding the PS transision.
@@ -565,11 +556,11 @@ fn calc_autoinc_addr(position: u16) u16 {
 }
 
 test "calc_autoinc_addr" {
-    std.testing.expectEqual(@as(u16, 0), calc_autoinc_addr(0));
-    std.testing.expectEqual(@as(u16, 65535), calc_autoinc_addr(1));
-    std.testing.expectEqual(@as(u16, 65534), calc_autoinc_addr(2));
-    std.testing.expectEqual(@as(u16, 65533), calc_autoinc_addr(3));
-    std.testing.expectEqual(@as(u16, 65532), calc_autoinc_addr(4));
+    try std.testing.expectEqual(@as(u16, 0), calc_autoinc_addr(0));
+    try std.testing.expectEqual(@as(u16, 65535), calc_autoinc_addr(1));
+    try std.testing.expectEqual(@as(u16, 65534), calc_autoinc_addr(2));
+    try std.testing.expectEqual(@as(u16, 65533), calc_autoinc_addr(3));
+    try std.testing.expectEqual(@as(u16, 65532), calc_autoinc_addr(4));
 }
 
 /// Calcuate the station address of a subdevice

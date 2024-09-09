@@ -50,16 +50,19 @@ pub const SDOClientExpedited = packed struct(u128) {
 
     /// Create an SDO Download Expedited Request
     ///
-    /// data must be between 1 and 4 bytes long
+    /// data.len must be > 0 and < 5.
     ///
     /// Ref: IEC 61158-6-12:2019 5.6.2.1.1
     pub fn initDownloadRequest(
         cnt: u3,
         index: u16,
         subindex: u8,
-        data: [4]u8,
+        data: std.BoundedArray(u8, 4),
     ) SDOClientExpedited {
         assert(cnt != 0);
+        assert(data.len > 0);
+        assert(data.len < 5);
+
         const size: coe.DataSetSize = switch (data.len) {
             1 => .one_octet,
             2 => .two_octets,
@@ -67,6 +70,11 @@ pub const SDOClientExpedited = packed struct(u128) {
             4 => .four_octets,
             else => unreachable,
         };
+
+        var data_buf = std.mem.zeroes([4]u8);
+        var fbs = std.io.fixedBufferStream(&data_buf);
+        const writer = fbs.writer();
+        writer.writeAll(data.slice()) catch unreachable;
 
         return SDOClientExpedited{
             .mbx_header = .{
@@ -90,7 +98,7 @@ pub const SDOClientExpedited = packed struct(u128) {
                 .index = index,
                 .subindex = subindex,
             },
-            .data = @bitCast(data),
+            .data = @bitCast(data_buf),
         };
     }
 
@@ -151,7 +159,7 @@ test "serialize deserialize sdo client expedited" {
         5,
         1234,
         23,
-        .{ 1, 2, 3, 4 },
+        std.BoundedArray(u8, 4).fromSlice(&.{ 1, 2, 3, 4 }),
     );
 
     var bytes = std.mem.zeroes([mailbox.max_size]u8);

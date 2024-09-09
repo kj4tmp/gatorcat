@@ -63,6 +63,66 @@ pub const SDOServerExpedited = packed struct(u128) {
     sdo_header: SDOHeaderServer,
     data: u32 = 0,
 
+    pub fn initDownloadResponse(
+        cnt: u3,
+        station_address: u16,
+        index: u16,
+        subindex: u8,
+    ) SDOServerExpedited {
+        return SDOServerExpedited{
+            .mbx_header = .{
+                .length = 10,
+                .address = station_address,
+                .channel = 0,
+                .priority = 0,
+                .type = .CoE,
+                .cnt = cnt,
+            },
+            .coe_header = .{
+                .number = 0,
+                .service = .sdo_response,
+            },
+            .sdo_header = .{
+                .size_indicator = false,
+                .transfer_type = .normal,
+                .data_set_size = .four_octets,
+                .complete_access = false,
+                .command = .initiate_download_response,
+                .index = index,
+                .subindex = subindex,
+            },
+            .data = 0,
+        };
+    }
+
+    pub fn initUploadResponse(
+        cnt: u3,
+        station_address: u16,
+        index: u16,
+        subindex: u8,
+        data: [4]u8,
+    ) SDOServerExpedited {
+        return SDOServerExpedited {
+            .mbx_header = .{
+                .length = 10,
+                .address = station_address,
+                .channel = 0,
+                .priority = 0,
+                .type = .CoE,
+                .cnt = cnt,
+            },
+            .coe_header = .{
+                .number = 0,
+                .service = .sdo_response,
+            },
+            .sdo_header = .{
+                .size_indicator = true,
+                .transfer_type = .expedited,
+                .data_set_size = 
+            },
+        };
+    }
+
     pub fn deserialize(buf: []const u8) SDOServerExpedited {
         var fbs = std.io.fixedBufferStream(buf);
         var reader = fbs.reader();

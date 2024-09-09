@@ -205,29 +205,25 @@ pub const SDOClientExpedited = packed struct(u128) {
     sdo_header: SDOHeaderClient,
     data: u32,
 
-    pub fn downloadInitiate(
+    /// Create an SDO Download Expedited Request
+    ///
+    /// data must be between 1 and 4 bytes long
+    ///
+    /// Ref: IEC 61158-6-12:2019 5.6.2.1.1
+    pub fn initDownload(
         cnt: u3,
         index: u16,
         subindex: u8,
-        data: []const u8,
+        data: [4]u8,
     ) SDOClientExpedited {
-        assert(data.len != 0);
-        assert(data.len < 5);
-
-        const size: DataSetSize = blk: {
-            if (data.len == 1) {
-                break :blk DataSetSize.one_octet;
-            } else if (data.len == 2) {
-                break :blk DataSetSize.two_octets;
-            } else if (data.len == 3) {
-                break :blk DataSetSize.three_octets;
-            } else {
-                break :blk DataSetSize.four_octets;
-            }
+        assert(cnt != 0);
+        const size: DataSetSize = switch (data.len) {
+            1 => .one_octet,
+            2 => .two_octets,
+            3 => .three_octets,
+            4 => .four_octets,
+            else => unreachable,
         };
-
-        var data_buf = std.mem.zeroes([4]u8);
-        @memcpy(data_buf[0..data.len], data);
 
         return SDOClientExpedited{
             .mbx_header = .{
@@ -251,15 +247,20 @@ pub const SDOClientExpedited = packed struct(u128) {
                 .index = index,
                 .subindex = subindex,
             },
-            .data = @bitCast(data_buf),
+            .data = @bitCast(data),
         };
     }
 
-    pub fn uploadInitiate(
+    /// Create an SDO Upload Expedited Request or
+    /// an SDO Upload Normal Request (they have the same coding).
+    ///
+    /// Ref: IEC 61158-6-12:2019 5.6.2.4.1
+    pub fn initUpload(
         cnt: u3,
         index: u16,
         subindex: u8,
     ) SDOClientExpedited {
+        assert(cnt != 0);
         return SDOClientExpedited{
             .mbx_header = .{
                 .length = 0x0A,
@@ -287,22 +288,57 @@ pub const SDOClientExpedited = packed struct(u128) {
             .data = 0,
         };
     }
+
+    pub fn deserialize(buf: []const u8) !SDOClientExpedited {
+        var fbs = std.io.fixedBufferStream(buf);
+        var reader = fbs.reader();
+        return try nic.packFromECatReader(SDOClientExpedited, &reader);
+    }
+
+    pub fn serialize(self: SDOClientExpedited, out: []u8) !usize {
+        var fbs = std.io.fixedBufferStream(out);
+        const writer = fbs.writer();
+        try nic.eCatFromPackToWriter(self, writer);
+        return fbs.getWritten().len;
+    }
 };
+
+test "serialize deserialize sdo client expedited" {
+    const expected = SDOClientExpedited.initDownload(
+        5,
+        1234,
+        23,
+        .{ 1, 2, 3, 4 },
+    );
+
+    var bytes = std.mem.zeroes([max_mailbox_size]u8);
+    const byte_size = try expected.serialize(&bytes);
+    try std.testing.expectEqual(@as(usize, 6 + 2 + 8), byte_size);
+    const actual = try SDOClientExpedited.deserialize(&bytes);
+    try std.testing.expectEqualDeep(expected, actual);
+}
 
 pub const SDOClientNormal = struct {
     mbx_header: MailboxHeader,
     coe_header: CoEHeader,
     sdo_header: SDOHeaderClient,
     complete_size: u32,
-    data: []const u8,
+    data: std.BoundedArray(u8, data_max_size),
 
-    pub fn downloadInititate(
+    pub const data_max_size = max_mailbox_size - 16;
+
+    /// Create an SDO Download Normal Request
+    ///
+    /// Ref: IEC 61158-6-12:2019 5.6.2.2.1
+    /// Ref: IEC 61158-6-12:2019 5.6.2.5.1
+    pub fn initDownload(
         cnt: u3,
         index: u16,
         subindex: u8,
         complete_size: u32,
         data: []const u8,
-    ) SDOClientNormal {
+    ) !SDOClientNormal {
+        assert(cnt != 0);
         return SDOClientNormal{
             .mbx_header = .{
                 .length = @as(u16, @intCast(data.len)) + 10,
@@ -326,47 +362,101 @@ pub const SDOClientNormal = struct {
                 .subindex = subindex,
             },
             .complete_size = complete_size,
+            .data = try std.BoundedArray(u8, data_max_size).fromSlice(data),
+        };
+    }
+
+    pub fn deserialize(buf: []const u8) !SDOClientNormal {
+        var fbs = std.io.fixedBufferStream(buf);
+        const reader = fbs.reader();
+        const mbx_header = try nic.packFromECatReader(MailboxHeader, reader);
+        const coe_header = try nic.packFromECatReader(CoEHeader, reader);
+        const sdo_header = try nic.packFromECatReader(SDOHeaderClient, reader);
+        const complete_size = try nic.packFromECatReader(u32, reader);
+
+        if (mbx_header.length < 10) {
+            return error.InvalidMbxHeaderLength;
+        }
+        const data_length: u16 = mbx_header.length -| 10;
+        var data = try std.BoundedArray(u8, data_max_size).init(data_length);
+        try reader.readNoEof(data.slice());
+
+        return SDOClientNormal{
+            .mbx_header = mbx_header,
+            .coe_header = coe_header,
+            .sdo_header = sdo_header,
+            .complete_size = complete_size,
             .data = data,
         };
     }
+
+    pub fn serialize(self: *const SDOClientNormal, out: []u8) !usize {
+        var fbs = std.io.fixedBufferStream(out);
+        const writer = fbs.writer();
+        try nic.eCatFromPackToWriter(self.mbx_header, writer);
+        try nic.eCatFromPackToWriter(self.coe_header, writer);
+        try nic.eCatFromPackToWriter(self.sdo_header, writer);
+        try nic.eCatFromPackToWriter(self.complete_size, writer);
+        try writer.writeAll(self.data.slice());
+        return fbs.getWritten().len;
+    }
+
+    comptime {
+        assert(data_max_size ==
+            max_mailbox_size -
+            @divExact(@bitSizeOf(MailboxHeader), 8) -
+            @divExact(@bitSizeOf(CoEHeader), 8) -
+            @divExact(@bitSizeOf(SDOHeaderClient), 8) -
+            @divExact(@bitSizeOf(u32), 8));
+    }
 };
 
-pub const SDOClientSegment = packed struct(u128) {
+test "serialize deserialize SDO client normal" {
+    const expected = try SDOClientNormal.initDownload(
+        2,
+        1000,
+        23,
+        12345,
+        &.{ 1, 2, 3 },
+    );
+
+    var bytes = std.mem.zeroes([max_mailbox_size]u8);
+    const byte_size = try expected.serialize(&bytes);
+    try std.testing.expectEqual(@as(usize, 6 + 2 + 8 + 3), byte_size);
+    const actual = try SDOClientNormal.deserialize(&bytes);
+    try std.testing.expectEqualDeep(expected, actual);
+}
+
+///
+pub const SDOClientSegment = struct {
     mbx_header: MailboxHeader,
     coe_header: CoEHeader,
     sdo_seg_header: SDOSegmentHeaderClient,
-    data: []const u8,
+    data: std.BoundedArray(u8, data_max_size),
 
-    pub fn download(
+    pub const data_max_size = max_mailbox_size - 12;
+
+    /// Create an SDO Download Segmented Request
+    ///
+    /// Ref: IEC 61158-6-12:2019 5.6.2.3.1
+    pub fn initDownload(
         cnt: u3,
         more_follows: bool,
         toggle: bool,
         data: []const u8,
-    ) SDOClientSegment {
+    ) !SDOClientSegment {
+        assert(cnt != 0);
         const length = @max(10, @as(u16, @intCast(data.len + 3)));
 
-        const seg_data_size: SegmentDataSize = blk: {
-            if (length != 10) {
-                break :blk .seven_octets;
-            } else {
-                if (data.len == 0) {
-                    break :blk .zero_octets;
-                } else if (data.len == 1) {
-                    break :blk .one_octet;
-                } else if (data.len == 2) {
-                    break :blk .two_octets;
-                } else if (data.len == 3) {
-                    break :blk .three_octets;
-                } else if (data.len == 4) {
-                    break :blk .four_octets;
-                } else if (data.len == 5) {
-                    break :blk .five_octets;
-                } else if (data.len == 6) {
-                    break :blk .six_octets;
-                } else {
-                    break :blk .seven_octets;
-                }
-            }
+        const seg_data_size: SegmentDataSize = switch (data.len) {
+            0 => .zero_octets,
+            1 => .one_octet,
+            2 => .two_octets,
+            3 => .three_octets,
+            4 => .four_octets,
+            5 => .five_octets,
+            6 => .six_octets,
+            else => .seven_octets,
         };
 
         return SDOClientSegment{
@@ -388,47 +478,222 @@ pub const SDOClientSegment = packed struct(u128) {
                 .toggle = toggle,
                 .command = .download_segment_request,
             },
+            .data = try std.BoundedArray(u8, data_max_size).fromSlice(data),
+        };
+    }
+
+    /// Create an SDO Upload Segmented Request
+    ///
+    /// Ref: IEC 61158-6-12:2019 5.6.2.6.1
+    pub fn initUpload(
+        cnt: u3,
+        toggle: bool,
+    ) SDOClientSegment {
+        assert(cnt != 0);
+        return SDOClientSegment{
+            .mbx_header = .{
+                .length = 10,
+                .address = 0x0,
+                .channel = 0,
+                .priority = 0,
+                .type = .CoE,
+                .cnt = cnt,
+            },
+            .coe_header = .{
+                .number = 0,
+                .service = .sdo_request,
+            },
+            .sdo_seg_header = .{
+                .toggle = toggle,
+                .command = .upload_segment_request,
+            },
+            .data = std.BoundedArray(u8, data_max_size).fromSlice(&.{ 0, 0, 0, 0, 0, 0, 0 }) catch unreachable,
+        };
+    }
+
+    pub fn deserialize(buf: []const u8) !SDOClientSegment {
+        var fbs = std.io.fixedBufferStream(buf);
+        const reader = fbs.reader();
+        const mbx_header = try nic.packFromECatReader(MailboxHeader, reader);
+        const coe_header = try nic.packFromECatReader(CoEHeader, reader);
+        const sdo_seg_header = try nic.packFromECatReader(SDOSegmentHeaderClient, reader);
+
+        if (mbx_header.length < 10) {
+            return error.InvalidMbxHeaderLength;
+        }
+        const data_length: u16 = mbx_header.length -| 3;
+        var data = try std.BoundedArray(u8, data_max_size).init(data_length);
+        try reader.readNoEof(data.slice());
+
+        return SDOClientSegment{
+            .mbx_header = mbx_header,
+            .coe_header = coe_header,
+            .sdo_seg_header = sdo_seg_header,
             .data = data,
         };
     }
+
+    pub fn serialize(self: *const SDOClientSegment, out: []u8) !usize {
+        var fbs = std.io.fixedBufferStream(out);
+        const writer = fbs.writer();
+        try nic.eCatFromPackToWriter(self.mbx_header, writer);
+        try nic.eCatFromPackToWriter(self.coe_header, writer);
+        try nic.eCatFromPackToWriter(self.sdo_seg_header, writer);
+        try writer.writeAll(self.data.slice());
+        return fbs.getWritten().len;
+    }
+
+    comptime {
+        assert(data_max_size ==
+            max_mailbox_size -
+            @divExact(@bitSizeOf(MailboxHeader), 8) -
+            @divExact(@bitSizeOf(CoEHeader), 8) -
+            @divExact(@bitSizeOf(SDOHeaderClient), 8));
+    }
+
+    comptime {
+        assert(data_max_size >= 7); // must be able to fit upload request
+    }
 };
 
-/// SDO Download Expedited Request
-///
-/// Ref: IEC 61158-6-12:2019 5.6.2.1.1
-pub const SDODownloadExpeditedRequest = packed struct(u128) {
-    mbx_header: MailboxHeader,
-    coe_header: CoEHeader,
-    sdo_header: SDOHeaderClient,
-    /// un-used octets shall be zero.
-    data: u32,
-};
+test "serialize deserialize sdo client segment" {
+    const expected = try SDOClientSegment.initDownload(
+        3,
+        true,
+        true,
+        &.{ 1, 2, 3, 4, 5, 6, 7 },
+    );
 
-/// SDO Download Expedited Response
+    var bytes = std.mem.zeroes([max_mailbox_size]u8);
+    const byte_size = try expected.serialize(&bytes);
+    try std.testing.expectEqual(@as(usize, 6 + 2 + 8), byte_size);
+    const actual = try SDOClientSegment.deserialize(&bytes);
+    try std.testing.expectEqualDeep(expected, actual);
+}
+
+test "sdo client segment seg_data_size" {
+    const actual = try SDOClientSegment.initDownload(
+        3,
+        true,
+        true,
+        &.{ 1, 2, 3, 4 },
+    );
+    try std.testing.expectEqual(SegmentDataSize.four_octets, actual.sdo_seg_header.seg_data_size);
+}
+
+/// SDO Expedited Responses
 ///
-/// Ref: IEC 61158-6-12:2019 5.6.2.1.2
-pub const SDODownloadExpeditedResponse = packed struct(u128) {
+/// The coding for the SDO Download Normal Response is the same
+/// as the SDO Download Expedited Response.
+///
+/// Ref: IEC 61158-6-12:2019 5.6.2.1.2 (SDO Download Expedited Response)
+/// Ref: IEC 61158-6-12:2019 5.6.2.2.2 (SDO Download Normal Response)
+/// Ref: IEC 61158-6-12:2019 5.6.2.4.2 (SDO Upload Expedited Response)
+pub const SDOServerExpedited = packed struct(u128) {
     mbx_header: MailboxHeader,
     coe_header: CoEHeader,
     sdo_header: SDOHeaderServer,
-    reserved: u32 = 0,
+    data: u32 = 0,
+
+    pub fn deserialize(buf: []const u8) SDOServerExpedited {
+        var fbs = std.io.fixedBufferStream(buf);
+        var reader = fbs.reader();
+        return nic.packFromECatReader(SDOServerExpedited, &reader);
+    }
+
+    pub fn serialize(self: SDOServerExpedited, out: []u8) !usize {
+        var fbs = std.io.fixedBufferStream(out);
+        const writer = fbs.writer();
+        try nic.eCatFromPackToWriter(self, writer);
+        return fbs.getWritten().len;
+    }
 };
 
-/// SDO Download Normal Request
-///
-/// Ref: IEC 61158-6-12:2019 5.6.2.2.1
-pub const SDODownloadNormalRequest = struct {
+pub const SDOServerNormal = struct {
     mbx_header: MailboxHeader,
     coe_header: CoEHeader,
-    sdo_header: SDOHeaderClient,
+    sdo_header: SDOHeaderServer,
     complete_size: u32,
-    data: []u8,
+    data: std.BoundedArray(u8, data_max_size),
+
+    pub const data_max_size = max_mailbox_size - 16;
+
+    pub fn deserialize(buf: []const u8) !SDOServerNormal {
+        var fbs = std.io.fixedBufferStream(buf);
+        const reader = fbs.reader();
+        const mbx_header = try nic.packFromECatReader(MailboxHeader, reader);
+        const coe_header = try nic.packFromECatReader(CoEHeader, reader);
+        const sdo_header = try nic.packFromECatReader(SDOHeaderServer, reader);
+        const complete_size = try nic.packFromECatReader(u32, reader);
+
+        if (mbx_header.length < 10) {
+            return error.InvalidMbxHeaderLength;
+        }
+        const data_length: u16 = mbx_header.length -| 10;
+        var data = try std.BoundedArray(u8, data_max_size).init(data_length);
+        try reader.readNoEof(data.slice());
+
+        return SDOServerNormal{
+            .mbx_header = mbx_header,
+            .coe_header = coe_header,
+            .sdo_header = sdo_header,
+            .complete_size = complete_size,
+            .data = data,
+        };
+    }
+
+    pub fn serialize(self: *const SDOServerNormal, out: []u8) !usize {
+        var fbs = std.io.fixedBufferStream(out);
+        const writer = fbs.writer();
+        try nic.eCatFromPackToWriter(self.mbx_header, writer);
+        try nic.eCatFromPackToWriter(self.coe_header, writer);
+        try nic.eCatFromPackToWriter(self.sdo_header, writer);
+        try nic.eCatFromPackToWriter(self.complete_size, writer);
+        try writer.writeAll(self.data.slice());
+        return fbs.getWritten().len;
+    }
+
+    comptime {
+        assert(data_max_size == max_mailbox_size -
+            @divExact(@bitSizeOf(MailboxHeader), 8) -
+            @divExact(@bitSizeOf(CoEHeader), 8) -
+            @divExact(@bitSizeOf(SDOHeaderServer), 8) -
+            @divExact(@bitSizeOf(u32), 8));
+    }
 };
 
-/// SDO Download Normal Response
-///
-/// Ref: IEC 61158-6-12:2019 5.6.2.2.2
-pub const SDODownloadNormalResponse = SDODownloadExpeditedResponse;
+test "serialize and deserialize sdo server normal" {
+    const expected = SDOServerNormal{
+        .mbx_header = .{
+            .length = 14, // 4 bytes of payload
+            .address = 0x0,
+            .channel = 0,
+            .priority = 0,
+            .type = .CoE,
+            .cnt = 2,
+        },
+        .coe_header = .{
+            .number = 0,
+            .service = .sdo_response,
+        },
+        .sdo_header = .{
+            .size_indicator = true,
+            .transfer_type = .normal,
+            .data_set_size = .four_octets,
+            .complete_access = false,
+            .command = .initiate_upload_response,
+            .index = 1234,
+            .subindex = 0,
+        },
+        .complete_size = 12345,
+        .data = try std.BoundedArray(u8, SDOServerNormal.data_max_size).fromSlice(&.{ 1, 2, 3, 4 }),
+    };
+    var bytes = std.mem.zeroes([max_mailbox_size]u8);
+    const byte_size = try expected.serialize(&bytes);
+    try std.testing.expectEqual(@as(usize, 6 + 2 + 12), byte_size);
+    const actual = try SDOServerNormal.deserialize(&bytes);
+    try std.testing.expectEqualDeep(expected, actual);
+}
 
 pub const SegmentDataSize = enum(u3) {
     seven_octets = 0x00,
@@ -467,16 +732,6 @@ pub const SDOSegmentHeaderServer = packed struct {
     command: ServerCommandSpecifier,
 };
 
-/// SDO Download Seqment Request
-///
-/// Ref: IEC 61158-6-12:2019 5.6.2.3.1
-pub const SDODownloadSegmentRequest = struct {
-    mbx_header: MailboxHeader,
-    coe_header: CoEHeader,
-    seg_header: SDOSegmentHeaderClient,
-    data: []u8,
-};
-
 /// SDO Download Segment Response
 ///
 /// Ref: IEC 61158-6-12:2019 5.6.2.3.2
@@ -488,31 +743,6 @@ pub const SDODownloadSegmentResponse = packed struct {
     reserved: u56,
 };
 
-/// SDO Upload Expedited Request
-///
-/// Ref: IEC 61158-6-12:2019 5.6.2.4.1
-pub const SDOUploadExpeditedRequest = packed struct(u128) {
-    mbx_header: MailboxHeader,
-    coe_header: CoEHeader,
-    sdo_header: SDOHeaderClient,
-    reserved2: u32 = 0,
-};
-
-/// SDO Upload Expedited Response
-///
-/// Ref: IEC 61158-6-12:2019 5.6.2.4.2
-pub const SDOUploadExpeditedResponse = packed struct(u128) {
-    header: MailboxHeader,
-    coe_header: CoEHeader,
-    sdo_header: SDOHeaderServer,
-    data: u32,
-};
-
-/// SDO Upload Normal Request
-///
-/// Ref: IEC 61158-6-12:2019 5.6.2.5.1
-pub const SDOUploadNormalRequest = SDOUploadExpeditedRequest;
-
 /// SDO Upload Normal Response
 ///
 /// Ref: IEC 61158-6-12:2019 5.6.2.5.2
@@ -522,17 +752,6 @@ pub const SDOUploadNormalResponse = struct {
     sdo_header: SDOHeaderServer,
     complete_size: u23,
     data: []u8,
-};
-
-/// SDO Upload Segment Request
-///
-/// Ref: IEC 61158-6-12:2019 5.6.2.6.1
-pub const SDOUploadSegmentRequest = packed struct {
-    mbx_header: MailboxHeader,
-    coe_header: CoEHeader,
-    seg_header: SDOSegmentHeaderClient,
-    /// 7 bytes
-    reserved: u56 = 0,
 };
 
 /// SDO Upload Segment Response
@@ -636,6 +855,33 @@ pub const GetODListRequest = packed struct {
     coe_header: CoEHeader,
     sdo_info_header: SDOInfoHeader,
     list_type: ODListType,
+
+    pub fn init(
+        cnt: u3,
+        list_type: ODListType,
+    ) GetODListRequest {
+        assert(cnt != 0);
+        return GetODListRequest{
+            .mbx_header = .{
+                .length = 8,
+                .address = 0,
+                .channel = 0,
+                .priority = 0,
+                .type = .CoE,
+                .cnt = cnt,
+            },
+            .coe_header = .{
+                .number = 0,
+                .service = .sdo_info,
+            },
+            .sdo_info_header = .{
+                .opcode = .get_od_list_request,
+                .incomplete = false,
+                .fragments_left = 0,
+            },
+            .list_type = list_type,
+        };
+    }
 };
 
 /// Get OD List Response
@@ -657,6 +903,33 @@ pub const GetObjectDescriptionRequest = packed struct {
     coe_header: CoEHeader,
     sdo_info_header: SDOInfoHeader,
     index: u16,
+
+    pub fn init(
+        cnt: u3,
+        index: u16,
+    ) GetObjectDescriptionRequest {
+        assert(cnt != 0);
+        return GetObjectDescriptionRequest{
+            .mbx_header = .{
+                .length = 8,
+                .address = 0,
+                .channel = 0,
+                .priority = 0,
+                .type = .CoE,
+                .cnt = cnt,
+            },
+            .coe_header = .{
+                .number = 0,
+                .service = .sdo_info,
+            },
+            .sdo_info_header = .{
+                .opcode = .get_object_description_request,
+                .incomplete = false,
+                .fragments_left = false,
+            },
+            .index = index,
+        };
+    }
 };
 
 /// Object Code
@@ -707,6 +980,37 @@ pub const GetEntryDescriptionRequest = packed struct {
     index: u16,
     subindex: u8,
     value_info: ValueInfo,
+
+    pub fn init(
+        cnt: u3,
+        index: u16,
+        subindex: u8,
+        value_info: ValueInfo,
+    ) GetEntryDescriptionRequest {
+        assert(cnt != 0);
+        return GetEntryDescriptionRequest{
+            .mbx_header = .{
+                .length = 10,
+                .address = 0,
+                .channel = 0,
+                .priority = 0,
+                .type = .CoE,
+                .cnt = cnt,
+            },
+            .coe_header = .{
+                .number = 0,
+                .service = .sdo_info,
+            },
+            .sdo_info_header = .{
+                .opcode = .get_entry_description_request,
+                .incomplete = false,
+                .fragments_left = 0,
+            },
+            .index = index,
+            .subindex = subindex,
+            .value_info = value_info,
+        };
+    }
 };
 
 /// Object Access
@@ -763,32 +1067,114 @@ pub const EmergencyRequest = packed struct {
     data: u40,
 };
 
-/// RxPDO Mailbox Transmission
+/// PDO Mailbox Transmission
 ///
 /// Ref: IEC 61158-6-12:2019 5.6.5.1
-pub const RxPDOTransmission = struct {
+/// Ref: IEC 61158-6-12:2019 5.6.5.1
+pub const PDOTransmission = struct {
     mbx_header: MailboxHeader,
     coe_header: CoEHeader,
-    data: []u8,
+    data: []const u8,
+
+    pub fn rx(
+        cnt: u3,
+        number: u9,
+        data: []const u8,
+    ) PDOTransmission {
+        assert(cnt != 0);
+        assert(data.len > 0);
+        return PDOTransmission{
+            .mbx_header = .{
+                .length = @intCast(data.len + 2),
+                .address = 0,
+                .channel = 0,
+                .priority = 0,
+                .type = .CoE,
+                .cnt = cnt,
+            },
+            .coe_header = .{
+                .number = number,
+                .service = .rx_pdo,
+            },
+            .data = data,
+        };
+    }
+
+    pub fn tx(
+        cnt: u3,
+        number: u9,
+        data: []const u8,
+    ) PDOTransmission {
+        assert(cnt != 0);
+        assert(data.len > 0);
+        return PDOTransmission{
+            .mbx_header = .{
+                .length = @intCast(data.len + 2),
+                .address = 0,
+                .channel = 0,
+                .priority = 0,
+                .type = .CoE,
+                .cnt = cnt,
+            },
+            .coe_header = .{
+                .number = number,
+                .service = .tx_pdo,
+            },
+            .data = data,
+        };
+    }
 };
 
-/// TxPDO Mailbox Transmission
-///
-/// Ref: IEC 61158-6-12:2019 5.6.5.1
-pub const TxPDOTransmission = RxPDOTransmission;
-
-/// RxPDO Remote Transmission Request
+/// PDO Remote Transmission Request
 ///
 /// Ref: IEC 61158-6-12:2019 5.6.5.3
-pub const RxPDORemoteTransmissionRequest = packed struct {
+/// Ref: IEC 61158-6-12:2019 5.6.5.4
+pub const PDORemoteTransmissionRequest = packed struct {
     mbx_header: MailboxHeader,
     coe_header: CoEHeader,
-};
 
-/// TxPDO Remote Transmission Request
-///
-/// Ref: IEC 61158-6-12:2019 5.6.5.4
-pub const TxPDORemoteTransmissionRequest = RxPDORemoteTransmissionRequest;
+    pub fn rx(
+        cnt: u3,
+        number: u9,
+    ) PDORemoteTransmissionRequest {
+        assert(cnt != 0);
+        return PDORemoteTransmissionRequest{
+            .mbx_header = .{
+                .length = 2,
+                .address = 0,
+                .channel = 0,
+                .priority = 0,
+                .type = .CoE,
+                .cnt = cnt,
+            },
+            .coe_header = .{
+                .number = number,
+                .service = .rx_pdo_remote_request,
+            },
+        };
+    }
+
+    pub fn tx(
+        cnt: u3,
+        number: u9,
+    ) PDORemoteTransmissionRequest {
+        assert(cnt != 0);
+        return PDORemoteTransmissionRequest{
+            .mbx_header = .{
+                .length = 2,
+                .address = 0,
+                .channel = 0,
+                .priority = 0,
+                .type = .CoE,
+                .cnt = cnt,
+            },
+            .coe_header = .{
+                .number = number,
+                .service = .tx_pdo_remote_request,
+            },
+        };
+    }
+};
 
 pub const CommandStatus = enum(u8) {
     completed_no_errors_no_reply = 0,
@@ -822,6 +1208,11 @@ comptime {
         @divExact(@bitSizeOf(u16), 8)); // wkc
 }
 
+/// Send an Expedited SDO Read.
+///
+/// This is for data of length 1-4 bytes.
+///
+/// 1. Send sdo client expedited upload request until wkc = 1 or timeout
 pub fn sdoReadExpedited(
     port: *nic.Port,
     station_address: u16,
@@ -834,6 +1225,8 @@ pub fn sdoReadExpedited(
     _ = mbx_timeout_us;
     _ = index;
     _ = subindex;
+
+    // 1. send read
 
     // If mailbox in has got something in it, read mailbox to wipe it.
     const mbx_in: esc.SyncManagerAttributes = blk: {
@@ -913,7 +1306,7 @@ pub fn readMailbox(
     retries: u32,
     recv_timeout_us: u32,
     mbx_timeout_us: u32,
-) !void {
+) ![max_mailbox_size]u8 {
     _ = retries;
     var timer = try Timer.start();
 
@@ -945,151 +1338,169 @@ pub fn readMailbox(
     }
 }
 
-/// Messages that can be read from mailbox in.
-///
-/// TODO: other mailbox protocols?
-pub const MailboxMessage = union(enum) {
-    sdo_download_expedited_request: SDODownloadExpeditedRequest,
-    sdo_download_expedited_response: SDODownloadExpeditedResponse,
-    // // sdo_download_normal_request: SDODownloadNormalRequest,
-    // sdo_download_normal_response: SDODownloadNormalResponse,
-    // sdo_download_segment_response: SDODownloadSegmentResponse,
-    // sdo_upload_expedited_response: SDOUploadExpeditedResponse,
-    // sdo_upload_normal_response: SDOUploadNormalResponse,
-    // sdo_upload_segment_response: SDOUploadSegmentResponse,
-    // abort_sdo_transfer_request: AbortSDOTransferRequest,
-    // get_od_list_response: GetODListResponse,
-    // get_object_description_response: GetObjectDescriptionResponse,
-    // get_entry_description_response: GetEntryDescriptionResponse,
-    // sdo_info_error_request: SDOInfoErrorRequest,
-    emergency_request: EmergencyRequest,
-    // rxpdo: RxPDOTransmission,
-    // txpdo: TxPDOTransmission,
-    // rxpdo_remote_request: RxPDORemoteTransmissionRequest,
-    // txpdo_remote_request: TxPDORemoteTransmissionRequest,
+pub const MailboxContentType = enum {
+    sdo_download_expedited_or_normal_response,
+    sdo_download_segment_response,
 
-    pub fn deserialize(buf: []const u8) !MailboxMessage {
-        var fbs = std.io.fixedBufferStream(buf);
-        var reader = fbs.reader();
+    sdo_upload_expedited_response,
+    sdo_upload_normal_response,
+    sdo_upload_segment_response,
 
-        const mbx_header = try nic.packFromECatReader(MailboxHeader, &reader);
+    abort_sdo_transfer_request,
 
-        if (mbx_header.length > buf.len - @divExact(@bitSizeOf(MailboxHeader), 8)) {
-            return error.InvalidMailboxHeaderLength;
-        }
+    get_od_list_response,
+    get_object_description_response,
+    get_entry_description_response,
+    sdo_info_error,
 
-        switch (mbx_header.type) {
-            _ => return error.InvalidProtocol,
-            .ERR, .AoE, .EoE, .FoE, .SoE, .VoE => return error.UnsupportedMailboxProtocol,
-            .CoE => {
-                const coe_header = try nic.packFromECatReader(CoEHeader, &reader);
-
-                switch (coe_header.service) {
-                    _ => return error.InvalidService,
-                    .sdo_request => {
-                        const sdo_header = try nic.packFromECatReader(SDOHeaderClient, &reader);
-
-                        switch (sdo_header.command) {
-                            .download_request => {
-                                switch (sdo_header.transfer_type) {
-                                    .expedited => {
-                                        fbs.reset();
-                                        const sdo_download_expedited_request = try nic.packFromECatReader(SDODownloadExpeditedRequest, &reader);
-                                        return MailboxMessage{ .sdo_download_expedited_request = sdo_download_expedited_request };
-                                    },
-                                    .normal => {
-                                        return error.NotImplemented;
-                                    },
-                                }
-                            },
-                        }
-                    },
-                    // .sdo_response => {
-                    //     const sdo_header = try nic.packFromECatReader(SDOHeader, &reader);
-                    //     switch (sdo_header.command) {
-                    //         .download_response => {
-                    //             fbs.reset();
-                    //             const sdo_download_expedited_response = try nic.packFromECatReader(SDODownloadExpeditedResponse, &reader);
-                    //             return MailboxMessage{ .sdo_download_expedited_response = sdo_download_expedited_response };
-                    //         },
-                    //     }
-                    // },
-                    .emergency => {
-                        fbs.reset();
-                        const emergency_message = try nic.packFromECatReader(EmergencyRequest, &reader);
-                        return MailboxMessage{ .emergency_request = emergency_message };
-                    },
-                    .sdo_response => error.NotImplemented,
-                    .tx_pdo => return error.NotImplemented,
-                    .rx_pdo => return error.NotImplemented,
-                    .tx_pdo_remote_request => return error.NotImplemented,
-                    .rx_pdo_remote_request => return error.NotImplemented,
-                    .sdo_info => return error.NotImplemented,
-                }
-            },
-        }
-        unreachable;
-    }
+    emergency_request,
 };
 
-test "deserialize emergency message" {
-    const expected = EmergencyRequest{
-        .mbx_header = .{
-            .length = 10,
-            .address = 0x1001,
-            .channel = 0,
-            .priority = 0x03,
-            .type = .CoE,
-            .cnt = 3,
-        },
-        .coe_header = .{
-            .number = 0,
-            .service = .emergency,
-        },
-        .error_code = 0x1234,
-        .error_register = 23,
-        .data = 12345,
-    };
-    const buf = nic.eCatFromPack(expected);
-    var zero_buf = std.mem.zeroes([100]u8);
-    @memcpy(zero_buf[0..16], buf[0..16]);
-    const actual = try MailboxMessage.deserialize(&zero_buf);
+// Messages that can be read from mailbox in.
+//
+// TODO: other mailbox protocols?
+// pub const MailboxMessage = union(enum) {
+//     sdo_download_expedited_request: SDODownloadExpeditedRequest,
+//     sdo_download_expedited_response: SDODownloadExpeditedResponse,
+//     // // sdo_download_normal_request: SDODownloadNormalRequest,
+//     // sdo_download_normal_response: SDODownloadNormalResponse,
+//     // sdo_download_segment_response: SDODownloadSegmentResponse,
+//     // sdo_upload_expedited_response: SDOUploadExpeditedResponse,
+//     // sdo_upload_normal_response: SDOUploadNormalResponse,
+//     // sdo_upload_segment_response: SDOUploadSegmentResponse,
+//     // abort_sdo_transfer_request: AbortSDOTransferRequest,
+//     // get_od_list_response: GetODListResponse,
+//     // get_object_description_response: GetObjectDescriptionResponse,
+//     // get_entry_description_response: GetEntryDescriptionResponse,
+//     // sdo_info_error_request: SDOInfoErrorRequest,
+//     emergency_request: EmergencyRequest,
+//     // rxpdo: RxPDOTransmission,
+//     // txpdo: TxPDOTransmission,
+//     // rxpdo_remote_request: RxPDORemoteTransmissionRequest,
+//     // txpdo_remote_request: TxPDORemoteTransmissionRequest,
 
-    try std.testing.expectEqualDeep(expected, actual.emergency_request);
-}
+//     pub fn deserialize(buf: []const u8) !MailboxMessage {
+//         var fbs = std.io.fixedBufferStream(buf);
+//         var reader = fbs.reader();
 
-test "deserialized sdo download expedited request" {
-    const expected = SDODownloadExpeditedRequest{
-        .mbx_header = .{
-            .length = 10,
-            .address = 0x1001,
-            .channel = 0,
-            .priority = 0x01,
-            .type = .CoE,
-            .cnt = 2,
-        },
-        .coe_header = .{
-            .number = 0,
-            .service = .sdo_request,
-        },
-        .sdo_header = .{
-            .size_indicator = true,
-            .transfer_type = .expedited,
-            .data_set_size = .one_octet,
-            .complete_access = false,
-            .command = .download_request,
-            .index = 0x6000,
-            .subindex = 34,
-        },
-        .data = @bitCast([4]u8{ 1, 2, 3, 4 }),
-    };
-    const buf = nic.eCatFromPack(expected);
-    var zero_buf = std.mem.zeroes([100]u8);
-    @memcpy(zero_buf[0..16], buf[0..16]);
-    const actual = try MailboxMessage.deserialize(&zero_buf);
+//         const mbx_header = try nic.packFromECatReader(MailboxHeader, &reader);
 
-    try std.testing.expectEqualDeep(expected, actual.sdo_download_expedited_request);
-}
+//         if (mbx_header.length > buf.len - @divExact(@bitSizeOf(MailboxHeader), 8)) {
+//             return error.InvalidMailboxHeaderLength;
+//         }
+
+//         switch (mbx_header.type) {
+//             _ => return error.InvalidProtocol,
+//             .ERR, .AoE, .EoE, .FoE, .SoE, .VoE => return error.UnsupportedMailboxProtocol,
+//             .CoE => {
+//                 const coe_header = try nic.packFromECatReader(CoEHeader, &reader);
+
+//                 switch (coe_header.service) {
+//                     _ => return error.InvalidService,
+//                     .sdo_request => {
+//                         const sdo_header = try nic.packFromECatReader(SDOHeaderClient, &reader);
+
+//                         switch (sdo_header.command) {
+//                             .download_request => {
+//                                 switch (sdo_header.transfer_type) {
+//                                     .expedited => {
+//                                         fbs.reset();
+//                                         const sdo_download_expedited_request = try nic.packFromECatReader(SDODownloadExpeditedRequest, &reader);
+//                                         return MailboxMessage{ .sdo_download_expedited_request = sdo_download_expedited_request };
+//                                     },
+//                                     .normal => {
+//                                         return error.NotImplemented;
+//                                     },
+//                                 }
+//                             },
+//                         }
+//                     },
+//                     // .sdo_response => {
+//                     //     const sdo_header = try nic.packFromECatReader(SDOHeader, &reader);
+//                     //     switch (sdo_header.command) {
+//                     //         .download_response => {
+//                     //             fbs.reset();
+//                     //             const sdo_download_expedited_response = try nic.packFromECatReader(SDODownloadExpeditedResponse, &reader);
+//                     //             return MailboxMessage{ .sdo_download_expedited_response = sdo_download_expedited_response };
+//                     //         },
+//                     //     }
+//                     // },
+//                     .emergency => {
+//                         fbs.reset();
+//                         const emergency_message = try nic.packFromECatReader(EmergencyRequest, &reader);
+//                         return MailboxMessage{ .emergency_request = emergency_message };
+//                     },
+//                     .sdo_response => error.NotImplemented,
+//                     .tx_pdo => return error.NotImplemented,
+//                     .rx_pdo => return error.NotImplemented,
+//                     .tx_pdo_remote_request => return error.NotImplemented,
+//                     .rx_pdo_remote_request => return error.NotImplemented,
+//                     .sdo_info => return error.NotImplemented,
+//                 }
+//             },
+//         }
+//         unreachable;
+//     }
+// };
+
+// test "deserialize emergency message" {
+//     const expected = EmergencyRequest{
+//         .mbx_header = .{
+//             .length = 10,
+//             .address = 0x1001,
+//             .channel = 0,
+//             .priority = 0x03,
+//             .type = .CoE,
+//             .cnt = 3,
+//         },
+//         .coe_header = .{
+//             .number = 0,
+//             .service = .emergency,
+//         },
+//         .error_code = 0x1234,
+//         .error_register = 23,
+//         .data = 12345,
+//     };
+//     const buf = nic.eCatFromPack(expected);
+//     var zero_buf = std.mem.zeroes([100]u8);
+//     @memcpy(zero_buf[0..16], buf[0..16]);
+//     const actual = try MailboxMessage.deserialize(&zero_buf);
+
+//     try std.testing.expectEqualDeep(expected, actual.emergency_request);
+// }
+
+// test "deserialized sdo download expedited request" {
+//     const expected = SDODownloadExpeditedRequest{
+//         .mbx_header = .{
+//             .length = 10,
+//             .address = 0x1001,
+//             .channel = 0,
+//             .priority = 0x01,
+//             .type = .CoE,
+//             .cnt = 2,
+//         },
+//         .coe_header = .{
+//             .number = 0,
+//             .service = .sdo_request,
+//         },
+//         .sdo_header = .{
+//             .size_indicator = true,
+//             .transfer_type = .expedited,
+//             .data_set_size = .one_octet,
+//             .complete_access = false,
+//             .command = .download_request,
+//             .index = 0x6000,
+//             .subindex = 34,
+//         },
+//         .data = @bitCast([4]u8{ 1, 2, 3, 4 }),
+//     };
+//     const buf = nic.eCatFromPack(expected);
+//     var zero_buf = std.mem.zeroes([100]u8);
+//     @memcpy(zero_buf[0..16], buf[0..16]);
+//     const actual = try MailboxMessage.deserialize(&zero_buf);
+
+//     try std.testing.expectEqualDeep(expected, actual.sdo_download_expedited_request);
+// }
 
 // fn deserializeMailboxData()
 

@@ -1,9 +1,3 @@
-//! Bus Configuration
-//!
-//! Looks a lot like EtherCAT Network Information (ENI).
-//!
-//! Ref: ETG.2100
-
 const esc = @import("esc.zig");
 const sii = @import("sii.zig");
 
@@ -37,7 +31,7 @@ pub const SubDeviceRuntimeInfo = struct {
     order_id: ?sii.SIIString = null,
 };
 
-pub const SubDevice = struct {
+pub const SubDeviceConfig = struct {
 
     // information required to be entered by user
     vendor_id: u32,
@@ -46,5 +40,5 @@ pub const SubDevice = struct {
 };
 
 pub const BusConfiguration = struct {
-    subdevices: []const SubDevice,
+    subdevices: []const SubDeviceConfig,
 };

@@ -3,7 +3,7 @@ const std = @import("std");
 const nic = @import("ecm").nic;
 const MainDevice = @import("ecm").MainDevice;
 const BusConfiguration = @import("ecm").BusConfiguration;
-const SubDevice = @import("ecm").SubDevice;
+const SubDeviceConfig = @import("ecm").SubDeviceConfig;
 const SubDeviceRuntimeInfo = @import("ecm").SubDeviceRuntimeInfo;
 const coe = @import("ecm").coe;
 
@@ -11,9 +11,9 @@ pub const std_options = .{
     .log_level = .info,
 };
 
-const beckhoff_EK1100 = SubDevice{ .vendor_id = 0x2, .product_code = 0x44c2c52, .revision_number = 0x110000 };
-const beckhoff_EL3314 = SubDevice{ .vendor_id = 0x2, .product_code = 0xcf23052, .revision_number = 0x120000 };
-const beckhoff_EL3048 = SubDevice{ .vendor_id = 0x2, .product_code = 0xbe83052, .revision_number = 0x130000 };
+const beckhoff_EK1100 = SubDeviceConfig{ .vendor_id = 0x2, .product_code = 0x44c2c52, .revision_number = 0x110000 };
+const beckhoff_EL3314 = SubDeviceConfig{ .vendor_id = 0x2, .product_code = 0xcf23052, .revision_number = 0x120000 };
+const beckhoff_EL3048 = SubDeviceConfig{ .vendor_id = 0x2, .product_code = 0xbe83052, .revision_number = 0x130000 };
 
 const bus_config = BusConfiguration{
     .subdevices = &.{

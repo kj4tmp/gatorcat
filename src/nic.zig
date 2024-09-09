@@ -226,19 +226,39 @@ test "serialization / deserialization" {
     try std.testing.expectEqualDeep(frame.ethercat_frame.datagrams, &datagrams2);
 }
 
+pub fn isECatPackable(comptime T: type) bool {
+    return switch (@typeInfo(T)) {
+        .Struct => |_struct| blk: {
+            // must be a packed struct
+            break :blk (_struct.layout == .@"packed"); 
+        },
+        .Int, .Float => true,
+        .Union => |_union| blk: {
+            // must be a packed union
+            break :blk (_union.layout == .@"packed"); 
+        },
+        else => false,
+    };
+}
+
+pub fn eCatFromPackToWriter(pack: anytype, writer: anytype) !void {
+    comptime assert(isECatPackable(@TypeOf(pack)));
+    var bytes = eCatFromPack(pack);
+    try writer.writeAll(&bytes);
+} 
+
 /// convert a packed struct to bytes that can be sent via ethercat
 /// 
 /// the packed struct must have bitwidth that is a multiple of 8
-pub fn eCatFromPack(packed_struct: anytype) [@divExact(@bitSizeOf(@TypeOf(packed_struct)), 8)]u8 {
-    comptime std.debug.assert(@typeInfo(@TypeOf(packed_struct)).Struct.layout == .@"packed"); // must be a packed struct
-    var bytes: [@divExact(@bitSizeOf(@TypeOf(packed_struct)), 8)]u8 = undefined;
-
+pub fn eCatFromPack(pack: anytype) [@divExact(@bitSizeOf(@TypeOf(pack)), 8)]u8 {
+    comptime assert(isECatPackable(@TypeOf(pack)));
+    var bytes: [@divExact(@bitSizeOf(@TypeOf(pack)), 8)]u8 = undefined;
     switch (native_endian) {
         .little => {
-            bytes = @bitCast(packed_struct);
+            bytes = @bitCast(pack);
         },
         .big => {
-            bytes = @bitCast(packed_struct);
+            bytes = @bitCast(pack);
             std.mem.reverse(u8, &bytes);
         },
     }
@@ -246,7 +266,7 @@ pub fn eCatFromPack(packed_struct: anytype) [@divExact(@bitSizeOf(@TypeOf(packed
 }
 
 pub fn zerosFromPack(comptime T: type) [@divExact(@bitSizeOf(T), 8)]u8 {
-    comptime std.debug.assert(@typeInfo(T).Struct.layout == .@"packed"); // must be a packed struct
+    comptime assert(isECatPackable(T));
     return std.mem.zeroes([@divExact(@bitSizeOf(T), 8)]u8);
 }
 
@@ -305,23 +325,33 @@ test "eCatFromPack" {
     );
 }
 
+/// Read a packed struct, int, or float from a reader containing
+/// EtherCAT (little endian) data into host endian representation.
 pub fn packFromECatReader(comptime T: type, reader: anytype) !T {
+    comptime assert(isECatPackable(T));
     var bytes: [@divExact(@bitSizeOf(T), 8)]u8 = undefined;
     try reader.readNoEof(&bytes);
     return packFromECat(T, bytes);
 }
 
+test packFromECatReader {
+    const bytes = [_]u8{0,1,2};
+    var fbs = std.io.fixedBufferStream(&bytes);
+    const reader = fbs.reader();
+    const Pack = packed struct (u24) {
+        a: u8,
+        b: u8,
+        c: u8,
+    };
+    const expected_pack = Pack{.a = 0, .b = 1, .c = 2};
+    const actual_pack = packFromECatReader(Pack, reader);
+
+    try std.testing.expectEqualDeep(expected_pack, actual_pack);
+}
+
 
 pub fn packFromECat(comptime T: type, ecat_bytes: [@divExact(@bitSizeOf(T), 8)]u8) T {
-    comptime switch (@typeInfo(T)) {
-        .Struct => |strct|{
-            std.debug.assert(strct.layout == .@"packed"); // must be a packed struct
-        },
-        .Int, .Float => {},
-        else => {unreachable;},
-
-    };
-
+    comptime assert(isECatPackable(T));
     switch (native_endian) {
         .little => {
             return @bitCast(ecat_bytes);

@@ -43,7 +43,27 @@ This library is in extremely early development.
   - [x] Read SII EEPROM
   - [ ] Write SII EEPROM
 - [ ] CoE
-  - [x] CoE Structures
+  - [ ] CoE Structures
+    - [x] SDO Client 
+      - [x] Expedited
+        - [x] Upload
+        - [x] Download
+      - [x] Normal
+        - [x] Download
+        - [x] Upload
+      - [x] Segment
+        - [x] Download
+        - [x] Upload
+    - [ ] SDO Server
+      - [ ] Expedited
+        - [ ] Download
+        - [ ] Upload
+      - [ ] Normal
+        - [ ] Download
+        - [ ] Upload
+      - [ ] Segment
+        - [ ] Download
+        - [ ] Upload
   - [ ] SDO Read Expedited
   - [ ] SDO Read Normal
   - [ ] SDO Read Complete Access

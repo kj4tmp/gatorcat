@@ -4,6 +4,8 @@ const assert = std.debug.assert;
 const big = std.builtin.Endian.big;
 const little = std.builtin.Endian.little;
 
+const wire = @import("wire.zig");
+
 /// EtherCAT command, present in the EtherCAT datagram header.
 pub const Command = enum(u8) {
     /// No operation.
@@ -264,33 +266,19 @@ pub const EthernetFrame = struct {
     /// for tranmission on the line.
     ///
     /// Returns number of bytes written, or error.
-    pub fn serialize(frame: *const EthernetFrame, out: []u8) !usize {
+    pub fn serialize(self: *const EthernetFrame, out: []u8) !usize {
         var fbs = std.io.fixedBufferStream(out);
-        var writer = fbs.writer();
-        try writer.writeInt(u48, frame.header.dest_mac, big);
-        try writer.writeInt(u48, frame.header.src_mac, big);
-        try writer.writeInt(u16, frame.header.ether_type, big);
-        const header_as_int: u16 = @bitCast(frame.ethercat_frame.header);
-        try writer.writeInt(
-            @TypeOf(header_as_int),
-            header_as_int,
-            little,
-        );
-        for (frame.ethercat_frame.datagrams) |datagram| {
-            const datagram_header_as_int: u80 = @bitCast(datagram.header);
-            try writer.writeInt(
-                u80,
-                datagram_header_as_int,
-                little,
-            );
+        const writer = fbs.writer();
+        try writer.writeInt(u48, self.header.dest_mac, big);
+        try writer.writeInt(u48, self.header.src_mac, big);
+        try writer.writeInt(u16, self.header.ether_type, big);
+        try wire.eCatFromPackToWriter(self.ethercat_frame.header, writer);
+        for (self.ethercat_frame.datagrams) |datagram| {
+            try wire.eCatFromPackToWriter(datagram.header, writer);
             try writer.writeAll(datagram.data);
-            try writer.writeInt(
-                @TypeOf(datagram.wkc),
-                datagram.wkc,
-                little,
-            );
+            try wire.eCatFromPackToWriter(datagram.wkc, writer);
         }
-        try writer.writeAll(frame.padding);
+        try writer.writeAll(self.padding);
         return fbs.getWritten().len;
     }
 
@@ -300,7 +288,7 @@ pub const EthernetFrame = struct {
         out: []Datagram,
     ) !void {
         var fbs_reading = std.io.fixedBufferStream(received);
-        var reader = fbs_reading.reader();
+        const reader = fbs_reading.reader();
 
         const ethernet_header = EthernetHeader{
             .dest_mac = try reader.readInt(u48, big),
@@ -310,10 +298,7 @@ pub const EthernetFrame = struct {
         if (ethernet_header.ether_type != @intFromEnum(EtherType.ETHERCAT)) {
             return error.NotAnEtherCATFrame;
         }
-        const header_as_int: u16 = try reader.readInt(u16, little);
-
-        const ethercat_header: EtherCATHeader = @bitCast(header_as_int);
-
+        const ethercat_header = try wire.packFromECatReader(EtherCATHeader, reader);
         const bytes_remaining = try fbs_reading.getEndPos() - try fbs_reading.getPos();
         const bytes_total = try fbs_reading.getEndPos();
         if (bytes_total < min_frame_length) {
@@ -328,8 +313,7 @@ pub const EthernetFrame = struct {
         }
 
         for (out) |*out_datagram| {
-            const datagram_header_as_int: u80 = try reader.readInt(u80, little);
-            out_datagram.header = @bitCast(datagram_header_as_int);
+            out_datagram.header = try wire.packFromECatReader(DatagramHeader, reader);
             std.log.debug("datagram header: {}", .{out_datagram.header});
             if (out_datagram.header.length != out_datagram.data.len) {
                 return error.CurruptedFrame;
@@ -338,26 +322,22 @@ pub const EthernetFrame = struct {
             if (n_bytes_read != out_datagram.data.len) {
                 return error.CurruptedFrame;
             }
-            out_datagram.wkc = try reader.readInt(
-                @TypeOf(out_datagram.wkc),
-                little,
-            );
+            out_datagram.wkc = try wire.packFromECatReader(u16, reader);
         }
     }
 
     pub fn identifyFromBuffer(buf: []const u8) !u8 {
         var fbs = std.io.fixedBufferStream(buf);
-        var reader = fbs.reader();
-        var ethernet_header: EthernetHeader = undefined;
-        ethernet_header.dest_mac = try reader.readInt(u48, big);
-        ethernet_header.src_mac = try reader.readInt(u48, big);
-        ethernet_header.ether_type = try reader.readInt(u16, big);
+        const reader = fbs.reader();
+        const ethernet_header = EthernetHeader{
+            .dest_mac = try reader.readInt(u48, big),
+            .src_mac = try reader.readInt(u48, big),
+            .ether_type = try reader.readInt(u16, big),
+        };
         if (ethernet_header.ether_type != @intFromEnum(EtherType.ETHERCAT)) {
             return error.NotAnEtherCATFrame;
         }
-        const header_as_int: u16 = try reader.readInt(u16, little);
-        const ethercat_header: EtherCATHeader = @bitCast(header_as_int);
-
+        const ethercat_header = try wire.packFromECatReader(EtherCATHeader, reader);
         const bytes_remaining = try fbs.getEndPos() - try fbs.getPos();
         const bytes_total = try fbs.getEndPos();
         if (bytes_total < min_frame_length) {
@@ -370,8 +350,7 @@ pub const EthernetFrame = struct {
             );
             return error.InvalidEtherCATHeader;
         }
-        const datagram_header_as_int: u80 = try reader.readInt(u80, little);
-        const datagram_header: DatagramHeader = @bitCast(datagram_header_as_int);
+        const datagram_header = try wire.packFromECatReader(DatagramHeader, reader);
         return datagram_header.idx;
     }
 };

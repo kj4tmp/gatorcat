@@ -9,7 +9,7 @@ const ns_per_us = std.time.ns_per_us;
 
 const telegram = @import("telegram.zig");
 
-const ETH_P_ETHERCAT = @intFromEnum(@import("telegram.zig").EtherType.ETHERCAT);
+const ETH_P_ETHERCAT = @intFromEnum(telegram.EtherType.ETHERCAT);
 const MAC_BROADCAST: u48 = 0xffff_ffff_ffff;
 const MAC_SOURCE: u48 = 0xAAAA_AAAA_AAAA;
 

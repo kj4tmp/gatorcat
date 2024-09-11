@@ -143,7 +143,7 @@ pub const SDOClientExpedited = packed struct(u128) {
     pub fn deserialize(buf: []const u8) !SDOClientExpedited {
         var fbs = std.io.fixedBufferStream(buf);
         var reader = fbs.reader();
-        return try nic.packFromECatReader(SDOClientExpedited, &reader);
+        return try wire.packFromECatReader(SDOClientExpedited, &reader);
     }
 
     pub fn serialize(self: SDOClientExpedited, out: []u8) !usize {
@@ -220,10 +220,10 @@ pub const SDOClientNormal = struct {
     pub fn deserialize(buf: []const u8) !SDOClientNormal {
         var fbs = std.io.fixedBufferStream(buf);
         const reader = fbs.reader();
-        const mbx_header = try nic.packFromECatReader(mailbox.MailboxHeader, reader);
-        const coe_header = try nic.packFromECatReader(coe.CoEHeader, reader);
-        const sdo_header = try nic.packFromECatReader(SDOHeaderClient, reader);
-        const complete_size = try nic.packFromECatReader(u32, reader);
+        const mbx_header = try wire.packFromECatReader(mailbox.MailboxHeader, reader);
+        const coe_header = try wire.packFromECatReader(coe.CoEHeader, reader);
+        const sdo_header = try wire.packFromECatReader(SDOHeaderClient, reader);
+        const complete_size = try wire.packFromECatReader(u32, reader);
 
         if (mbx_header.length < 10) {
             return error.InvalidMbxHeaderLength;
@@ -365,9 +365,9 @@ pub const SDOClientSegment = struct {
     pub fn deserialize(buf: []const u8) !SDOClientSegment {
         var fbs = std.io.fixedBufferStream(buf);
         const reader = fbs.reader();
-        const mbx_header = try nic.packFromECatReader(mailbox.MailboxHeader, reader);
-        const coe_header = try nic.packFromECatReader(coe.CoEHeader, reader);
-        const sdo_seg_header = try nic.packFromECatReader(SDOSegmentHeaderClient, reader);
+        const mbx_header = try wire.packFromECatReader(mailbox.MailboxHeader, reader);
+        const coe_header = try wire.packFromECatReader(coe.CoEHeader, reader);
+        const sdo_seg_header = try wire.packFromECatReader(SDOSegmentHeaderClient, reader);
 
         if (mbx_header.length < 10) {
             return error.InvalidMbxHeaderLength;

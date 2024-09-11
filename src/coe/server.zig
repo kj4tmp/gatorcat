@@ -142,9 +142,9 @@ pub const SDOServerExpedited = packed struct(u128) {
     pub fn deserialize(buf: []const u8) !SDOServerExpedited {
         var fbs = std.io.fixedBufferStream(buf);
         var reader = fbs.reader();
-        const mbx_header = try nic.packFromECatReader(mailbox.MailboxHeader, reader);
-        const coe_header = try nic.packFromECatReader(coe.CoEHeader, reader);
-        const sdo_header = try nic.packFromECatReader(SDOHeaderServer, reader);
+        const mbx_header = try wire.packFromECatReader(mailbox.MailboxHeader, reader);
+        const coe_header = try wire.packFromECatReader(coe.CoEHeader, reader);
+        const sdo_header = try wire.packFromECatReader(SDOHeaderServer, reader);
         const data_size: usize = switch (sdo_header.data_set_size) {
             .one_octet => 1,
             .two_octets => 2,
@@ -185,10 +185,10 @@ pub const SDOServerNormal = struct {
     pub fn deserialize(buf: []const u8) !SDOServerNormal {
         var fbs = std.io.fixedBufferStream(buf);
         const reader = fbs.reader();
-        const mbx_header = try nic.packFromECatReader(mailbox.MailboxHeader, reader);
-        const coe_header = try nic.packFromECatReader(coe.CoEHeader, reader);
-        const sdo_header = try nic.packFromECatReader(SDOHeaderServer, reader);
-        const complete_size = try nic.packFromECatReader(u32, reader);
+        const mbx_header = try wire.packFromECatReader(mailbox.MailboxHeader, reader);
+        const coe_header = try wire.packFromECatReader(coe.CoEHeader, reader);
+        const sdo_header = try wire.packFromECatReader(SDOHeaderServer, reader);
+        const complete_size = try wire.packFromECatReader(u32, reader);
 
         if (mbx_header.length < 10) {
             return error.InvalidMbxHeaderLength;

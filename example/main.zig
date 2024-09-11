@@ -1,39 +1,33 @@
 const std = @import("std");
 
-const nic = @import("ecm").nic;
-const MainDevice = @import("ecm").MainDevice;
-const BusConfiguration = @import("ecm").BusConfiguration;
-const SubDeviceConfig = @import("ecm").SubDeviceConfig;
-const SubDeviceRuntimeInfo = @import("ecm").SubDeviceRuntimeInfo;
-const coe = @import("ecm").coe;
+const ecm = @import("ecm");
 
 pub const std_options = .{
     .log_level = .info,
 };
 
-const beckhoff_EK1100 = SubDeviceConfig{ .vendor_id = 0x2, .product_code = 0x44c2c52, .revision_number = 0x110000 };
-const beckhoff_EL3314 = SubDeviceConfig{ .vendor_id = 0x2, .product_code = 0xcf23052, .revision_number = 0x120000 };
-const beckhoff_EL3048 = SubDeviceConfig{ .vendor_id = 0x2, .product_code = 0xbe83052, .revision_number = 0x130000 };
+const beckhoff_EK1100 = ecm.SubDevice.PriorInfo{ .vendor_id = 0x2, .product_code = 0x44c2c52, .revision_number = 0x110000 };
+const beckhoff_EL3314 = ecm.SubDevice.PriorInfo{ .vendor_id = 0x2, .product_code = 0xcf23052, .revision_number = 0x120000 };
+const beckhoff_EL3048 = ecm.SubDevice.PriorInfo{ .vendor_id = 0x2, .product_code = 0xbe83052, .revision_number = 0x130000 };
 
-const bus_config = BusConfiguration{
-    .subdevices = &.{
-        beckhoff_EK1100,
-        beckhoff_EL3314,
-        beckhoff_EL3048,
-    },
+var subdevices: [3]ecm.SubDevice = .{
+    ecm.SubDevice.init(beckhoff_EK1100),
+    ecm.SubDevice.init(beckhoff_EL3314),
+    ecm.SubDevice.init(beckhoff_EL3048),
 };
 
-var bus = [3]SubDeviceRuntimeInfo{ .{}, .{}, .{} };
+const bus = ecm.MainDevice.BusConfiguration{
+    .subdevices = &subdevices,
+};
 
 pub fn main() !void {
-    var port = try nic.Port.init("enx00e04c68191a");
+    var port = try ecm.nic.Port.init("enx00e04c68191a");
     defer port.deinit();
 
-    var main_device = MainDevice.init(
+    var main_device = ecm.MainDevice.init(
         &port,
         .{},
-        bus_config,
-        &bus,
+        bus,
     );
 
     try main_device.busINIT();

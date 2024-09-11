@@ -1,7 +1,5 @@
 const std = @import("std");
-const big = std.builtin.Endian.big;
-const little = std.builtin.Endian.little;
-const lossyCast = @import("std").math.lossyCast;
+const lossyCast = std.math.lossyCast;
 const assert = std.debug.assert;
 /// EtherCAT command, present in the EtherCAT datagram header.
 pub const Command = enum(u8) {

@@ -528,7 +528,7 @@ pub fn readSMCatagory(
 
         var res: [16]?SyncM = [_]?SyncM{null} ** 16;
         for (res[0..n_sm]) |*sm| {
-            sm.* = try nic.packFromECatReader(SyncM, &reader);
+            sm.* = try wire.packFromECatReader(SyncM, &reader);
         }
         return res;
     } else {
@@ -590,7 +590,7 @@ pub fn findCatagoryFP(port: *nic.Port, station_address: u16, catagory: CatagoryT
 
     const reader = stream.reader();
     for (0..1000) |_| {
-        const catagory_header = try nic.packFromECatReader(CatagoryHeader, reader.any());
+        const catagory_header = try wire.packFromECatReader(CatagoryHeader, reader.any());
 
         if (catagory_header.catagory_type == catagory) {
             // + 2 for catagory header, byte length = 2 * word length
@@ -707,7 +707,7 @@ pub fn readSIIFP_ps(
 // }
 
 pub const SIIStream = struct {
-    port: *Port,
+    port: *nic.Port,
     station_address: u16,
     retries: u32,
     recv_timeout_us: u32,
@@ -718,7 +718,7 @@ pub const SIIStream = struct {
     remainder: u8 = 0,
 
     pub fn init(
-        port: *Port,
+        port: *nic.Port,
         station_address: u16,
         eeprom_address: u16,
         retries: u32,
@@ -796,7 +796,7 @@ pub const ReadSIIError = error{
 
 /// read 4 bytes from SII, using station addressing
 pub fn readSII4ByteFP(
-    port: *Port,
+    port: *nic.Port,
     station_address: u16,
     eeprom_address: u16,
     retries: u32,
@@ -833,7 +833,7 @@ pub fn readSII4ByteFP(
 
     // ensure there is a rising edge in the read command by first sending zeros
     for (0..retries) |_| {
-        var data = nic.zerosFromPack(esc.SIIControlStatusRegister);
+        var data = wire.zerosFromPack(esc.SIIControlStatusRegister);
         const wkc = commands.fpwr(
             port,
             .{

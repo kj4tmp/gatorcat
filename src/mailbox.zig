@@ -284,7 +284,7 @@ pub const MailboxContentType = enum {
 //         var fbs = std.io.fixedBufferStream(buf);
 //         var reader = fbs.reader();
 
-//         const mbx_header = try nic.packFromECatReader(MailboxHeader, &reader);
+//         const mbx_header = try wire.packFromECatReader(MailboxHeader, &reader);
 
 //         if (mbx_header.length > buf.len - @divExact(@bitSizeOf(MailboxHeader), 8)) {
 //             return error.InvalidMailboxHeaderLength;
@@ -294,19 +294,19 @@ pub const MailboxContentType = enum {
 //             _ => return error.InvalidProtocol,
 //             .ERR, .AoE, .EoE, .FoE, .SoE, .VoE => return error.UnsupportedMailboxProtocol,
 //             .CoE => {
-//                 const coe_header = try nic.packFromECatReader(CoEHeader, &reader);
+//                 const coe_header = try wire.packFromECatReader(CoEHeader, &reader);
 
 //                 switch (coe_header.service) {
 //                     _ => return error.InvalidService,
 //                     .sdo_request => {
-//                         const sdo_header = try nic.packFromECatReader(SDOHeaderClient, &reader);
+//                         const sdo_header = try wire.packFromECatReader(SDOHeaderClient, &reader);
 
 //                         switch (sdo_header.command) {
 //                             .download_request => {
 //                                 switch (sdo_header.transfer_type) {
 //                                     .expedited => {
 //                                         fbs.reset();
-//                                         const sdo_download_expedited_request = try nic.packFromECatReader(SDODownloadExpeditedRequest, &reader);
+//                                         const sdo_download_expedited_request = try wire.packFromECatReader(SDODownloadExpeditedRequest, &reader);
 //                                         return MailboxMessage{ .sdo_download_expedited_request = sdo_download_expedited_request };
 //                                     },
 //                                     .normal => {
@@ -317,18 +317,18 @@ pub const MailboxContentType = enum {
 //                         }
 //                     },
 //                     // .sdo_response => {
-//                     //     const sdo_header = try nic.packFromECatReader(SDOHeader, &reader);
+//                     //     const sdo_header = try wire.packFromECatReader(SDOHeader, &reader);
 //                     //     switch (sdo_header.command) {
 //                     //         .download_response => {
 //                     //             fbs.reset();
-//                     //             const sdo_download_expedited_response = try nic.packFromECatReader(SDODownloadExpeditedResponse, &reader);
+//                     //             const sdo_download_expedited_response = try wire.packFromECatReader(SDODownloadExpeditedResponse, &reader);
 //                     //             return MailboxMessage{ .sdo_download_expedited_response = sdo_download_expedited_response };
 //                     //         },
 //                     //     }
 //                     // },
 //                     .emergency => {
 //                         fbs.reset();
-//                         const emergency_message = try nic.packFromECatReader(EmergencyRequest, &reader);
+//                         const emergency_message = try wire.packFromECatReader(EmergencyRequest, &reader);
 //                         return MailboxMessage{ .emergency_request = emergency_message };
 //                     },
 //                     .sdo_response => error.NotImplemented,

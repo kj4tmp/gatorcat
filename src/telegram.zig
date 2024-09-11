@@ -1,6 +1,9 @@
 const std = @import("std");
 const lossyCast = std.math.lossyCast;
 const assert = std.debug.assert;
+const big = std.builtin.Endian.big;
+const little = std.builtin.Endian.little;
+
 /// EtherCAT command, present in the EtherCAT datagram header.
 pub const Command = enum(u8) {
     /// No operation.
@@ -256,7 +259,238 @@ pub const EthernetFrame = struct {
     pub fn assignIdx(self: *EthernetFrame, idx: u8) void {
         self.ethercat_frame.datagrams[0].header.idx = idx;
     }
+
+    /// serialize this frame into the out buffer
+    /// for tranmission on the line.
+    ///
+    /// Returns number of bytes written, or error.
+    pub fn serialize(frame: *const EthernetFrame, out: []u8) !usize {
+        var fbs = std.io.fixedBufferStream(out);
+        var writer = fbs.writer();
+        try writer.writeInt(u48, frame.header.dest_mac, big);
+        try writer.writeInt(u48, frame.header.src_mac, big);
+        try writer.writeInt(u16, frame.header.ether_type, big);
+        const header_as_int: u16 = @bitCast(frame.ethercat_frame.header);
+        try writer.writeInt(
+            @TypeOf(header_as_int),
+            header_as_int,
+            little,
+        );
+        for (frame.ethercat_frame.datagrams) |datagram| {
+            const datagram_header_as_int: u80 = @bitCast(datagram.header);
+            try writer.writeInt(
+                u80,
+                datagram_header_as_int,
+                little,
+            );
+            try writer.writeAll(datagram.data);
+            try writer.writeInt(
+                @TypeOf(datagram.wkc),
+                datagram.wkc,
+                little,
+            );
+        }
+        try writer.writeAll(frame.padding);
+        return fbs.getWritten().len;
+    }
+
+    /// deserialze bytes into datagrams
+    pub fn deserialize(
+        received: []const u8,
+        out: []Datagram,
+    ) !void {
+        var fbs_reading = std.io.fixedBufferStream(received);
+        var reader = fbs_reading.reader();
+
+        const ethernet_header = EthernetHeader{
+            .dest_mac = try reader.readInt(u48, big),
+            .src_mac = try reader.readInt(u48, big),
+            .ether_type = try reader.readInt(u16, big),
+        };
+        if (ethernet_header.ether_type != @intFromEnum(EtherType.ETHERCAT)) {
+            return error.NotAnEtherCATFrame;
+        }
+        const header_as_int: u16 = try reader.readInt(u16, little);
+
+        const ethercat_header: EtherCATHeader = @bitCast(header_as_int);
+
+        const bytes_remaining = try fbs_reading.getEndPos() - try fbs_reading.getPos();
+        const bytes_total = try fbs_reading.getEndPos();
+        if (bytes_total < min_frame_length) {
+            return error.InvalidFrameLengthTooSmall;
+        }
+        if (ethercat_header.length > bytes_remaining) {
+            std.log.debug(
+                "length field: {}, remaining: {}, end pos: {}",
+                .{ ethercat_header.length, bytes_remaining, try fbs_reading.getEndPos() },
+            );
+            return error.InvalidEtherCATHeader;
+        }
+
+        for (out) |*out_datagram| {
+            const datagram_header_as_int: u80 = try reader.readInt(u80, little);
+            out_datagram.header = @bitCast(datagram_header_as_int);
+            std.log.debug("datagram header: {}", .{out_datagram.header});
+            if (out_datagram.header.length != out_datagram.data.len) {
+                return error.CurruptedFrame;
+            }
+            const n_bytes_read = try reader.readAll(out_datagram.data);
+            if (n_bytes_read != out_datagram.data.len) {
+                return error.CurruptedFrame;
+            }
+            out_datagram.wkc = try reader.readInt(
+                @TypeOf(out_datagram.wkc),
+                little,
+            );
+        }
+    }
+
+    pub fn identifyFromBuffer(buf: []const u8) !u8 {
+        var fbs = std.io.fixedBufferStream(buf);
+        var reader = fbs.reader();
+        var ethernet_header: EthernetHeader = undefined;
+        ethernet_header.dest_mac = try reader.readInt(u48, big);
+        ethernet_header.src_mac = try reader.readInt(u48, big);
+        ethernet_header.ether_type = try reader.readInt(u16, big);
+        if (ethernet_header.ether_type != @intFromEnum(EtherType.ETHERCAT)) {
+            return error.NotAnEtherCATFrame;
+        }
+        const header_as_int: u16 = try reader.readInt(u16, little);
+        const ethercat_header: EtherCATHeader = @bitCast(header_as_int);
+
+        const bytes_remaining = try fbs.getEndPos() - try fbs.getPos();
+        const bytes_total = try fbs.getEndPos();
+        if (bytes_total < min_frame_length) {
+            return error.InvalidFrameLengthTooSmall;
+        }
+        if (ethercat_header.length > bytes_remaining) {
+            std.log.debug(
+                "length field: {}, remaining: {}, end pos: {}",
+                .{ ethercat_header.length, bytes_remaining, try fbs.getEndPos() },
+            );
+            return error.InvalidEtherCATHeader;
+        }
+        const datagram_header_as_int: u80 = try reader.readInt(u80, little);
+        const datagram_header: DatagramHeader = @bitCast(datagram_header_as_int);
+        return datagram_header.idx;
+    }
 };
+
+test "ethernet frame serialization" {
+    var data: [4]u8 = .{ 0x01, 0x02, 0x03, 0x04 };
+    var datagrams: [1]Datagram = .{
+        Datagram{
+            .header = DatagramHeader{
+                .command = Command.BRD,
+                .idx = 123,
+                .address = 0xABCDEF12,
+                .length = 0,
+                .circulating = false,
+                .next = false,
+                .irq = 0,
+            },
+            .data = &data,
+            .wkc = 0,
+        },
+    };
+
+    const padding = std.mem.zeroes([46]u8);
+    var frame = EthernetFrame{
+        .header = EthernetHeader{
+            .dest_mac = 0x1122_3344_5566,
+            .src_mac = 0xAABB_CCDD_EEFF,
+            .ether_type = @intFromEnum(EtherType.ETHERCAT),
+        },
+        .ethercat_frame = EtherCATFrame{
+            .header = EtherCATHeader{
+                .length = 0,
+            },
+            .datagrams = &datagrams,
+        },
+        .padding = undefined,
+    };
+    frame.padding = padding[0..frame.getRequiredPaddingLength()];
+    frame.calc();
+
+    var out_buf: [max_frame_length]u8 = undefined;
+    const serialized = out_buf[0..try frame.serialize(&out_buf)];
+    const expected = [_]u8{
+        // zig fmt: off
+        0x11, 0x22, 0x33, 0x44, 0x55, 0x66, // src mac
+        0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, // dest mac
+        0x88, 0xa4, // 0xa488 big endian
+        0x10, 0b0001_0_000, // length=16, reserved=0, type=1
+        0x07, // BRD
+        123, // idx
+        0x12, 0xEF, 0xCD, 0xAB, // address
+        0x04, //length
+        0x00, 0x00, 0x00,
+        0x01, 0x02, 0x03, 0x04, // data
+        // padding (30 bytes since 30 bytes above)
+        0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00,
+
+        // zig fmt: on
+    };
+    try std.testing.expectEqualSlices(u8, &expected, serialized);
+}
+
+test "ethernet frame serialization / deserialization" {
+
+    var data: [4]u8 = .{ 0x01, 0x02, 0x03, 0x04 };
+    var datagrams: [1]Datagram = .{
+        Datagram{
+            .header = DatagramHeader{
+                .command = Command.BRD,
+                .idx = 0,
+                .address = 0xABCD,
+                .length = 0,
+                .circulating = false,
+                .next = false,
+                .irq = 0,
+            },
+            .data = &data,
+            .wkc = 0,
+        },
+    };
+
+    const padding = std.mem.zeroes([46]u8);
+    var frame = EthernetFrame{
+        .header = EthernetHeader{
+            .dest_mac = 0xffff_ffff_ffff,
+            .src_mac = 0xAAAA_AAAA_AAAA,
+            .ether_type = @intFromEnum(EtherType.ETHERCAT),
+        },
+        .ethercat_frame = EtherCATFrame{
+            .header = EtherCATHeader{
+                .length = 0,
+            },
+            .datagrams = &datagrams,
+        },
+        .padding = undefined,
+    };
+    frame.padding = padding[0..frame.getRequiredPaddingLength()];
+    frame.calc();
+
+    var out_buf: [max_frame_length]u8 = undefined;
+    const serialized = out_buf[0..try frame.serialize(&out_buf)];
+    var allocator = std.testing.allocator;
+    const serialize_copy = try allocator.dupe(u8, serialized);
+    defer allocator.free(serialize_copy);
+
+    var data2: [4]u8 = undefined;
+    var datagrams2 = datagrams;
+    datagrams2[0].data = &data2;
+
+    try EthernetFrame.deserialize(serialize_copy, &datagrams2);
+
+    try std.testing.expectEqualDeep(frame.ethercat_frame.datagrams, &datagrams2);
+}
+
 
 /// Max frame length
 /// Includes header, but not FCS (intended to be the max allowable size to

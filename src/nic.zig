@@ -2,8 +2,7 @@ const std = @import("std");
 const lossyCast = std.math.lossyCast;
 const Mutex = std.Thread.Mutex;
 const assert = std.debug.assert;
-const big = std.builtin.Endian.big;
-const little = std.builtin.Endian.little;
+
 const Timer = std.time.Timer;
 const ns_per_us = std.time.ns_per_us;
 
@@ -25,216 +24,13 @@ const FrameStatus = enum {
     in_use_currupted,
 };
 
-/// deserialze bytes into datagrams
-fn deserialize_frame(
-    received: []const u8,
-    out: []telegram.Datagram,
-) !void {
-    var fbs_reading = std.io.fixedBufferStream(received);
-    var reader = fbs_reading.reader();
-
-    const ethernet_header = telegram.EthernetHeader{
-        .dest_mac = try reader.readInt(u48, big),
-        .src_mac = try reader.readInt(u48, big),
-        .ether_type = try reader.readInt(u16, big),
-    };
-    if (ethernet_header.ether_type != @intFromEnum(telegram.EtherType.ETHERCAT)) {
-        return error.NotAnEtherCATFrame;
-    }
-    const header_as_int: u16 = try reader.readInt(u16, little);
-
-    const ethercat_header: telegram.EtherCATHeader = @bitCast(header_as_int);
-
-    const bytes_remaining = try fbs_reading.getEndPos() - try fbs_reading.getPos();
-    const bytes_total = try fbs_reading.getEndPos();
-    if (bytes_total < telegram.min_frame_length) {
-        return error.InvalidFrameLengthTooSmall;
-    }
-    if (ethercat_header.length > bytes_remaining) {
-        std.log.debug(
-            "length field: {}, remaining: {}, end pos: {}",
-            .{ ethercat_header.length, bytes_remaining, try fbs_reading.getEndPos() },
-        );
-        return error.InvalidEtherCATHeader;
-    }
-
-    for (out) |*out_datagram| {
-        const datagram_header_as_int: u80 = try reader.readInt(u80, little);
-        out_datagram.header = @bitCast(datagram_header_as_int);
-        std.log.debug("datagram header: {}", .{out_datagram.header});
-        if (out_datagram.header.length != out_datagram.data.len) {
-            return error.CurruptedFrame;
-        }
-        const n_bytes_read = try reader.readAll(out_datagram.data);
-        if (n_bytes_read != out_datagram.data.len) {
-            return error.CurruptedFrame;
-        }
-        out_datagram.wkc = try reader.readInt(
-            @TypeOf(out_datagram.wkc),
-            little,
-        );
-    }
-}
-
-/// serialize this frame into the out buffer
-/// for tranmission on the line.
-///
-/// Returns slice of bytes written, or error.
-fn serialize_frame(frame: *const telegram.EthernetFrame, out: []u8) ![]u8 {
-    var fbs = std.io.fixedBufferStream(out);
-    var writer = fbs.writer();
-    try writer.writeInt(u48, frame.header.dest_mac, big);
-    try writer.writeInt(u48, frame.header.src_mac, big);
-    try writer.writeInt(u16, frame.header.ether_type, big);
-    const header_as_int: u16 = @bitCast(frame.ethercat_frame.header);
-    try writer.writeInt(
-        @TypeOf(header_as_int),
-        header_as_int,
-        little,
-    );
-    for (frame.ethercat_frame.datagrams) |datagram| {
-        const datagram_header_as_int: u80 = @bitCast(datagram.header);
-        try writer.writeInt(
-            u80,
-            datagram_header_as_int,
-            little,
-        );
-        try writer.writeAll(datagram.data);
-        try writer.writeInt(
-            @TypeOf(datagram.wkc),
-            datagram.wkc,
-            little,
-        );
-    }
-    try writer.writeAll(frame.padding);
-    return fbs.getWritten();
-}
-
-test "serialization" {
-    var data: [4]u8 = .{ 0x01, 0x02, 0x03, 0x04 };
-    var datagrams: [1]telegram.Datagram = .{
-        telegram.Datagram{
-            .header = telegram.DatagramHeader{
-                .command = telegram.Command.BRD,
-                .idx = 123,
-                .address = 0xABCDEF12,
-                .length = 0,
-                .circulating = false,
-                .next = false,
-                .irq = 0,
-            },
-            .data = &data,
-            .wkc = 0,
-        },
-    };
-
-    const padding = std.mem.zeroes([46]u8);
-    var frame = telegram.EthernetFrame{
-        .header = telegram.EthernetHeader{
-            .dest_mac = 0x1122_3344_5566,
-            .src_mac = 0xAABB_CCDD_EEFF,
-            .ether_type = @intFromEnum(telegram.EtherType.ETHERCAT),
-        },
-        .ethercat_frame = telegram.EtherCATFrame{
-            .header = telegram.EtherCATHeader{
-                .length = 0,
-            },
-            .datagrams = &datagrams,
-        },
-        .padding = undefined,
-    };
-    frame.padding = padding[0..frame.getRequiredPaddingLength()];
-    frame.calc();
-
-    var out_buf: [telegram.max_frame_length]u8 = undefined;
-    const serialized = try serialize_frame(&frame, &out_buf);
-    const expected = [_]u8{
-        // zig fmt: off
-        0x11, 0x22, 0x33, 0x44, 0x55, 0x66, // src mac
-        0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, // dest mac
-        0x88, 0xa4, // 0xa488 big endian
-        0x10, 0b0001_0_000, // length=16, reserved=0, type=1
-        0x07, // BRD
-        123, // idx
-        0x12, 0xEF, 0xCD, 0xAB, // address
-        0x04, //length
-        0x00, 0x00, 0x00,
-        0x01, 0x02, 0x03, 0x04, // data
-        // padding (30 bytes since 30 bytes above)
-        0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00,
-
-        // zig fmt: on
-    };
-    try std.testing.expectEqualSlices(u8, &expected, serialized);
-}
-
-test "serialization / deserialization" {
-
-    var data: [4]u8 = .{ 0x01, 0x02, 0x03, 0x04 };
-    var datagrams: [1]telegram.Datagram = .{
-        telegram.Datagram{
-            .header = telegram.DatagramHeader{
-                .command = telegram.Command.BRD,
-                .idx = 0,
-                .address = 0xABCD,
-                .length = 0,
-                .circulating = false,
-                .next = false,
-                .irq = 0,
-            },
-            .data = &data,
-            .wkc = 0,
-        },
-    };
-
-    const padding = std.mem.zeroes([46]u8);
-    var frame = telegram.EthernetFrame{
-        .header = telegram.EthernetHeader{
-            .dest_mac = MAC_BROADCAST,
-            .src_mac = MAC_SOURCE,
-            .ether_type = @intFromEnum(telegram.EtherType.ETHERCAT),
-        },
-        .ethercat_frame = telegram.EtherCATFrame{
-            .header = telegram.EtherCATHeader{
-                .length = 0,
-            },
-            .datagrams = &datagrams,
-        },
-        .padding = undefined,
-    };
-    frame.padding = padding[0..frame.getRequiredPaddingLength()];
-    frame.calc();
-
-    var out_buf: [telegram.max_frame_length]u8 = undefined;
-    const serialized = try serialize_frame(&frame, &out_buf);
-    var allocator = std.testing.allocator;
-    const serialize_copy = try allocator.dupe(u8, serialized);
-    defer allocator.free(serialize_copy);
-
-    var data2: [4]u8 = undefined;
-    var datagrams2 = datagrams;
-    datagrams2[0].data = &data2;
-
-    try deserialize_frame(serialize_copy, &datagrams2);
-
-    try std.testing.expectEqualDeep(frame.ethercat_frame.datagrams, &datagrams2);
-}
-
-
-
-
 pub const Port = struct {
     recv_datagrams_status_mutex: Mutex = .{},
     send_mutex: Mutex = .{},
     recv_mutex: Mutex = .{},
     socket: std.posix.socket_t,
     recv_datagrams: [128][]telegram.Datagram = undefined,
-    recv_datagrams_status: [128]FrameStatus = [_]FrameStatus{FrameStatus.available}**128,
+    recv_datagrams_status: [128]FrameStatus = [_]FrameStatus{FrameStatus.available} ** 128,
 
     pub fn init(
         ifname: []const u8,
@@ -319,7 +115,7 @@ pub const Port = struct {
     }
 
     /// claim transaction
-    /// 
+    ///
     /// claim a transaction idx with the ethercat bus.
     pub fn claim_transaction(self: *Port) error{NoTransactionAvailable}!u8 {
         self.recv_datagrams_status_mutex.lock();
@@ -336,7 +132,7 @@ pub const Port = struct {
     }
 
     /// Send a transaction with the ethercat bus.
-    /// 
+    ///
     /// Parameter send_datagram is the datagram to be sent
     /// and is used to deserialize the data on response.
     pub fn send_transaction(self: *Port, idx: u8, send_datagrams: []telegram.Datagram) !void {
@@ -366,9 +162,10 @@ pub const Port = struct {
         frame.calc();
 
         var out_buf: [telegram.max_frame_length]u8 = undefined;
-        const out = serialize_frame(&frame, &out_buf) catch |err| switch (err) {
+        const n_bytes = frame.serialize(&out_buf) catch |err| switch (err) {
             error.NoSpaceLeft => return error.FrameSerializationFailure,
         };
+        const out = out_buf[0..n_bytes];
         std.log.debug("send: {x}, len: {}", .{ out, out.len });
         {
             self.send_mutex.lock();
@@ -387,9 +184,9 @@ pub const Port = struct {
     /// returns immediatly
     ///
     /// call using idx from claim transaction and used by begin transaction
-    /// 
+    ///
     /// Returns false if return frame was not found (call again to try to recieve it).
-    /// 
+    ///
     /// Returns true when frame has been deserailized successfully.
     pub fn continue_transaction(self: *Port, idx: u8) !bool {
         switch (self.recv_datagrams_status[idx]) {
@@ -401,7 +198,9 @@ pub const Port = struct {
         }
         self.recv_frame() catch |err| switch (err) {
             error.FrameNotFound => {},
-            error.SocketError => {return error.SocketError;},
+            error.SocketError => {
+                return error.SocketError;
+            },
             error.InvalidFrame => {},
         };
         switch (self.recv_datagrams_status[idx]) {
@@ -411,7 +210,6 @@ pub const Port = struct {
             .in_use_received => return true,
             .in_use_currupted => return error.CurruptedFrame,
         }
-
     }
 
     fn recv_frame(self: *Port) !void {
@@ -425,7 +223,8 @@ pub const Port = struct {
                 error.WouldBlock => return error.FrameNotFound,
                 else => {
                     std.log.err("Socket error: {}", .{err});
-                    return error.SocketError;},
+                    return error.SocketError;
+                },
             };
         }
         if (n_bytes_read == 0) {
@@ -434,14 +233,14 @@ pub const Port = struct {
         }
         const bytes_read: []const u8 = buf[0..n_bytes_read];
         std.log.debug("recv: {x}, len: {}", .{ bytes_read, bytes_read.len });
-        const recv_frame_idx = Port.identify_frame(bytes_read) catch return error.InvalidFrame;
+        const recv_frame_idx = telegram.EthernetFrame.identifyFromBuffer(bytes_read) catch return error.InvalidFrame;
         std.log.debug("identified frame as idx: {}", .{recv_frame_idx});
 
         switch (self.recv_datagrams_status[recv_frame_idx]) {
             .in_use_receivable => {
                 self.recv_datagrams_status_mutex.lock();
                 defer self.recv_datagrams_status_mutex.unlock();
-                const frame_res = deserialize_frame(bytes_read, self.recv_datagrams[recv_frame_idx]);
+                const frame_res = telegram.EthernetFrame.deserialize(bytes_read, self.recv_datagrams[recv_frame_idx]);
                 if (frame_res) {
                     self.recv_datagrams_status[recv_frame_idx] = FrameStatus.in_use_received;
                 } else |err| switch (err) {
@@ -453,36 +252,6 @@ pub const Port = struct {
             },
             else => {},
         }
-    }
-
-    fn identify_frame(buf: []const u8) !u8 {
-        var fbs = std.io.fixedBufferStream(buf);
-        var reader = fbs.reader();
-        var ethernet_header: telegram.EthernetHeader = undefined;
-        ethernet_header.dest_mac = try reader.readInt(u48, big);
-        ethernet_header.src_mac = try reader.readInt(u48, big);
-        ethernet_header.ether_type = try reader.readInt(u16, big);
-        if (ethernet_header.ether_type != @intFromEnum(telegram.EtherType.ETHERCAT)) {
-            return error.NotAnEtherCATFrame;
-        }
-        const header_as_int: u16 = try reader.readInt(u16, little);
-        const ethercat_header: telegram.EtherCATHeader = @bitCast(header_as_int);
-
-        const bytes_remaining = try fbs.getEndPos() - try fbs.getPos();
-        const bytes_total = try fbs.getEndPos();
-        if (bytes_total < telegram.min_frame_length) {
-            return error.InvalidFrameLengthTooSmall;
-        }
-        if (ethercat_header.length > bytes_remaining) {
-            std.log.debug(
-                "length field: {}, remaining: {}, end pos: {}",
-                .{ ethercat_header.length, bytes_remaining, try fbs.getEndPos() },
-            );
-            return error.InvalidEtherCATHeader;
-        }
-        const datagram_header_as_int: u80 = try reader.readInt(u80, little);
-        const datagram_header: telegram.DatagramHeader = @bitCast(datagram_header_as_int);
-        return datagram_header.idx;
     }
 
     /// Release transaction idx.
@@ -499,8 +268,6 @@ pub const Port = struct {
         }
     }
 
-
-    
     pub fn get_ethernet_header() telegram.EthernetHeader {
         return telegram.EthernetHeader{
             .dest_mac = MAC_BROADCAST,
@@ -509,7 +276,11 @@ pub const Port = struct {
         };
     }
 
-    pub fn send_recv_datagrams(self: *Port, send_datagrams: []telegram.Datagram, timeout_us: u32,) !void {
+    pub fn send_recv_datagrams(
+        self: *Port,
+        send_datagrams: []telegram.Datagram,
+        timeout_us: u32,
+    ) !void {
         assert(send_datagrams.len != 0); // no datagrams
         assert(send_datagrams.len <= 15); // too many datagrams
 
@@ -519,7 +290,7 @@ pub const Port = struct {
         var idx: u8 = undefined;
         while (timer.read() < timeout_us * ns_per_us) {
             idx = self.claim_transaction() catch |err| switch (err) {
-                error.NoTransactionAvailable => continue
+                error.NoTransactionAvailable => continue,
             };
             break;
         } else {
@@ -528,9 +299,9 @@ pub const Port = struct {
         defer self.release_transaction(idx);
 
         try self.send_transaction(idx, send_datagrams);
-        
+
         while (timer.read() < timeout_us * 1000) {
-            if (try self.continue_transaction(idx)){
+            if (try self.continue_transaction(idx)) {
                 return;
             }
         } else {

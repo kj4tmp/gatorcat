@@ -4,17 +4,15 @@
 
 // TODO: refactor for less repetition
 
-const nic = @import("nic.zig");
-const Port = nic.Port;
-const eCatFromPack = nic.eCatFromPack;
-const packFromECat = nic.packFromECat;
-
 const std = @import("std");
 const Timer = std.time.Timer;
 const ns_per_us = std.time.ns_per_us;
+const assert = std.debug.assert;
+
+const nic = @import("nic.zig");
+const wire = @import("wire.zig");
 const esc = @import("esc.zig");
 const commands = @import("commands.zig");
-const assert = std.debug.assert;
 
 pub const ParameterMap = enum(u16) {
     PDI_control = 0x0000,
@@ -393,7 +391,7 @@ pub fn escSMsFromSIISMs(sii_sms: [16]?SyncM) esc.SMRegister {
 pub const SIIString = std.BoundedArray(u8, 255);
 
 pub fn readSIIString(
-    port: *Port,
+    port: *nic.Port,
     station_address: u16,
     index: u8,
     retries: u32,
@@ -454,7 +452,7 @@ pub const FindCatagoryResult = struct {
 };
 
 pub fn readFMMUCatagory(
-    port: *Port,
+    port: *nic.Port,
     station_address: u16,
     retries: u32,
     recv_timeout_us: u32,
@@ -496,7 +494,7 @@ pub fn readFMMUCatagory(
 }
 
 pub fn readSMCatagory(
-    port: *Port,
+    port: *nic.Port,
     station_address: u16,
     retries: u32,
     recv_timeout_us: u32,
@@ -539,7 +537,7 @@ pub fn readSMCatagory(
     unreachable;
 }
 
-pub fn readGeneralCatagory(port: *Port, station_address: u16, retries: u32, recv_timeout_us: u32, eeprom_timeout_us: u32) !?CatagoryGeneral {
+pub fn readGeneralCatagory(port: *nic.Port, station_address: u16, retries: u32, recv_timeout_us: u32, eeprom_timeout_us: u32) !?CatagoryGeneral {
     const gen_catagory = try findCatagoryFP(
         port,
         station_address,
@@ -577,7 +575,7 @@ pub fn readGeneralCatagory(port: *Port, station_address: u16, retries: u32, recv
 /// find the word address of a catagory in the eeprom, uses station addressing.
 ///
 /// Returns null if catagory is not found.
-pub fn findCatagoryFP(port: *Port, station_address: u16, catagory: CatagoryType, retries: u32, recv_timeout_us: u32, eeprom_timeout_us: u32) !?FindCatagoryResult {
+pub fn findCatagoryFP(port: *nic.Port, station_address: u16, catagory: CatagoryType, retries: u32, recv_timeout_us: u32, eeprom_timeout_us: u32) !?FindCatagoryResult {
 
     // there shouldn't be more than 1000 catagories..right??
     const word_address: u16 = @intFromEnum(ParameterMap.first_catagory_header);
@@ -613,7 +611,7 @@ pub fn findCatagoryFP(port: *Port, station_address: u16, catagory: CatagoryType,
 
 /// read a packed struct from SII, using station addressing
 pub fn readSIIFP_ps(
-    port: *Port,
+    port: *nic.Port,
     comptime T: type,
     station_address: u16,
     eeprom_address: u16,
@@ -632,7 +630,7 @@ pub fn readSIIFP_ps(
     );
     var reader = stream.reader();
     try reader.readNoEof(&bytes);
-    return nic.packFromECat(T, bytes);
+    return wire.packFromECat(T, bytes);
 }
 
 /// read bytes from SII into slice, uses station addressing

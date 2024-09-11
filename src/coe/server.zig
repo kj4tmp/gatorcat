@@ -61,7 +61,7 @@ pub const SDOServerExpedited = packed struct(u128) {
     mbx_header: mailbox.MailboxHeader,
     coe_header: coe.CoEHeader,
     sdo_header: SDOHeaderServer,
-    data: u32 = 0,
+    data: std.BoundedArray(u8, 4) = 0,
 
     pub fn initDownloadResponse(
         cnt: u3,
@@ -91,7 +91,7 @@ pub const SDOServerExpedited = packed struct(u128) {
                 .index = index,
                 .subindex = subindex,
             },
-            .data = 0,
+            .data = std.BoundedArray(u8, 4).fromSlice(&.{ 0, 0, 0, 0 }),
         };
     }
 
@@ -100,9 +100,20 @@ pub const SDOServerExpedited = packed struct(u128) {
         station_address: u16,
         index: u16,
         subindex: u8,
-        data: [4]u8,
+        data: std.BoundedArray(u8, 4),
     ) SDOServerExpedited {
-        return SDOServerExpedited {
+        assert(data.len > 0);
+
+        const data_set_size: coe.DataSetSize = switch (data.len) {
+            0 => unreachable,
+            1 => .one_octet,
+            2 => .two_octets,
+            3 => .three_octets,
+            4 => .four_octets,
+            else => unreachable,
+        };
+
+        return SDOServerExpedited{
             .mbx_header = .{
                 .length = 10,
                 .address = station_address,
@@ -118,15 +129,37 @@ pub const SDOServerExpedited = packed struct(u128) {
             .sdo_header = .{
                 .size_indicator = true,
                 .transfer_type = .expedited,
-                .data_set_size = 
+                .data_set_size = data_set_size,
+                .complete_access = false,
+                .command = .initiate_upload_response,
+                .index = index,
+                .subindex = subindex,
             },
+            .data = data,
         };
     }
 
-    pub fn deserialize(buf: []const u8) SDOServerExpedited {
+    pub fn deserialize(buf: []const u8) !SDOServerExpedited {
         var fbs = std.io.fixedBufferStream(buf);
         var reader = fbs.reader();
-        return nic.packFromECatReader(SDOServerExpedited, &reader);
+        const mbx_header = try nic.packFromECatReader(mailbox.MailboxHeader, reader);
+        const coe_header = try nic.packFromECatReader(coe.CoEHeader, reader);
+        const sdo_header = try nic.packFromECatReader(SDOHeaderServer, reader);
+        const data_size: usize = switch (sdo_header.data_set_size) {
+            .one_octet => 1,
+            .two_octets => 2,
+            .three_octets => 3,
+            .four_octets => 4,
+        };
+        var data = try std.BoundedArray(u8, 4).init(data_size);
+        try reader.readNoEof(data.slice());
+
+        return SDOServerExpedited{
+            .mbx_header = mbx_header,
+            .coe_header = coe_header,
+            .sdo_header = sdo_header,
+            .data = data,
+        };
     }
 
     pub fn serialize(self: SDOServerExpedited, out: []u8) !usize {

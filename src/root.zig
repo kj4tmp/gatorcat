@@ -1,14 +1,10 @@
-pub const nic = @import("nic.zig");
-pub const MainDevice = @import("maindevice.zig").MainDevice;
-pub const BusConfiguration = @import("config.zig").BusConfiguration;
-pub const SubDeviceConfig = @import("config.zig").SubDeviceConfig;
-pub const SubDeviceRuntimeInfo = @import("config.zig").SubDeviceRuntimeInfo;
-
-pub const SIIStream = @import("sii.zig").SIIStream;
-
-pub const mailbox = @import("mailbox.zig");
-
 const std = @import("std");
+
+pub const nic = @import("nic.zig");
+pub const maindevice = @import("maindevice.zig");
+pub const config = @import("config.zig");
+pub const sii = @import("sii.zig");
+pub const mailbox = @import("mailbox.zig");
 
 test {
     std.testing.refAllDeclsRecursive(@This());

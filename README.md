@@ -124,6 +124,7 @@ This library is in extremely early development.
 anything is!
 4. Cannot have arrays in packed structs. (See SM and FMMU structs).
 5. For loops over slices / arrays: I have to loop up the syntax every time.
+6. Bitcasting packed structs can circumvent enum safety. <https://github.com/ziglang/zig/issues/21372>
 
 ### zig wins
 

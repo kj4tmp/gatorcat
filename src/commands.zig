@@ -36,9 +36,12 @@ fn sendDatagram(
 
 /// No operation.
 /// The subdevice ignores the command.
+///
+/// TODO: implement no op
 pub fn nop(port: *nic.Port) void {
     _ = port;
 }
+
 /// Auto increment physical read.
 /// A subdevice increments the address.
 /// A subdevice writes the data it has read to the EtherCAT datagram
@@ -330,6 +333,7 @@ pub fn lrd(
         timeout_us,
     );
 }
+
 /// Logical memory write.
 /// SubDevices write data to their memory area if the address received matches one of
 /// the FMMU areas configured for writing.
@@ -347,6 +351,7 @@ pub fn lwr(
         timeout_us,
     );
 }
+
 /// Logical memory read write.
 /// A subdevice writes data it has read to the EtherCAT datagram if the address received
 /// matches one of the FMMU areas configured for reading. SubDevices write data to their memory area
@@ -365,6 +370,7 @@ pub fn lrw(
         timeout_us,
     );
 }
+
 /// Auto increment physical read multiple write.
 /// A subdevice increments the address field. A subdevice writes data it has read to the EtherCAT
 /// datagram when the address received is zero, otherwise it writes data to the memory area.
@@ -382,6 +388,7 @@ pub fn armw(
         timeout_us,
     );
 }
+
 /// Configured address physical read multiple write.
 pub fn frmw(
     port: *nic.Port,

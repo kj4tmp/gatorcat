@@ -808,7 +808,7 @@ pub fn readSII4ByteFP(
 
     // set eeprom access to main device
     for (0..retries) |_| {
-        const wkc = commands.FPWR_ps(
+        const wkc = commands.fpwrPack(
             port,
             esc.SIIAccessRegisterCompact{
                 .owner = .ethercat_DL,
@@ -836,7 +836,7 @@ pub fn readSII4ByteFP(
     // ensure there is a rising edge in the read command by first sending zeros
     for (0..retries) |_| {
         var data = nic.zerosFromPack(esc.SIIControlStatusRegister);
-        const wkc = commands.FPWR(
+        const wkc = commands.fpwr(
             port,
             .{
                 .station_address = station_address,
@@ -860,7 +860,7 @@ pub fn readSII4ByteFP(
 
     // send read command
     for (0..retries) |_| {
-        const wkc = commands.FPWR_ps(
+        const wkc = commands.fpwrPack(
             port,
             esc.SIIControlStatusAddressRegister{
                 .write_access = false,
@@ -900,7 +900,7 @@ pub fn readSII4ByteFP(
     var timer = Timer.start() catch @panic("timer unsupported");
     // wait for eeprom to be not busy
     while (timer.read() < eeprom_timeout_us * ns_per_us) {
-        const sii_status = commands.FPRD_ps(
+        const sii_status = commands.fprdPack(
             port,
             esc.SIIControlStatusRegister,
             .{
@@ -938,7 +938,7 @@ pub fn readSII4ByteFP(
     // attempt read 3 times
     for (0..retries) |_| {
         var data = [4]u8{ 0, 0, 0, 0 };
-        const wkc = commands.FPRD(
+        const wkc = commands.fprd(
             port,
             .{
                 .station_address = station_address,

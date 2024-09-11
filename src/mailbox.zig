@@ -132,7 +132,7 @@ pub fn sdoReadExpedited(
     // If mailbox in has got something in it, read mailbox to wipe it.
     const mbx_in: esc.SyncManagerAttributes = blk: {
         for (0..retries +% 1) |_| {
-            const sm1_res = try commands.FPRD_ps(
+            const sm1_res = try commands.fprdPack(
                 port,
                 esc.SyncManagerAttributes,
                 .{
@@ -158,7 +158,7 @@ pub fn sdoReadExpedited(
     if (mbx_in.status.mailbox_full) {
         var buf = std.mem.zeroes([max_size]u8); // yeet!
         for (0..retries +% 1) |_| {
-            const wkc = try commands.FPRD(
+            const wkc = try commands.fprd(
                 port,
                 .{
                     .station_address = station_address,
@@ -177,7 +177,7 @@ pub fn sdoReadExpedited(
 
     const mbx_out: esc.SyncManagerAttributes = blk: {
         for (0..retries +% 1) |_| {
-            const sm0_res = try commands.FPRD_ps(
+            const sm0_res = try commands.fprdPack(
                 port,
                 esc.SyncManagerAttributes,
                 .{
@@ -213,7 +213,7 @@ pub fn readMailbox(
 
     const mbx_in: esc.SyncManagerAttributes = blk: {
         while (timer.read() < mbx_timeout_us * ns_per_us) {
-            const sm1_res = try commands.FPRD_ps(
+            const sm1_res = try commands.fprdPack(
                 port,
                 esc.SyncManagerAttributes,
                 .{

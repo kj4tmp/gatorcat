@@ -47,7 +47,7 @@ pub fn init(
 pub fn busINIT(self: *MainDevice) !void {
 
     // open all ports
-    var wkc = try commands.BWR_ps(
+    var wkc = try commands.bwrPack(
         self.port,
         esc.DLControlRegisterCompact{
             .forwarding_rule = true, // destroy non-ecat frames
@@ -68,7 +68,7 @@ pub fn busINIT(self: *MainDevice) !void {
     // TODO: set IRQ mask
 
     // reset CRC counters
-    wkc = try commands.BWR_ps(
+    wkc = try commands.bwrPack(
         self.port,
         // a write to any one of these counters will reset them all,
         // but I am too lazt to do it any differently.
@@ -94,7 +94,7 @@ pub fn busINIT(self: *MainDevice) !void {
 
     // reset FMMUs
     var zero_fmmus = wire.zerosFromPack(esc.FMMURegister);
-    wkc = try commands.BWR(
+    wkc = try commands.bwr(
         self.port,
         .{
             .autoinc_address = 0,
@@ -109,7 +109,7 @@ pub fn busINIT(self: *MainDevice) !void {
 
     // reset SMs
     var zero_sms = wire.zerosFromPack(esc.SMRegister);
-    wkc = try commands.BWR(
+    wkc = try commands.bwr(
         self.port,
         .{
             .autoinc_address = 0,
@@ -128,7 +128,7 @@ pub fn busINIT(self: *MainDevice) !void {
     // TODO: DC filter
 
     // disable alias address
-    wkc = try commands.BWR_ps(
+    wkc = try commands.bwrPack(
         self.port,
         esc.DLControlEnableAliasAddressRegister{
             .enable_alias_address = false,
@@ -142,7 +142,7 @@ pub fn busINIT(self: *MainDevice) !void {
     std.log.info("bus wipe disable alias wkc: {}", .{wkc});
 
     // request INIT
-    wkc = try commands.BWR_ps(
+    wkc = try commands.bwrPack(
         self.port,
         esc.ALControlRegister{
             .state = .INIT,
@@ -158,7 +158,7 @@ pub fn busINIT(self: *MainDevice) !void {
     std.log.info("bus wipe INIT wkc: {}", .{wkc});
 
     // Force take away EEPROM from PDI
-    wkc = try commands.BWR_ps(
+    wkc = try commands.bwrPack(
         self.port,
         esc.SIIAccessRegisterCompact{
             .owner = .ethercat_DL,
@@ -173,7 +173,7 @@ pub fn busINIT(self: *MainDevice) !void {
     std.log.info("bus wipe force eeprom wkc: {}", .{wkc});
 
     // Maindevice controls EEPROM
-    wkc = try commands.BWR_ps(
+    wkc = try commands.bwrPack(
         self.port,
         esc.SIIAccessRegisterCompact{
             .owner = .ethercat_DL,
@@ -189,7 +189,7 @@ pub fn busINIT(self: *MainDevice) !void {
 
     // count subdevices
     var dummy_data = [1]u8{0};
-    wkc = try commands.BRD(
+    wkc = try commands.brd(
         self.port,
         .{
             .autoinc_address = 0,
@@ -208,7 +208,7 @@ pub fn busINIT(self: *MainDevice) !void {
     // command INIT on all subdevices, twice
     // SOEM does this...something about netX100
     for (0..1) |_| {
-        wkc = try commands.BWR_ps(
+        wkc = try commands.bwrPack(
             self.port,
             esc.ALControlRegister{
                 .state = .INIT,
@@ -245,7 +245,7 @@ pub fn busPREOP(self: *MainDevice) !void {
 
     // read state of subdevices
     var state_check = wire.zerosFromPack(esc.ALStatusRegister);
-    _ = try commands.BRD(
+    _ = try commands.brd(
         self.port,
         .{
             .autoinc_address = 0,
@@ -315,7 +315,7 @@ fn subdevice_IP_tasks(self: *MainDevice, expected_subdevice: config.SubDevice, r
     // assign configured station addresse
     const assigned_station_address = calc_station_addr(ring_position);
     const autoinc_address = calc_autoinc_addr(ring_position);
-    var wkc = try commands.APWR_ps(
+    var wkc = try commands.apwrPack(
         self.port,
         esc.ConfiguredStationAddressRegister{
             .configured_station_address = assigned_station_address,
@@ -364,7 +364,7 @@ fn subdevice_IP_tasks(self: *MainDevice, expected_subdevice: config.SubDevice, r
         );
         return error.UnexpectedSubDevice;
     }
-    const dl_info_res = try commands.FPRD_ps(
+    const dl_info_res = try commands.fprdPack(
         self.port,
         esc.DLInformationRegister,
         .{
@@ -416,7 +416,7 @@ fn subdevice_IP_tasks(self: *MainDevice, expected_subdevice: config.SubDevice, r
 
     // reset FMMUs
     var zero_fmmus = wire.zerosFromPack(esc.FMMURegister);
-    wkc = try commands.FPWR(
+    wkc = try commands.fpwr(
         self.port,
         .{
             .station_address = assigned_station_address,
@@ -433,7 +433,7 @@ fn subdevice_IP_tasks(self: *MainDevice, expected_subdevice: config.SubDevice, r
 
     // reset SMs
     var zero_sms = wire.zerosFromPack(esc.SMRegister);
-    wkc = try commands.FPWR(
+    wkc = try commands.fpwr(
         self.port,
         .{
             .station_address = assigned_station_address,
@@ -478,7 +478,7 @@ fn subdevice_IP_tasks(self: *MainDevice, expected_subdevice: config.SubDevice, r
     }
 
     // write SM configuration to subdevice
-    wkc = try commands.FPWR_ps(
+    wkc = try commands.fpwrPack(
         self.port,
         runtime_info.sms.?,
         .{

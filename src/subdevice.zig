@@ -16,7 +16,7 @@ pub fn setALState(
 ) !void {
     // request state with ACK
     for (0..retries) |_| {
-        const wkc = try commands.FPWR_ps(
+        const wkc = try commands.fpwrPack(
             port,
             esc.ALControlRegister{
                 .state = state,
@@ -41,7 +41,7 @@ pub fn setALState(
     };
 
     while (timer.read() < change_timeout_us * ns_per_us) {
-        const res = try commands.FPRD_ps(
+        const res = try commands.fprdPack(
             port,
             esc.ALStatusRegister,
             .{

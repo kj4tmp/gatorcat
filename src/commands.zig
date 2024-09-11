@@ -1,9 +1,12 @@
 const std = @import("std");
+
 const nic = @import("nic.zig");
-const zerosFromPack = nic.zerosFromPack;
-const eCatFromPack = nic.eCatFromPack;
-const packFromECat = nic.packFromECat;
+const wire = @import("wire.zig");
 const telegram = @import("telegram.zig");
+const zerosFromPack = wire.zerosFromPack;
+const eCatFromPack = wire.eCatFromPack;
+const packFromECat = wire.packFromECat;
+
 const assert = std.debug.assert;
 fn sendDatagram(
     port: *nic.Port,
@@ -36,14 +39,14 @@ fn sendDatagram(
 
 /// No operation.
 /// The subdevice ignores the command.
-pub fn NOP(port: *nic.Port) void {
+pub fn nop(port: *nic.Port) void {
     _ = port;
 }
 /// Auto increment physical read.
 /// A subdevice increments the address.
 /// A subdevice writes the data it has read to the EtherCAT datagram
 /// if the address received is zero.
-pub fn APRD(
+pub fn aprd(
     port: *nic.Port,
     address: telegram.PositionAddress,
     data: []u8,
@@ -58,22 +61,22 @@ pub fn APRD(
     );
 }
 
-/// Auto-increment physical read a packed struct
-pub fn APRD_ps(
+/// Auto-increment physical read a packable type
+pub fn aprdPack(
     port: *nic.Port,
-    comptime packed_struct_type: type,
+    comptime packed_type: type,
     address: telegram.PositionAddress,
     timeout_us: u32,
-) !struct { ps: packed_struct_type, wkc: u16 } {
-    var data = zerosFromPack(packed_struct_type);
-    const wkc = try APRD(port, address, &data, timeout_us);
-    return .{ .ps = packFromECat(packed_struct_type, data), .wkc = wkc };
+) !struct { ps: packed_type, wkc: u16 } {
+    var data = zerosFromPack(packed_type);
+    const wkc = try aprd(port, address, &data, timeout_us);
+    return .{ .ps = packFromECat(packed_type, data), .wkc = wkc };
 }
 
 /// Auto increment physical write.
 /// A subdevice increments the address.
 /// A subdevice writes data to a memory area if the address received is zero.
-pub fn APWR(
+pub fn apwr(
     port: *nic.Port,
     address: telegram.PositionAddress,
     data: []u8,
@@ -88,15 +91,15 @@ pub fn APWR(
     );
 }
 
-/// Auto-increment physical write a packed struct
-pub fn APWR_ps(
+/// Auto-increment physical write a packable type
+pub fn apwrPack(
     port: *nic.Port,
-    packed_struct: anytype,
+    packed_type: anytype,
     address: telegram.PositionAddress,
     timeout_us: u32,
 ) !u16 {
-    var data = eCatFromPack(packed_struct);
-    const wkc = try APWR(port, address, &data, timeout_us);
+    var data = eCatFromPack(packed_type);
+    const wkc = try apwr(port, address, &data, timeout_us);
     return wkc;
 }
 
@@ -104,7 +107,7 @@ pub fn APWR_ps(
 /// A subdevice increments the address.
 /// A subdevice writes the data it has read to the EtherCAT datagram and writes
 /// the newly acquired data to the same memory area if the received address is zero.
-pub fn APRW(
+pub fn aprw(
     port: *nic.Port,
     address: telegram.PositionAddress,
     data: []u8,
@@ -119,22 +122,22 @@ pub fn APRW(
     );
 }
 
-/// Auto-increment physical read-write a packed struct
-pub fn APRW_ps(
+/// Auto-increment physical read-write a packable type
+pub fn aprwPack(
     port: *nic.Port,
-    packed_struct: anytype,
+    packed_type: anytype,
     address: telegram.PositionAddress,
     timeout_us: u32,
-) !struct { ps: @TypeOf(packed_struct), wkc: u16 } {
-    var data = eCatFromPack(packed_struct);
-    const wkc = try APRW(port, address, &data, timeout_us);
-    return .{ .ps = packFromECat(@TypeOf(packed_struct), data), .wkc = wkc };
+) !struct { ps: @TypeOf(packed_type), wkc: u16 } {
+    var data = eCatFromPack(packed_type);
+    const wkc = try aprw(port, address, &data, timeout_us);
+    return .{ .ps = packFromECat(@TypeOf(packed_type), data), .wkc = wkc };
 }
 
 /// Configured address physical read.
 /// A subdevice writes the data it has read to the EtherCAT datagram if its subdevice
 /// address matches one of the addresses configured in the datagram.
-pub fn FPRD(
+pub fn fprd(
     port: *nic.Port,
     address: telegram.StationAddress,
     data: []u8,
@@ -149,22 +152,22 @@ pub fn FPRD(
     );
 }
 
-/// Configured address physical read a packed struct
-pub fn FPRD_ps(
+/// Configured address physical read a packable type
+pub fn fprdPack(
     port: *nic.Port,
-    comptime packed_struct_type: type,
+    comptime packed_type: type,
     address: telegram.StationAddress,
     timeout_us: u32,
-) !struct { ps: packed_struct_type, wkc: u16 } {
-    var data = zerosFromPack(packed_struct_type);
-    const wkc = try FPRD(port, address, &data, timeout_us);
-    return .{ .ps = packFromECat(packed_struct_type, data), .wkc = wkc };
+) !struct { ps: packed_type, wkc: u16 } {
+    var data = zerosFromPack(packed_type);
+    const wkc = try fprd(port, address, &data, timeout_us);
+    return .{ .ps = packFromECat(packed_type, data), .wkc = wkc };
 }
 
 /// Configured address physical write.
 /// A subdevice writes data to a memory area if its subdevice address matches one
 /// of the addresses configured in the datagram.
-pub fn FPWR(
+pub fn fpwr(
     port: *nic.Port,
     address: telegram.StationAddress,
     data: []u8,
@@ -179,15 +182,15 @@ pub fn FPWR(
     );
 }
 
-/// Configured address physical write a packed struct
-pub fn FPWR_ps(
+/// Configured address physical write a packable type
+pub fn fpwrPack(
     port: *nic.Port,
-    packed_struct: anytype,
+    packed_type: anytype,
     address: telegram.StationAddress,
     timeout_us: u32,
 ) !u16 {
-    var data = eCatFromPack(packed_struct);
-    const wkc = try FPWR(port, address, &data, timeout_us);
+    var data = eCatFromPack(packed_type);
+    const wkc = try fpwr(port, address, &data, timeout_us);
     return wkc;
 }
 
@@ -195,7 +198,7 @@ pub fn FPWR_ps(
 /// A subdevice writes the data it has read to the EtherCAT datagram and writes
 /// the newly acquired data to the same memory area if its subdevice address matches
 /// one of the addresses configured in the datagram.
-pub fn FPRW(
+pub fn fprw(
     port: *nic.Port,
     address: telegram.StationAddress,
     data: []u8,
@@ -210,23 +213,23 @@ pub fn FPRW(
     );
 }
 
-/// Configured address physical read-write a packed struct
-pub fn FPRW_ps(
+/// Configured address physical read-write a packable type
+pub fn fprwPack(
     port: *nic.Port,
-    packed_struct: anytype,
+    packed_type: anytype,
     address: telegram.StationAddress,
     timeout_us: u32,
-) !struct { ps: @TypeOf(packed_struct), wkc: u16 } {
-    var data = eCatFromPack(packed_struct);
-    const wkc = try FPRW(port, address, &data, timeout_us);
-    return .{ .ps = packFromECat(@TypeOf(packed_struct), data), .wkc = wkc };
+) !struct { ps: @TypeOf(packed_type), wkc: u16 } {
+    var data = eCatFromPack(packed_type);
+    const wkc = try fprw(port, address, &data, timeout_us);
+    return .{ .ps = packFromECat(@TypeOf(packed_type), data), .wkc = wkc };
 }
 
 /// Broadcast read.
 /// All subdevices write a logical OR of the data from the memory area and the data
 /// from the EtherCAT datagram to the EtherCAT datagram. All subdevices increment the
 /// position field.
-pub fn BRD(
+pub fn brd(
     port: *nic.Port,
     address: telegram.PositionAddress,
     data: []u8,
@@ -241,21 +244,21 @@ pub fn BRD(
     );
 }
 
-/// Broadcast read a packed struct
-pub fn BRD_ps(
+/// Broadcast read a packable type
+pub fn brdPack(
     port: *nic.Port,
-    comptime packed_struct_type: type,
+    comptime packed_type: type,
     address: telegram.PositionAddress,
     timeout_us: u32,
-) !struct { ps: packed_struct_type, wkc: u16 } {
-    var data = zerosFromPack(packed_struct_type);
-    const wkc = try BRD(port, address, &data, timeout_us);
-    return .{ .ps = packFromECat(packed_struct_type, data), .wkc = wkc };
+) !struct { ps: packed_type, wkc: u16 } {
+    var data = zerosFromPack(packed_type);
+    const wkc = try brd(port, address, &data, timeout_us);
+    return .{ .ps = packFromECat(packed_type, data), .wkc = wkc };
 }
 
 /// Broadcast write.
 /// All subdevices write data to a memory area. All subdevices increment the position field.
-pub fn BWR(
+pub fn bwr(
     port: *nic.Port,
     address: telegram.PositionAddress,
     data: []u8,
@@ -270,15 +273,15 @@ pub fn BWR(
     );
 }
 
-/// Broadcast write a packed struct
-pub fn BWR_ps(
+/// Broadcast write a packable type
+pub fn bwrPack(
     port: *nic.Port,
-    packed_struct: anytype,
+    packed_type: anytype,
     address: telegram.PositionAddress,
     timeout_us: u32,
 ) !u16 {
-    var data = eCatFromPack(packed_struct);
-    const wkc = try BWR(port, address, &data, timeout_us);
+    var data = eCatFromPack(packed_type);
+    const wkc = try bwr(port, address, &data, timeout_us);
     return wkc;
 }
 
@@ -286,7 +289,7 @@ pub fn BWR_ps(
 /// All subdevices write a logical OR of the data from the memory area and the data from the
 /// EtherCAT datagram to the EtherCAT datagram; all subdevices write data to the memory area.
 /// BRW is typically not used. All subdevices increment the position field.
-pub fn BRW(
+pub fn brw(
     port: *nic.Port,
     address: telegram.PositionAddress,
     data: []u8,
@@ -301,22 +304,22 @@ pub fn BRW(
     );
 }
 
-/// Broadcast read-write a packed struct
-pub fn BRW_ps(
+/// Broadcast read-write a packable type
+pub fn brwPack(
     port: *nic.Port,
-    packed_struct: anytype,
+    packed_type: anytype,
     address: telegram.PositionAddress,
     timeout_us: u32,
-) !struct { ps: @TypeOf(packed_struct), wkc: u16 } {
-    var data = eCatFromPack(packed_struct);
-    const wkc = try BRW(port, address, &data, timeout_us);
-    return .{ .ps = packFromECat(@TypeOf(packed_struct), data), .wkc = wkc };
+) !struct { ps: @TypeOf(packed_type), wkc: u16 } {
+    var data = eCatFromPack(packed_type);
+    const wkc = try brw(port, address, &data, timeout_us);
+    return .{ .ps = packFromECat(@TypeOf(packed_type), data), .wkc = wkc };
 }
 
 /// Logical memory read.
 /// A subdevice writes data it has read to the EtherCAT datagram if the address received
 /// matches one of the FMMU areas configured for reading.
-pub fn LRD(
+pub fn lrd(
     port: *nic.Port,
     address: telegram.LogicalAddress,
     data: []u8,
@@ -333,7 +336,7 @@ pub fn LRD(
 /// Logical memory write.
 /// SubDevices write data to their memory area if the address received matches one of
 /// the FMMU areas configured for writing.
-pub fn LWR(
+pub fn lwr(
     port: *nic.Port,
     address: telegram.LogicalAddress,
     data: []const u8,
@@ -351,7 +354,7 @@ pub fn LWR(
 /// A subdevice writes data it has read to the EtherCAT datagram if the address received
 /// matches one of the FMMU areas configured for reading. SubDevices write data to their memory area
 /// if the address received matches one of the FMMU areas configured for writing.
-pub fn LRW(
+pub fn lrw(
     port: *nic.Port,
     address: telegram.LogicalAddress,
     data: []u8,
@@ -368,7 +371,7 @@ pub fn LRW(
 /// Auto increment physical read multiple write.
 /// A subdevice increments the address field. A subdevice writes data it has read to the EtherCAT
 /// datagram when the address received is zero, otherwise it writes data to the memory area.
-pub fn ARMW(
+pub fn armw(
     port: *nic.Port,
     address: telegram.PositionAddress,
     data: []u8,
@@ -383,7 +386,7 @@ pub fn ARMW(
     );
 }
 /// Configured address physical read multiple write.
-pub fn FRMW(
+pub fn frmw(
     port: *nic.Port,
     address: telegram.StationAddress,
     data: []u8,

@@ -1,13 +1,10 @@
 const std = @import("std");
+const assert = std.debug.assert;
 
 const nic = @import("nic.zig");
 const wire = @import("wire.zig");
 const telegram = @import("telegram.zig");
-const zerosFromPack = wire.zerosFromPack;
-const eCatFromPack = wire.eCatFromPack;
-const packFromECat = wire.packFromECat;
 
-const assert = std.debug.assert;
 fn sendDatagram(
     port: *nic.Port,
     command: telegram.Command,
@@ -68,9 +65,9 @@ pub fn aprdPack(
     address: telegram.PositionAddress,
     timeout_us: u32,
 ) !struct { ps: packed_type, wkc: u16 } {
-    var data = zerosFromPack(packed_type);
+    var data = wire.zerosFromPack(packed_type);
     const wkc = try aprd(port, address, &data, timeout_us);
-    return .{ .ps = packFromECat(packed_type, data), .wkc = wkc };
+    return .{ .ps = wire.packFromECat(packed_type, data), .wkc = wkc };
 }
 
 /// Auto increment physical write.
@@ -98,7 +95,7 @@ pub fn apwrPack(
     address: telegram.PositionAddress,
     timeout_us: u32,
 ) !u16 {
-    var data = eCatFromPack(packed_type);
+    var data = wire.eCatFromPack(packed_type);
     const wkc = try apwr(port, address, &data, timeout_us);
     return wkc;
 }
@@ -129,9 +126,9 @@ pub fn aprwPack(
     address: telegram.PositionAddress,
     timeout_us: u32,
 ) !struct { ps: @TypeOf(packed_type), wkc: u16 } {
-    var data = eCatFromPack(packed_type);
+    var data = wire.eCatFromPack(packed_type);
     const wkc = try aprw(port, address, &data, timeout_us);
-    return .{ .ps = packFromECat(@TypeOf(packed_type), data), .wkc = wkc };
+    return .{ .ps = wire.packFromECat(@TypeOf(packed_type), data), .wkc = wkc };
 }
 
 /// Configured address physical read.
@@ -159,9 +156,9 @@ pub fn fprdPack(
     address: telegram.StationAddress,
     timeout_us: u32,
 ) !struct { ps: packed_type, wkc: u16 } {
-    var data = zerosFromPack(packed_type);
+    var data = wire.zerosFromPack(packed_type);
     const wkc = try fprd(port, address, &data, timeout_us);
-    return .{ .ps = packFromECat(packed_type, data), .wkc = wkc };
+    return .{ .ps = wire.packFromECat(packed_type, data), .wkc = wkc };
 }
 
 /// Configured address physical write.
@@ -189,7 +186,7 @@ pub fn fpwrPack(
     address: telegram.StationAddress,
     timeout_us: u32,
 ) !u16 {
-    var data = eCatFromPack(packed_type);
+    var data = wire.eCatFromPack(packed_type);
     const wkc = try fpwr(port, address, &data, timeout_us);
     return wkc;
 }
@@ -220,9 +217,9 @@ pub fn fprwPack(
     address: telegram.StationAddress,
     timeout_us: u32,
 ) !struct { ps: @TypeOf(packed_type), wkc: u16 } {
-    var data = eCatFromPack(packed_type);
+    var data = wire.eCatFromPack(packed_type);
     const wkc = try fprw(port, address, &data, timeout_us);
-    return .{ .ps = packFromECat(@TypeOf(packed_type), data), .wkc = wkc };
+    return .{ .ps = wire.packFromECat(@TypeOf(packed_type), data), .wkc = wkc };
 }
 
 /// Broadcast read.
@@ -251,9 +248,9 @@ pub fn brdPack(
     address: telegram.PositionAddress,
     timeout_us: u32,
 ) !struct { ps: packed_type, wkc: u16 } {
-    var data = zerosFromPack(packed_type);
+    var data = wire.zerosFromPack(packed_type);
     const wkc = try brd(port, address, &data, timeout_us);
-    return .{ .ps = packFromECat(packed_type, data), .wkc = wkc };
+    return .{ .ps = wire.packFromECat(packed_type, data), .wkc = wkc };
 }
 
 /// Broadcast write.
@@ -280,7 +277,7 @@ pub fn bwrPack(
     address: telegram.PositionAddress,
     timeout_us: u32,
 ) !u16 {
-    var data = eCatFromPack(packed_type);
+    var data = wire.eCatFromPack(packed_type);
     const wkc = try bwr(port, address, &data, timeout_us);
     return wkc;
 }
@@ -311,9 +308,9 @@ pub fn brwPack(
     address: telegram.PositionAddress,
     timeout_us: u32,
 ) !struct { ps: @TypeOf(packed_type), wkc: u16 } {
-    var data = eCatFromPack(packed_type);
+    var data = wire.eCatFromPack(packed_type);
     const wkc = try brw(port, address, &data, timeout_us);
-    return .{ .ps = packFromECat(@TypeOf(packed_type), data), .wkc = wkc };
+    return .{ .ps = wire.packFromECat(@TypeOf(packed_type), data), .wkc = wkc };
 }
 
 /// Logical memory read.

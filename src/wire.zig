@@ -1,3 +1,5 @@
+//! Serilization and deserialization utilities specific to EtherCAT.
+
 const std = @import("std");
 const assert = std.debug.assert;
 const native_endian = @import("builtin").target.cpu.arch.endian();

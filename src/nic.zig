@@ -136,7 +136,7 @@ pub const Port = struct {
     /// Parameter send_datagram is the datagram to be sent
     /// and is used to deserialize the data on response.
     pub fn send_transaction(self: *Port, idx: u8, send_datagrams: []telegram.Datagram) !void {
-        assert(send_datagrams.len != 0); // no datagrams
+        assert(send_datagrams.len > 0); // no datagrams
         assert(send_datagrams.len <= 15); // too many datagrams
         assert(self.recv_datagrams_status[idx] == FrameStatus.in_use); // should claim transaction first
 
@@ -146,20 +146,10 @@ pub const Port = struct {
         // assign identity of frame as first datagram idx
         send_datagrams[0].header.idx = idx;
 
-        const padding = std.mem.zeroes([46]u8);
-        var frame = telegram.EthernetFrame{
-            .header = Port.get_ethernet_header(),
-            .ethercat_frame = telegram.EtherCATFrame{
-                .header = telegram.EtherCATHeader{
-                    .length = 0,
-                },
-                .datagrams = send_datagrams,
-            },
-            .padding = undefined,
-        };
-        frame.padding = padding[0..frame.getRequiredPaddingLength()];
-        std.log.debug("padding len: {}", .{frame.padding.len});
-        frame.calc();
+        var frame = telegram.EthernetFrame.init(
+            Port.get_ethernet_header(),
+            telegram.EtherCATFrame.init(send_datagrams),
+        );
 
         var out_buf: [telegram.max_frame_length]u8 = undefined;
         const n_bytes = frame.serialize(&out_buf) catch |err| switch (err) {
@@ -272,7 +262,7 @@ pub const Port = struct {
         return telegram.EthernetHeader{
             .dest_mac = MAC_BROADCAST,
             .src_mac = MAC_SOURCE,
-            .ether_type = @intFromEnum(telegram.EtherType.ETHERCAT),
+            .ether_type = .ETHERCAT,
         };
     }
 

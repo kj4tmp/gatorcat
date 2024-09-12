@@ -13,19 +13,13 @@ fn sendDatagram(
     timeout_us: u32,
 ) !u16 {
     var datagrams: [1]telegram.Datagram = .{
-        telegram.Datagram{
-            .header = telegram.DatagramHeader{
-                .command = command,
-                .idx = 0,
-                .address = address,
-                .length = 0,
-                .circulating = false,
-                .next = false,
-                .irq = 0,
-            },
-            .data = data,
-            .wkc = 0,
-        },
+        telegram.Datagram.init(
+            command,
+            0,
+            address,
+            false,
+            data,
+        ),
     };
     try port.send_recv_datagrams(
         &datagrams,

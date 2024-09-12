@@ -101,7 +101,7 @@ pub const DatagramHeader = packed struct(u80) {
     /// auto-increment, configured station, or logical address
     /// when position addressing
     address: u32,
-    /// length of following data, in bytes
+    /// length of following data, in bytes, not including wkc
     length: u11,
     /// reserved, 0
     reserved: u3 = 0,
@@ -142,19 +142,32 @@ pub const Datagram = struct {
     /// For a read/write command: if read command successful wkc+=1, if write command successful wkc+=2. If both wkc+=3.
     wkc: u16,
 
-    /// Get length in bytes.
-    /// Saturates to max u16.
-    fn getLength(self: Datagram) u16 {
-        var length: u16 = 0;
-        length +|= @bitSizeOf(@TypeOf(self.header)) / 8;
-        length +|= lossyCast(u16, self.data.len);
-        length +|= @bitSizeOf(@TypeOf(self.wkc)) / 8;
-        return length;
+    pub fn init(command: Command, idx: u8, address: u32, next: bool, data: []u8) Datagram {
+        assert(data.len < max_data_length);
+        return Datagram{
+            .header = .{
+                .command = command,
+                .idx = idx,
+                .address = address,
+                .length = @intCast(data.len),
+                .circulating = false,
+                .next = next,
+                .irq = 0,
+            },
+            .data = data,
+            .wkc = 0,
+        };
     }
-    /// write calcuated fields (i.e. length field in header)
-    fn calc(self: *Datagram) void {
-        self.header.length = lossyCast(u11, self.data.len);
+
+    fn getLength(self: Datagram) usize {
+        return self.header.length +
+            @divExact(@bitSizeOf(DatagramHeader), 8) +
+            @divExact(@bitSizeOf(u16), 8);
     }
+
+    const max_data_length = EtherCATFrame.max_datagrams_length -
+        @divExact(@bitSizeOf(DatagramHeader), 8) -
+        @divExact(@bitSizeOf(u16), 8);
 };
 
 /// EtherCAT Header
@@ -178,30 +191,39 @@ pub const EtherCATFrame = struct {
     header: EtherCATHeader,
     datagrams: []Datagram,
 
-    fn getLength(self: EtherCATFrame) u16 {
-        var length: u16 = 0;
-        length +|= @bitSizeOf(@TypeOf(self.header)) / 8;
-        for (self.datagrams) |datagram| {
-            length +|= datagram.getLength();
+    pub fn init(datagrams: []Datagram) EtherCATFrame {
+        assert(datagrams.len != 0); // no datagrams
+        assert(datagrams.len <= 15); // too many datagrams
+
+        var header_length: u11 = 0;
+
+        for (datagrams) |datagram| {
+            header_length += @intCast(datagram.getLength());
         }
-        return length;
+        assert(header_length <= max_datagrams_length);
+
+        const header = EtherCATHeader{
+            .length = header_length,
+        };
+        return EtherCATFrame{
+            .header = header,
+            .datagrams = datagrams,
+        };
     }
 
-    /// write calculated fields for this struct
-    /// and all datagrams
-    fn calc(self: *EtherCATFrame) void {
-        var length: u11 = 0;
-        for (self.datagrams) |*datagram| {
-            length +|= lossyCast(u11, datagram.getLength());
-            datagram.calc();
-        }
-        self.header.length = length;
+    fn getLength(self: EtherCATFrame) usize {
+        return self.header.length + @divExact(@bitSizeOf(EtherCATHeader), 8);
     }
+
+    const max_datagrams_length = max_frame_length -
+        @divExact(@bitSizeOf(EthernetHeader), 8) -
+        @divExact(@bitSizeOf(EtherCATHeader), 8);
 };
 
 pub const EtherType = enum(u16) {
     UDP_ETHERCAT = 0x8000,
     ETHERCAT = 0x88a4,
+    _,
 };
 
 // TODO: EtherCAT in UDP Frame. Ref: IEC 61158-4-12:2019 5.3.2
@@ -212,8 +234,10 @@ pub const EtherType = enum(u16) {
 pub const EthernetHeader = packed struct(u112) {
     dest_mac: u48,
     src_mac: u48,
-    ether_type: u16,
+    ether_type: EtherType,
 };
+
+const reusable_padding = std.mem.zeroes([46]u8);
 
 /// Ethernet Frame
 ///
@@ -227,34 +251,48 @@ pub const EthernetFrame = struct {
     ethercat_frame: EtherCATFrame,
     padding: []const u8,
 
+    pub fn init(
+        header: EthernetHeader,
+        ethercat_frame: EtherCATFrame,
+    ) EthernetFrame {
+        const length: usize = @divExact(@bitSizeOf(EthernetHeader), 8) + ethercat_frame.getLength();
+        const n_pad: usize = min_frame_length -| length;
+
+        return EthernetFrame{
+            .header = header,
+            .ethercat_frame = ethercat_frame,
+            .padding = reusable_padding[0..n_pad],
+        };
+    }
+
     /// calcuate the length of the frame in bytes
     /// without padding
-    pub fn getLengthWithoutPadding(self: EthernetFrame) u16 {
-        var length: u16 = 0;
-        length +|= @bitSizeOf(@TypeOf(self.header)) / 8;
-        length +|= self.ethercat_frame.getLength();
-        return length;
-    }
+    // pub fn getLengthWithoutPadding(self: EthernetFrame) u16 {
+    //     var length: u16 = 0;
+    //     length +|= @bitSizeOf(@TypeOf(self.header)) / 8;
+    //     length +|= self.ethercat_frame.getLength();
+    //     return length;
+    // }
 
-    /// Get required number of padding bytes
-    /// for this frame.
-    /// Assumes no existing padding.
-    pub fn getRequiredPaddingLength(self: EthernetFrame) u16 {
-        return @as(u16, min_frame_length) -| self.getLengthWithoutPadding();
-    }
+    // /// Get required number of padding bytes
+    // /// for this frame.
+    // /// Assumes no existing padding.
+    // pub fn getRequiredPaddingLength(self: EthernetFrame) u16 {
+    //     return @as(u16, min_frame_length) -| self.getLengthWithoutPadding();
+    // }
 
-    pub fn getLengthWithPadding(self: EthernetFrame) u32 {
-        var length: u32 = 0;
-        length +|= @sizeOf(self.header);
-        length +|= self.ethercat_frame.getLength();
-        length +|= self.padding.len;
-        return length;
-    }
+    // pub fn getLengthWithPadding(self: EthernetFrame) u32 {
+    //     var length: u32 = 0;
+    //     length +|= @sizeOf(self.header);
+    //     length +|= self.ethercat_frame.getLength();
+    //     length +|= self.padding.len;
+    //     return length;
+    // }
 
-    /// write calcuated fields
-    pub fn calc(self: *EthernetFrame) void {
-        self.ethercat_frame.calc();
-    }
+    // /// write calcuated fields
+    // pub fn calc(self: *EthernetFrame) void {
+    //     self.ethercat_frame.calc();
+    // }
 
     /// assign idx to first datagram for frame identification
     /// in nic
@@ -271,7 +309,7 @@ pub const EthernetFrame = struct {
         const writer = fbs.writer();
         try writer.writeInt(u48, self.header.dest_mac, big);
         try writer.writeInt(u48, self.header.src_mac, big);
-        try writer.writeInt(u16, self.header.ether_type, big);
+        try writer.writeInt(u16, @intFromEnum(self.header.ether_type), big);
         try wire.eCatFromPackToWriter(self.ethercat_frame.header, writer);
         for (self.ethercat_frame.datagrams) |datagram| {
             try wire.eCatFromPackToWriter(datagram.header, writer);
@@ -293,9 +331,9 @@ pub const EthernetFrame = struct {
         const ethernet_header = EthernetHeader{
             .dest_mac = try reader.readInt(u48, big),
             .src_mac = try reader.readInt(u48, big),
-            .ether_type = try reader.readInt(u16, big),
+            .ether_type = @enumFromInt(try reader.readInt(u16, big)),
         };
-        if (ethernet_header.ether_type != @intFromEnum(EtherType.ETHERCAT)) {
+        if (ethernet_header.ether_type != .ETHERCAT) {
             return error.NotAnEtherCATFrame;
         }
         const ethercat_header = try wire.packFromECatReader(EtherCATHeader, reader);
@@ -332,9 +370,9 @@ pub const EthernetFrame = struct {
         const ethernet_header = EthernetHeader{
             .dest_mac = try reader.readInt(u48, big),
             .src_mac = try reader.readInt(u48, big),
-            .ether_type = try reader.readInt(u16, big),
+            .ether_type = @enumFromInt(try reader.readInt(u16, big)),
         };
-        if (ethernet_header.ether_type != @intFromEnum(EtherType.ETHERCAT)) {
+        if (ethernet_header.ether_type != .ETHERCAT) {
             return error.NotAnEtherCATFrame;
         }
         const ethercat_header = try wire.packFromECatReader(EtherCATHeader, reader);
@@ -358,61 +396,46 @@ pub const EthernetFrame = struct {
 test "ethernet frame serialization" {
     var data: [4]u8 = .{ 0x01, 0x02, 0x03, 0x04 };
     var datagrams: [1]Datagram = .{
-        Datagram{
-            .header = DatagramHeader{
-                .command = Command.BRD,
-                .idx = 123,
-                .address = 0xABCDEF12,
-                .length = 0,
-                .circulating = false,
-                .next = false,
-                .irq = 0,
-            },
-            .data = &data,
-            .wkc = 0,
-        },
+        Datagram.init(.BRD, 123, 0xABCDEF12, false, &data),
     };
-
-    const padding = std.mem.zeroes([46]u8);
-    var frame = EthernetFrame{
-        .header = EthernetHeader{
+    var frame = EthernetFrame.init(
+        .{
             .dest_mac = 0x1122_3344_5566,
             .src_mac = 0xAABB_CCDD_EEFF,
-            .ether_type = @intFromEnum(EtherType.ETHERCAT),
+            .ether_type = .ETHERCAT,
         },
-        .ethercat_frame = EtherCATFrame{
-            .header = EtherCATHeader{
-                .length = 0,
-            },
-            .datagrams = &datagrams,
-        },
-        .padding = undefined,
-    };
-    frame.padding = padding[0..frame.getRequiredPaddingLength()];
-    frame.calc();
-
+        EtherCATFrame.init(&datagrams),
+    );
     var out_buf: [max_frame_length]u8 = undefined;
     const serialized = out_buf[0..try frame.serialize(&out_buf)];
-    const expected = [_]u8{
+    const expected = [min_frame_length]u8{
         // zig fmt: off
+
+        // ethernet header
         0x11, 0x22, 0x33, 0x44, 0x55, 0x66, // src mac
         0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, // dest mac
-        0x88, 0xa4, // 0xa488 big endian
+        0x88, 0xa4, // 0x88a4 big endian
+
+        // ethercat header
         0x10, 0b0001_0_000, // length=16, reserved=0, type=1
+
+        // datagram header
         0x07, // BRD
         123, // idx
         0x12, 0xEF, 0xCD, 0xAB, // address
         0x04, //length
-        0x00, 0x00, 0x00,
+        0x00, // reserved, circulating, next
+        0x00, 0x00, // irq
         0x01, 0x02, 0x03, 0x04, // data
-        // padding (30 bytes since 30 bytes above)
+        // wkc
+        0x00, 0x00,
+        // padding (28 bytes since 32 bytes above)
         0x00, 0x00, 0x00, 0x00, 0x00,
         0x00, 0x00, 0x00, 0x00, 0x00,
         0x00, 0x00, 0x00, 0x00, 0x00,
         0x00, 0x00, 0x00, 0x00, 0x00,
         0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00,
-
+        0x00, 0x00, 0x00,
         // zig fmt: on
     };
     try std.testing.expectEqualSlices(u8, &expected, serialized);
@@ -422,38 +445,17 @@ test "ethernet frame serialization / deserialization" {
 
     var data: [4]u8 = .{ 0x01, 0x02, 0x03, 0x04 };
     var datagrams: [1]Datagram = .{
-        Datagram{
-            .header = DatagramHeader{
-                .command = Command.BRD,
-                .idx = 0,
-                .address = 0xABCD,
-                .length = 0,
-                .circulating = false,
-                .next = false,
-                .irq = 0,
-            },
-            .data = &data,
-            .wkc = 0,
-        },
+        Datagram.init(.BRD, 0, 0xABCD, false, &data,),
     };
 
-    const padding = std.mem.zeroes([46]u8);
-    var frame = EthernetFrame{
-        .header = EthernetHeader{
+    var frame = EthernetFrame.init(
+        .{
             .dest_mac = 0xffff_ffff_ffff,
             .src_mac = 0xAAAA_AAAA_AAAA,
-            .ether_type = @intFromEnum(EtherType.ETHERCAT),
+            .ether_type = .ETHERCAT,
         },
-        .ethercat_frame = EtherCATFrame{
-            .header = EtherCATHeader{
-                .length = 0,
-            },
-            .datagrams = &datagrams,
-        },
-        .padding = undefined,
-    };
-    frame.padding = padding[0..frame.getRequiredPaddingLength()];
-    frame.calc();
+        EtherCATFrame.init(&datagrams),
+    );
 
     var out_buf: [max_frame_length]u8 = undefined;
     const serialized = out_buf[0..try frame.serialize(&out_buf)];

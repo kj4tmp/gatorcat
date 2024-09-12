@@ -5,7 +5,6 @@ const assert = std.debug.assert;
 
 const commands = @import("commands.zig");
 const nic = @import("nic.zig");
-const config = @import("config.zig");
 const esc = @import("esc.zig");
 const telegram = @import("telegram.zig");
 
@@ -201,43 +200,43 @@ pub fn sdoReadExpedited(
     }
 }
 
-pub fn readMailbox(
-    port: *nic.Port,
-    station_address: u16,
-    retries: u32,
-    recv_timeout_us: u32,
-    mbx_timeout_us: u32,
-) ![max_size]u8 {
-    _ = retries;
-    var timer = try Timer.start();
+// pub fn readMailbox(
+//     port: *nic.Port,
+//     station_address: u16,
+//     retries: u32,
+//     recv_timeout_us: u32,
+//     mbx_timeout_us: u32,
+// ) ![max_size]u8 {
+//     _ = retries;
+//     var timer = try Timer.start();
 
-    const mbx_in: esc.SyncManagerAttributes = blk: {
-        while (timer.read() < mbx_timeout_us * ns_per_us) {
-            const sm1_res = try commands.fprdPack(
-                port,
-                esc.SyncManagerAttributes,
-                .{
-                    .station_address = station_address,
-                    .offset = @intFromEnum(esc.RegisterMap.SM1),
-                },
-                recv_timeout_us,
-            );
-            if (sm1_res.wkc == 1) {
-                if (sm1_res.ps.status.mailbox_full) {
-                    break :blk sm1_res.ps;
-                }
-            }
-        } else {
-            return error.Timeout;
-        }
-    };
-    assert(mbx_in.status.mailbox_full);
+//     const mbx_in: esc.SyncManagerAttributes = blk: {
+//         while (timer.read() < mbx_timeout_us * ns_per_us) {
+//             const sm1_res = try commands.fprdPack(
+//                 port,
+//                 esc.SyncManagerAttributes,
+//                 .{
+//                     .station_address = station_address,
+//                     .offset = @intFromEnum(esc.RegisterMap.SM1),
+//                 },
+//                 recv_timeout_us,
+//             );
+//             if (sm1_res.wkc == 1) {
+//                 if (sm1_res.ps.status.mailbox_full) {
+//                     break :blk sm1_res.ps;
+//                 }
+//             }
+//         } else {
+//             return error.Timeout;
+//         }
+//     };
+//     assert(mbx_in.status.mailbox_full);
 
-    // mailbox configured?
-    if (mbx_in.length == 0 or mbx_in.length > max_size) {
-        return error.InvalidMailboxConfiguration;
-    }
-}
+//     // mailbox configured?
+//     if (mbx_in.length == 0 or mbx_in.length > max_size) {
+//         return error.InvalidMailboxConfiguration;
+//     }
+// }
 
 pub const MailboxContentType = enum {
     sdo_download_expedited_or_normal_response,

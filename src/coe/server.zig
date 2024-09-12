@@ -4,6 +4,7 @@ const assert = std.debug.assert;
 const nic = @import("../nic.zig");
 const coe = @import("coe.zig");
 const mailbox = @import("../mailbox.zig");
+const wire = @import("../wire.zig");
 
 /// Server Command Specifier
 ///
@@ -61,7 +62,7 @@ pub const SDOServerExpedited = packed struct(u128) {
     mbx_header: mailbox.MailboxHeader,
     coe_header: coe.CoEHeader,
     sdo_header: SDOHeaderServer,
-    data: std.BoundedArray(u8, 4) = 0,
+    data: u32 = 0,
 
     pub fn initDownloadResponse(
         cnt: u3,
@@ -91,7 +92,7 @@ pub const SDOServerExpedited = packed struct(u128) {
                 .index = index,
                 .subindex = subindex,
             },
-            .data = std.BoundedArray(u8, 4).fromSlice(&.{ 0, 0, 0, 0 }),
+            .data = 0,
         };
     }
 
@@ -100,9 +101,10 @@ pub const SDOServerExpedited = packed struct(u128) {
         station_address: u16,
         index: u16,
         subindex: u8,
-        data: std.BoundedArray(u8, 4),
+        data: []const u8,
     ) SDOServerExpedited {
         assert(data.len > 0);
+        assert(data.len < 5);
 
         const data_set_size: coe.DataSetSize = switch (data.len) {
             0 => unreachable,
@@ -112,6 +114,11 @@ pub const SDOServerExpedited = packed struct(u128) {
             4 => .four_octets,
             else => unreachable,
         };
+
+        var data_buf = std.mem.zeroes([4]u8);
+        var fbs = std.io.fixedBufferStream(&data_buf);
+        const writer = fbs.writer();
+        writer.writeAll(data) catch unreachable;
 
         return SDOServerExpedited{
             .mbx_header = .{
@@ -135,40 +142,38 @@ pub const SDOServerExpedited = packed struct(u128) {
                 .index = index,
                 .subindex = subindex,
             },
-            .data = data,
+            .data = @bitCast(data_buf),
         };
     }
 
     pub fn deserialize(buf: []const u8) !SDOServerExpedited {
         var fbs = std.io.fixedBufferStream(buf);
-        var reader = fbs.reader();
-        const mbx_header = try wire.packFromECatReader(mailbox.MailboxHeader, reader);
-        const coe_header = try wire.packFromECatReader(coe.CoEHeader, reader);
-        const sdo_header = try wire.packFromECatReader(SDOHeaderServer, reader);
-        const data_size: usize = switch (sdo_header.data_set_size) {
-            .one_octet => 1,
-            .two_octets => 2,
-            .three_octets => 3,
-            .four_octets => 4,
-        };
-        var data = try std.BoundedArray(u8, 4).init(data_size);
-        try reader.readNoEof(data.slice());
-
-        return SDOServerExpedited{
-            .mbx_header = mbx_header,
-            .coe_header = coe_header,
-            .sdo_header = sdo_header,
-            .data = data,
-        };
+        const reader = fbs.reader();
+        return try wire.packFromECatReader(SDOServerExpedited, reader);
     }
 
     pub fn serialize(self: SDOServerExpedited, out: []u8) !usize {
         var fbs = std.io.fixedBufferStream(out);
         const writer = fbs.writer();
-        try nic.eCatFromPackToWriter(self, writer);
+        try wire.eCatFromPackToWriter(self, writer);
         return fbs.getWritten().len;
     }
 };
+
+test "SDO Server Expedited Serialize Deserialize" {
+    const expected = SDOServerExpedited.initDownloadResponse(
+        3,
+        234,
+        23,
+        4,
+    );
+
+    var bytes = std.mem.zeroes([mailbox.max_size]u8);
+    const byte_size = try expected.serialize(&bytes);
+    try std.testing.expectEqual(@as(usize, 6 + 2 + 8), byte_size);
+    const actual = try SDOServerExpedited.deserialize(&bytes);
+    try std.testing.expectEqualDeep(expected, actual);
+}
 
 /// SDO Normal Reponses
 ///
@@ -209,10 +214,10 @@ pub const SDOServerNormal = struct {
     pub fn serialize(self: *const SDOServerNormal, out: []u8) !usize {
         var fbs = std.io.fixedBufferStream(out);
         const writer = fbs.writer();
-        try nic.eCatFromPackToWriter(self.mbx_header, writer);
-        try nic.eCatFromPackToWriter(self.coe_header, writer);
-        try nic.eCatFromPackToWriter(self.sdo_header, writer);
-        try nic.eCatFromPackToWriter(self.complete_size, writer);
+        try wire.eCatFromPackToWriter(self.mbx_header, writer);
+        try wire.eCatFromPackToWriter(self.coe_header, writer);
+        try wire.eCatFromPackToWriter(self.sdo_header, writer);
+        try wire.eCatFromPackToWriter(self.complete_size, writer);
         try writer.writeAll(self.data.slice());
         return fbs.getWritten().len;
     }

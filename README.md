@@ -55,9 +55,9 @@ This library is in extremely early development.
         - [x] Download
         - [x] Upload
     - [ ] SDO Server
-      - [ ] Expedited
-        - [ ] Download
-        - [ ] Upload
+      - [x] Expedited
+        - [x] Download
+        - [x] Upload
       - [ ] Normal
         - [ ] Download
         - [ ] Upload

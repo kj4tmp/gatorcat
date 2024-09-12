@@ -4,6 +4,7 @@ const assert = std.debug.assert;
 const nic = @import("../nic.zig");
 const coe = @import("coe.zig");
 const mailbox = @import("../mailbox.zig");
+const wire = @import("../wire.zig");
 
 /// Client Command Specifer
 ///
@@ -57,7 +58,7 @@ pub const SDOClientExpedited = packed struct(u128) {
         cnt: u3,
         index: u16,
         subindex: u8,
-        data: std.BoundedArray(u8, 4),
+        data: []const u8,
     ) SDOClientExpedited {
         assert(cnt != 0);
         assert(data.len > 0);
@@ -74,7 +75,7 @@ pub const SDOClientExpedited = packed struct(u128) {
         var data_buf = std.mem.zeroes([4]u8);
         var fbs = std.io.fixedBufferStream(&data_buf);
         const writer = fbs.writer();
-        writer.writeAll(data.slice()) catch unreachable;
+        writer.writeAll(data) catch unreachable;
 
         return SDOClientExpedited{
             .mbx_header = .{
@@ -127,9 +128,9 @@ pub const SDOClientExpedited = packed struct(u128) {
             },
             // first 4 bits are reserved to be zero
             .sdo_header = .{
-                .size_indicator = @bitCast(@as(u1, 0)),
-                .transfer_type = @bitCast(@as(u1, 0)),
-                .data_set_size = @bitCast(@as(u2, 0)),
+                .size_indicator = false,
+                .transfer_type = @enumFromInt(0),
+                .data_set_size = @enumFromInt(0),
                 .complete_access = false,
                 .command = .initiate_upload_request,
                 .index = index,
@@ -149,7 +150,7 @@ pub const SDOClientExpedited = packed struct(u128) {
     pub fn serialize(self: SDOClientExpedited, out: []u8) !usize {
         var fbs = std.io.fixedBufferStream(out);
         const writer = fbs.writer();
-        try nic.eCatFromPackToWriter(self, writer);
+        try wire.eCatFromPackToWriter(self, writer);
         return fbs.getWritten().len;
     }
 };
@@ -159,7 +160,7 @@ test "serialize deserialize sdo client expedited" {
         5,
         1234,
         23,
-        std.BoundedArray(u8, 4).fromSlice(&.{ 1, 2, 3, 4 }),
+        &.{ 1, 2, 3, 4 },
     );
 
     var bytes = std.mem.zeroes([mailbox.max_size]u8);
@@ -244,10 +245,10 @@ pub const SDOClientNormal = struct {
     pub fn serialize(self: *const SDOClientNormal, out: []u8) !usize {
         var fbs = std.io.fixedBufferStream(out);
         const writer = fbs.writer();
-        try nic.eCatFromPackToWriter(self.mbx_header, writer);
-        try nic.eCatFromPackToWriter(self.coe_header, writer);
-        try nic.eCatFromPackToWriter(self.sdo_header, writer);
-        try nic.eCatFromPackToWriter(self.complete_size, writer);
+        try wire.eCatFromPackToWriter(self.mbx_header, writer);
+        try wire.eCatFromPackToWriter(self.coe_header, writer);
+        try wire.eCatFromPackToWriter(self.sdo_header, writer);
+        try wire.eCatFromPackToWriter(self.complete_size, writer);
         try writer.writeAll(self.data.slice());
         return fbs.getWritten().len;
     }
@@ -355,6 +356,8 @@ pub const SDOClientSegment = struct {
                 .service = .sdo_request,
             },
             .sdo_seg_header = .{
+                .more_follows = false,
+                .seg_data_size = @enumFromInt(0),
                 .toggle = toggle,
                 .command = .upload_segment_request,
             },
@@ -387,9 +390,9 @@ pub const SDOClientSegment = struct {
     pub fn serialize(self: *const SDOClientSegment, out: []u8) !usize {
         var fbs = std.io.fixedBufferStream(out);
         const writer = fbs.writer();
-        try nic.eCatFromPackToWriter(self.mbx_header, writer);
-        try nic.eCatFromPackToWriter(self.coe_header, writer);
-        try nic.eCatFromPackToWriter(self.sdo_seg_header, writer);
+        try wire.eCatFromPackToWriter(self.mbx_header, writer);
+        try wire.eCatFromPackToWriter(self.coe_header, writer);
+        try wire.eCatFromPackToWriter(self.sdo_seg_header, writer);
         try writer.writeAll(self.data.slice());
         return fbs.getWritten().len;
     }
@@ -512,7 +515,7 @@ pub const GetObjectDescriptionRequest = packed struct {
             .sdo_info_header = .{
                 .opcode = .get_object_description_request,
                 .incomplete = false,
-                .fragments_left = false,
+                .fragments_left = 0,
             },
             .index = index,
         };

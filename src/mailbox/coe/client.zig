@@ -2,7 +2,7 @@ const std = @import("std");
 const assert = std.debug.assert;
 
 const nic = @import("../nic.zig");
-const coe = @import("coe.zig");
+const coe = @import("../coe.zig");
 const mailbox = @import("../mailbox.zig");
 const wire = @import("../wire.zig");
 
@@ -15,7 +15,7 @@ const wire = @import("../wire.zig");
 /// server command specifier (scs).
 ///
 /// Ref: CiA 301 V4.2.0
-pub const ClientCommandSpecifier = enum(u3) {
+pub const CommandSpecifier = enum(u3) {
     download_segment_request = 0,
     initiate_download_request = 1,
     initiate_upload_request = 2,
@@ -29,7 +29,7 @@ pub const ClientCommandSpecifier = enum(u3) {
 /// messages.
 ///
 /// Ref: IEC 61158-6-12
-pub const SDOHeaderClient = packed struct(u32) {
+pub const SDOHeader = packed struct(u32) {
     size_indicator: bool,
     transfer_type: coe.TransferType,
     data_set_size: coe.DataSetSize,
@@ -37,16 +37,16 @@ pub const SDOHeaderClient = packed struct(u32) {
     /// true: complete object will be downlaoded. subindex shall be zero (when subindex zero
     /// is to be included) or one (subindex 0 excluded)
     complete_access: bool,
-    command: ClientCommandSpecifier,
+    command: CommandSpecifier,
     index: u16,
     /// shall be zero or one if complete access is true.
     subindex: u8,
 };
 
 pub const SDOClientExpedited = packed struct(u128) {
-    mbx_header: mailbox.MailboxHeader,
-    coe_header: coe.CoEHeader,
-    sdo_header: SDOHeaderClient,
+    mbx_header: mailbox.Header,
+    coe_header: coe.Header,
+    sdo_header: SDOHeader,
     data: u32,
 
     /// Create an SDO Download Expedited Request
@@ -171,9 +171,9 @@ test "serialize deserialize sdo client expedited" {
 }
 
 pub const SDOClientNormal = struct {
-    mbx_header: mailbox.MailboxHeader,
-    coe_header: coe.CoEHeader,
-    sdo_header: SDOHeaderClient,
+    mbx_header: mailbox.Header,
+    coe_header: coe.Header,
+    sdo_header: SDOHeader,
     complete_size: u32,
     data: std.BoundedArray(u8, data_max_size),
 
@@ -221,9 +221,9 @@ pub const SDOClientNormal = struct {
     pub fn deserialize(buf: []const u8) !SDOClientNormal {
         var fbs = std.io.fixedBufferStream(buf);
         const reader = fbs.reader();
-        const mbx_header = try wire.packFromECatReader(mailbox.MailboxHeader, reader);
-        const coe_header = try wire.packFromECatReader(coe.CoEHeader, reader);
-        const sdo_header = try wire.packFromECatReader(SDOHeaderClient, reader);
+        const mbx_header = try wire.packFromECatReader(mailbox.Header, reader);
+        const coe_header = try wire.packFromECatReader(coe.Header, reader);
+        const sdo_header = try wire.packFromECatReader(SDOHeader, reader);
         const complete_size = try wire.packFromECatReader(u32, reader);
 
         if (mbx_header.length < 10) {
@@ -256,9 +256,9 @@ pub const SDOClientNormal = struct {
     comptime {
         assert(data_max_size ==
             mailbox.max_size -
-            @divExact(@bitSizeOf(mailbox.MailboxHeader), 8) -
-            @divExact(@bitSizeOf(coe.CoEHeader), 8) -
-            @divExact(@bitSizeOf(SDOHeaderClient), 8) -
+            @divExact(@bitSizeOf(mailbox.Header), 8) -
+            @divExact(@bitSizeOf(coe.Header), 8) -
+            @divExact(@bitSizeOf(SDOHeader), 8) -
             @divExact(@bitSizeOf(u32), 8));
     }
 };
@@ -281,8 +281,8 @@ test "serialize deserialize SDO client normal" {
 
 ///
 pub const SDOClientSegment = struct {
-    mbx_header: mailbox.MailboxHeader,
-    coe_header: coe.CoEHeader,
+    mbx_header: mailbox.Header,
+    coe_header: coe.Header,
     seg_header: SDOSegmentHeaderClient,
     data: std.BoundedArray(u8, data_max_size),
 
@@ -368,8 +368,8 @@ pub const SDOClientSegment = struct {
     pub fn deserialize(buf: []const u8) !SDOClientSegment {
         var fbs = std.io.fixedBufferStream(buf);
         const reader = fbs.reader();
-        const mbx_header = try wire.packFromECatReader(mailbox.MailboxHeader, reader);
-        const coe_header = try wire.packFromECatReader(coe.CoEHeader, reader);
+        const mbx_header = try wire.packFromECatReader(mailbox.Header, reader);
+        const coe_header = try wire.packFromECatReader(coe.Header, reader);
         const seg_header = try wire.packFromECatReader(SDOSegmentHeaderClient, reader);
 
         if (mbx_header.length < 10) {
@@ -400,8 +400,8 @@ pub const SDOClientSegment = struct {
     comptime {
         assert(data_max_size ==
             mailbox.max_size -
-            @divExact(@bitSizeOf(mailbox.MailboxHeader), 8) -
-            @divExact(@bitSizeOf(coe.CoEHeader), 8) -
+            @divExact(@bitSizeOf(mailbox.Header), 8) -
+            @divExact(@bitSizeOf(coe.Header), 8) -
             @divExact(@bitSizeOf(SDOSegmentHeaderClient), 8));
     }
 
@@ -445,15 +445,15 @@ pub const SDOSegmentHeaderClient = packed struct(u8) {
     seg_data_size: coe.SegmentDataSize,
     /// shall toggle with every segment, starting with 0x00
     toggle: bool,
-    command: ClientCommandSpecifier,
+    command: CommandSpecifier,
 };
 
 /// Get OD List Request
 ///
 /// Ref: IEC 61158-6-12:2019 5.6.3.3.1
 pub const GetODListRequest = packed struct {
-    mbx_header: mailbox.MailboxHeader,
-    coe_header: coe.CoEHeader,
+    mbx_header: mailbox.Header,
+    coe_header: coe.Header,
     sdo_info_header: coe.SDOInfoHeader,
     list_type: coe.ODListType,
 
@@ -489,8 +489,8 @@ pub const GetODListRequest = packed struct {
 ///
 /// Ref: IEC 61158-6-12:2019 5.6.3.5.1
 pub const GetObjectDescriptionRequest = packed struct {
-    mbx_header: mailbox.MailboxHeader,
-    coe_header: coe.CoEHeader,
+    mbx_header: mailbox.Header,
+    coe_header: coe.Header,
     sdo_info_header: coe.SDOInfoHeader,
     index: u16,
 
@@ -526,8 +526,8 @@ pub const GetObjectDescriptionRequest = packed struct {
 ///
 /// Ref: IEC 61158-6-12:2019 5.6.3.6.1
 pub const GetEntryDescriptionRequest = packed struct {
-    mbx_header: mailbox.MailboxHeader,
-    coe_header: coe.CoEHeader,
+    mbx_header: mailbox.Header,
+    coe_header: coe.Header,
     sdo_info_header: coe.SDOInfoHeader,
     index: u16,
     subindex: u8,
@@ -570,8 +570,8 @@ pub const GetEntryDescriptionRequest = packed struct {
 /// Ref: IEC 61158-6-12:2019 5.6.5.1
 /// Ref: IEC 61158-6-12:2019 5.6.5.1
 pub const PDOTransmission = struct {
-    mbx_header: mailbox.MailboxHeader,
-    coe_header: coe.CoEHeader,
+    mbx_header: mailbox.Header,
+    coe_header: coe.Header,
     data: []const u8,
 
     pub fn rx(
@@ -628,8 +628,8 @@ pub const PDOTransmission = struct {
 /// Ref: IEC 61158-6-12:2019 5.6.5.3
 /// Ref: IEC 61158-6-12:2019 5.6.5.4
 pub const PDORemoteTransmissionRequest = packed struct {
-    mbx_header: mailbox.MailboxHeader,
-    coe_header: coe.CoEHeader,
+    mbx_header: mailbox.Header,
+    coe_header: coe.Header,
 
     pub fn rx(
         cnt: u3,

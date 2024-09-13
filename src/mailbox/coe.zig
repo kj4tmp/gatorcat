@@ -1,3 +1,67 @@
+const std = @import("std");
+
+const mailbox = @import("../mailbox.zig");
+const wire = @import("../wire.zig");
+
+pub const server = @import("coe/server.zig");
+pub const client = @import("coe/client.zig");
+pub const common = @import("coe/common.zig");
+
+pub const MailboxInContentTag = enum {
+    expedited,
+    normal,
+    segment,
+    abort,
+    emergency,
+};
+
+/// MailboxIn Content for CoE.
+pub const MailboxInContent = union(enum) {
+    expedited: server.Expedited,
+    normal: server.Normal,
+    segment: server.Segment,
+    abort: server.Abort,
+    emergency: server.Emergency,
+
+    // pub fn deserialize(buf: [] const u8) MailboxInContent {
+
+    // }
+
+    pub fn identify(buf: []const u8) !MailboxInContentTag {
+        var fbs = std.io.fixedBufferStream(buf);
+        const reader = fbs.reader();
+        const mbx_header = try wire.packFromECatReader(mailbox.Header, reader);
+
+        switch (mbx_header.type) {
+            .CoE => {},
+            else => return error.WrongMbxProtocol,
+        }
+        const header = try wire.packFromECatReader(Header, reader);
+
+        switch (header.service) {
+            .sdo_request => {
+                const sdo_header = try wire.packFromECatReader(server.SDOHeader, reader);
+                return switch (sdo_header.command) {
+                    .abort_transfer_request => .abort,
+                    else => error.InvalidSDOCommand,
+                };
+            },
+            .sdo_response => {
+                const sdo_header = try wire.packFromECatReader(server.SDOHeader, reader);
+
+                switch (sdo_header.command) {
+                    .upload_segment_response => return .segment,
+                    .download_segment_response => return .segment,
+                    .initiate_download_response => return .expedited,
+
+                    /// WORK IN PROGRESS
+                }
+            },
+            .emergency => return .emergency,
+        }
+    }
+};
+
 pub const DataSetSize = enum(u2) {
     four_octets = 0x00,
     three_octets = 0x01,
@@ -31,7 +95,7 @@ pub const Service = enum(u4) {
     _,
 };
 
-pub const CoEHeader = packed struct(u16) {
+pub const Header = packed struct(u16) {
     number: u9 = 0,
     reserved: u3 = 0,
     service: Service,

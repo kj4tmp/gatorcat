@@ -2,14 +2,14 @@ const std = @import("std");
 const assert = std.debug.assert;
 
 const nic = @import("../nic.zig");
-const coe = @import("coe.zig");
+const coe = @import("../coe.zig");
 const mailbox = @import("../mailbox.zig");
 const wire = @import("../wire.zig");
 
 /// Server Command Specifier
 ///
 /// See Client Command Specifier.
-pub const ServerCommandSpecifier = enum(u3) {
+pub const CommandSpecifier = enum(u3) {
     upload_segment_response = 0,
     download_segment_response = 1,
     initiate_upload_response = 2,
@@ -23,7 +23,7 @@ pub const ServerCommandSpecifier = enum(u3) {
 /// messages.
 ///
 /// Ref: IEC 61158-6-12
-pub const SDOHeaderServer = packed struct(u32) {
+pub const SDOHeader = packed struct(u32) {
     size_indicator: bool,
     transfer_type: coe.TransferType,
     data_set_size: coe.DataSetSize,
@@ -31,7 +31,7 @@ pub const SDOHeaderServer = packed struct(u32) {
     /// true: complete object will be downlaoded. subindex shall be zero (when subindex zero
     /// is to be included) or one (subindex 0 excluded)
     complete_access: bool,
-    command: ServerCommandSpecifier,
+    command: CommandSpecifier,
     index: u16,
     /// shall be zero or one if complete access is true.
     subindex: u8,
@@ -47,7 +47,7 @@ pub const SDOSegmentHeaderServer = packed struct {
     seg_data_size: coe.SegmentDataSize,
     /// shall toggle with every segment, starting with 0x00
     toggle: bool,
-    command: ServerCommandSpecifier,
+    command: CommandSpecifier,
 };
 
 /// SDO Expedited Responses
@@ -58,10 +58,10 @@ pub const SDOSegmentHeaderServer = packed struct {
 /// Ref: IEC 61158-6-12:2019 5.6.2.1.2 (SDO Download Expedited Response)
 /// Ref: IEC 61158-6-12:2019 5.6.2.2.2 (SDO Download Normal Response)
 /// Ref: IEC 61158-6-12:2019 5.6.2.4.2 (SDO Upload Expedited Response)
-pub const SDOServerExpedited = packed struct(u128) {
-    mbx_header: mailbox.MailboxHeader,
-    coe_header: coe.CoEHeader,
-    sdo_header: SDOHeaderServer,
+pub const Expedited = packed struct(u128) {
+    mbx_header: mailbox.Header,
+    coe_header: coe.Header,
+    sdo_header: SDOHeader,
     data: u32 = 0,
 
     pub fn initDownloadResponse(
@@ -69,9 +69,9 @@ pub const SDOServerExpedited = packed struct(u128) {
         station_address: u16,
         index: u16,
         subindex: u8,
-    ) SDOServerExpedited {
+    ) Expedited {
         assert(cnt != 0);
-        return SDOServerExpedited{
+        return Expedited{
             .mbx_header = .{
                 .length = 10,
                 .address = station_address,
@@ -103,7 +103,7 @@ pub const SDOServerExpedited = packed struct(u128) {
         index: u16,
         subindex: u8,
         data: []const u8,
-    ) SDOServerExpedited {
+    ) Expedited {
         assert(data.len > 0);
         assert(data.len < 5);
         assert(cnt != 0);
@@ -122,7 +122,7 @@ pub const SDOServerExpedited = packed struct(u128) {
         const writer = fbs.writer();
         writer.writeAll(data) catch unreachable;
 
-        return SDOServerExpedited{
+        return Expedited{
             .mbx_header = .{
                 .length = 10,
                 .address = station_address,
@@ -148,13 +148,13 @@ pub const SDOServerExpedited = packed struct(u128) {
         };
     }
 
-    pub fn deserialize(buf: []const u8) !SDOServerExpedited {
+    pub fn deserialize(buf: []const u8) !Expedited {
         var fbs = std.io.fixedBufferStream(buf);
         const reader = fbs.reader();
-        return try wire.packFromECatReader(SDOServerExpedited, reader);
+        return try wire.packFromECatReader(Expedited, reader);
     }
 
-    pub fn serialize(self: SDOServerExpedited, out: []u8) !usize {
+    pub fn serialize(self: Expedited, out: []u8) !usize {
         var fbs = std.io.fixedBufferStream(out);
         const writer = fbs.writer();
         try wire.eCatFromPackToWriter(self, writer);
@@ -163,7 +163,7 @@ pub const SDOServerExpedited = packed struct(u128) {
 };
 
 test "SDO Server Expedited Serialize Deserialize" {
-    const expected = SDOServerExpedited.initDownloadResponse(
+    const expected = Expedited.initDownloadResponse(
         3,
         234,
         23,
@@ -173,17 +173,17 @@ test "SDO Server Expedited Serialize Deserialize" {
     var bytes = std.mem.zeroes([mailbox.max_size]u8);
     const byte_size = try expected.serialize(&bytes);
     try std.testing.expectEqual(@as(usize, 6 + 2 + 8), byte_size);
-    const actual = try SDOServerExpedited.deserialize(&bytes);
+    const actual = try Expedited.deserialize(&bytes);
     try std.testing.expectEqualDeep(expected, actual);
 }
 
 /// SDO Normal Reponses
 ///
 /// Ref: IEC 61158-6-12:2019 5.6.2.5.2 (SDO Upload Normal Response)
-pub const SDOServerNormal = struct {
-    mbx_header: mailbox.MailboxHeader,
-    coe_header: coe.CoEHeader,
-    sdo_header: SDOHeaderServer,
+pub const Normal = struct {
+    mbx_header: mailbox.Header,
+    coe_header: coe.Header,
+    sdo_header: SDOHeader,
     complete_size: u32,
     data: std.BoundedArray(u8, data_max_size),
 
@@ -196,11 +196,11 @@ pub const SDOServerNormal = struct {
         subindex: u8,
         complete_size: u32,
         data: []const u8,
-    ) SDOServerNormal {
+    ) Normal {
         assert(cnt != 0);
         assert(data.len < data_max_size);
 
-        return SDOServerNormal{
+        return Normal{
             .mbx_header = .{
                 .length = @as(u16, @intCast(data.len)) + 10,
                 .address = station_address,
@@ -227,12 +227,12 @@ pub const SDOServerNormal = struct {
         };
     }
 
-    pub fn deserialize(buf: []const u8) !SDOServerNormal {
+    pub fn deserialize(buf: []const u8) !Normal {
         var fbs = std.io.fixedBufferStream(buf);
         const reader = fbs.reader();
-        const mbx_header = try wire.packFromECatReader(mailbox.MailboxHeader, reader);
-        const coe_header = try wire.packFromECatReader(coe.CoEHeader, reader);
-        const sdo_header = try wire.packFromECatReader(SDOHeaderServer, reader);
+        const mbx_header = try wire.packFromECatReader(mailbox.Header, reader);
+        const coe_header = try wire.packFromECatReader(coe.Header, reader);
+        const sdo_header = try wire.packFromECatReader(SDOHeader, reader);
         const complete_size = try wire.packFromECatReader(u32, reader);
 
         if (mbx_header.length < 10) {
@@ -242,7 +242,7 @@ pub const SDOServerNormal = struct {
         var data = try std.BoundedArray(u8, data_max_size).init(data_length);
         try reader.readNoEof(data.slice());
 
-        return SDOServerNormal{
+        return Normal{
             .mbx_header = mbx_header,
             .coe_header = coe_header,
             .sdo_header = sdo_header,
@@ -251,7 +251,7 @@ pub const SDOServerNormal = struct {
         };
     }
 
-    pub fn serialize(self: *const SDOServerNormal, out: []u8) !usize {
+    pub fn serialize(self: *const Normal, out: []u8) !usize {
         var fbs = std.io.fixedBufferStream(out);
         const writer = fbs.writer();
         try wire.eCatFromPackToWriter(self.mbx_header, writer);
@@ -264,15 +264,15 @@ pub const SDOServerNormal = struct {
 
     comptime {
         assert(data_max_size == mailbox.max_size -
-            @divExact(@bitSizeOf(mailbox.MailboxHeader), 8) -
-            @divExact(@bitSizeOf(coe.CoEHeader), 8) -
-            @divExact(@bitSizeOf(SDOHeaderServer), 8) -
+            @divExact(@bitSizeOf(mailbox.Header), 8) -
+            @divExact(@bitSizeOf(coe.Header), 8) -
+            @divExact(@bitSizeOf(SDOHeader), 8) -
             @divExact(@bitSizeOf(u32), 8));
     }
 };
 
 test "serialize and deserialize sdo server normal" {
-    const expected = SDOServerNormal.initUploadResponse(
+    const expected = Normal.initUploadResponse(
         2,
         0,
         1234,
@@ -283,7 +283,7 @@ test "serialize and deserialize sdo server normal" {
     var bytes = std.mem.zeroes([mailbox.max_size]u8);
     const byte_size = try expected.serialize(&bytes);
     try std.testing.expectEqual(@as(usize, 6 + 2 + 12), byte_size);
-    const actual = try SDOServerNormal.deserialize(&bytes);
+    const actual = try Normal.deserialize(&bytes);
     try std.testing.expectEqualDeep(expected, actual);
 }
 
@@ -291,9 +291,9 @@ test "serialize and deserialize sdo server normal" {
 ///
 /// Ref: IEC 61158-6-12:2019 5.6.2.3.2 (SDO Download Segment Reponse)
 /// Ref: Ref: IEC 61158-6-12:2019 5.6.2.6.2 (SDO Upload Segment Response)
-pub const SDOServerSegment = struct {
-    mbx_header: mailbox.MailboxHeader,
-    coe_header: coe.CoEHeader,
+pub const Segment = struct {
+    mbx_header: mailbox.Header,
+    coe_header: coe.Header,
     seg_header: SDOSegmentHeaderServer,
     data: std.BoundedArray(u8, data_max_size),
 
@@ -303,10 +303,10 @@ pub const SDOServerSegment = struct {
         cnt: u3,
         station_address: u16,
         toggle: bool,
-    ) SDOServerSegment {
+    ) Segment {
         assert(cnt != 0);
 
-        return SDOServerSegment{
+        return Segment{
             .mbx_header = .{
                 .length = 10,
                 .address = station_address,
@@ -341,7 +341,7 @@ pub const SDOServerSegment = struct {
         more_follows: bool,
         toggle: bool,
         data: []const u8,
-    ) SDOServerSegment {
+    ) Segment {
         assert(cnt != 0);
         assert(data.len < data_max_size);
 
@@ -358,7 +358,7 @@ pub const SDOServerSegment = struct {
             else => .seven_octets,
         };
 
-        return SDOServerSegment{
+        return Segment{
             .mbx_header = .{
                 .length = length,
                 .address = station_address,
@@ -381,16 +381,16 @@ pub const SDOServerSegment = struct {
         };
     }
 
-    pub fn deserialize(buf: []const u8) !SDOServerSegment {
+    pub fn deserialize(buf: []const u8) !Segment {
         var fbs = std.io.fixedBufferStream(buf);
         const reader = fbs.reader();
-        const mbx_header = try wire.packFromECatReader(mailbox.MailboxHeader, reader);
-        const coe_header = try wire.packFromECatReader(coe.CoEHeader, reader);
+        const mbx_header = try wire.packFromECatReader(mailbox.Header, reader);
+        const coe_header = try wire.packFromECatReader(coe.Header, reader);
         const seg_header = try wire.packFromECatReader(SDOSegmentHeaderServer, reader);
 
         var data_size: usize = 0;
         if (mbx_header.length < 10) {
-            return error.InvalidMailboxHeaderLength;
+            return error.InvalidHeaderLength;
         } else if (mbx_header.length == 10) {
             data_size = switch (seg_header.seg_data_size) {
                 .zero_octets => 0,
@@ -406,13 +406,13 @@ pub const SDOServerSegment = struct {
             assert(mbx_header.length > 10);
             data_size = mbx_header.length - 3;
             assert(data_size == mbx_header.length -
-                @divExact(@bitSizeOf(coe.CoEHeader), 8) -
+                @divExact(@bitSizeOf(coe.Header), 8) -
                 @divExact(@bitSizeOf(SDOSegmentHeaderServer), 8));
         }
         var data = try std.BoundedArray(u8, data_max_size).init(data_size);
         try reader.readNoEof(data.slice());
 
-        return SDOServerSegment{
+        return Segment{
             .mbx_header = mbx_header,
             .coe_header = coe_header,
             .seg_header = seg_header,
@@ -420,7 +420,7 @@ pub const SDOServerSegment = struct {
         };
     }
 
-    pub fn serialize(self: *const SDOServerSegment, out: []u8) !usize {
+    pub fn serialize(self: *const Segment, out: []u8) !usize {
         var fbs = std.io.fixedBufferStream(out);
         const writer = fbs.writer();
         try wire.eCatFromPackToWriter(self.mbx_header, writer);
@@ -432,15 +432,15 @@ pub const SDOServerSegment = struct {
 
     comptime {
         assert(data_max_size == mailbox.max_size -
-            @divExact(@bitSizeOf(mailbox.MailboxHeader), 8) -
-            @divExact(@bitSizeOf(coe.CoEHeader), 8) -
+            @divExact(@bitSizeOf(mailbox.Header), 8) -
+            @divExact(@bitSizeOf(coe.Header), 8) -
             @divExact(@bitSizeOf(SDOSegmentHeaderServer), 8));
         assert(data_max_size >= 7);
     }
 };
 
 test "serialize and deserialize sdo server segment" {
-    const expected = SDOServerSegment.initUploadResponse(
+    const expected = Segment.initUploadResponse(
         2,
         0,
         false,
@@ -450,7 +450,7 @@ test "serialize and deserialize sdo server segment" {
     var bytes = std.mem.zeroes([mailbox.max_size]u8);
     const byte_size = try expected.serialize(&bytes);
     try std.testing.expectEqual(@as(usize, 6 + 2 + 5), byte_size);
-    const actual = try SDOServerSegment.deserialize(&bytes);
+    const actual = try Segment.deserialize(&bytes);
     try std.testing.expectEqualDeep(expected, actual);
 }
 
@@ -460,7 +460,7 @@ test "serialize and deserialize sdo server segment" {
 pub const SDOAbortCode = enum(u32) {
     ToggleBitNotChanged = 0x05_03_00_00,
     SdoProtocolTimeout = 0x05_04_00_00,
-    ClientServerCommandSpecifierNotValidOrUnknown = 0x05_04_00_01,
+    CommandSpecifierNotValidOrUnknown = 0x05_04_00_01,
     OutOfMemory = 0x05_04_00_05,
     UnsupportedAccessToAnObject = 0x06_01_00_00,
     AttemptToReadToAWriteOnlyObject = 0x06_01_00_01,
@@ -493,12 +493,12 @@ pub const SDOAbortCode = enum(u32) {
 /// Abort SDO Transfer Request
 ///
 /// Ref: IEC 61158-6-12:2019 5.6.2.7.1
-pub const AbortSDOTransferRequest = packed struct(u128) {
-    mbx_header: mailbox.MailboxHeader,
-    coe_header: coe.CoEHeader,
-    /// SDOHeaderServer is arbitrarily chosen here.
+pub const Abort = packed struct(u128) {
+    mbx_header: mailbox.Header,
+    coe_header: coe.Header,
+    /// SDOHeader is arbitrarily chosen here.
     /// Abort has no concept of client / server.
-    sdo_header: SDOHeaderServer,
+    sdo_header: SDOHeader,
     abort_code: SDOAbortCode,
 
     pub fn init(
@@ -507,10 +507,10 @@ pub const AbortSDOTransferRequest = packed struct(u128) {
         index: u16,
         subindex: u8,
         abort_code: SDOAbortCode,
-    ) AbortSDOTransferRequest {
+    ) Abort {
         assert(cnt != 0);
 
-        return AbortSDOTransferRequest{
+        return Abort{
             .mbx_header = .{
                 .length = 10,
                 .address = station_address,
@@ -536,13 +536,13 @@ pub const AbortSDOTransferRequest = packed struct(u128) {
         };
     }
 
-    pub fn deserialize(buf: []const u8) !AbortSDOTransferRequest {
+    pub fn deserialize(buf: []const u8) !Abort {
         var fbs = std.io.fixedBufferStream(buf);
         const reader = fbs.reader();
-        return try wire.packFromECatReader(AbortSDOTransferRequest, reader);
+        return try wire.packFromECatReader(Abort, reader);
     }
 
-    pub fn serialize(self: AbortSDOTransferRequest, out: []u8) !usize {
+    pub fn serialize(self: Abort, out: []u8) !usize {
         var fbs = std.io.fixedBufferStream(out);
         const writer = fbs.writer();
         try wire.eCatFromPackToWriter(self, writer);
@@ -551,7 +551,7 @@ pub const AbortSDOTransferRequest = packed struct(u128) {
 };
 
 test "serialize and deserialize abort sdo transfer request" {
-    const expected = AbortSDOTransferRequest.init(
+    const expected = Abort.init(
         3,
         345,
         345,
@@ -561,7 +561,7 @@ test "serialize and deserialize abort sdo transfer request" {
     var bytes = std.mem.zeroes([mailbox.max_size]u8);
     const byte_size = try expected.serialize(&bytes);
     try std.testing.expectEqual(@as(usize, 6 + 2 + 8), byte_size);
-    const actual = try AbortSDOTransferRequest.deserialize(&bytes);
+    const actual = try Abort.deserialize(&bytes);
     try std.testing.expectEqualDeep(expected, actual);
 }
 
@@ -569,8 +569,8 @@ test "serialize and deserialize abort sdo transfer request" {
 ///
 /// Ref: IEC 61158-6-12:2019 5.6.3.3.2
 pub const GetODListResponse = struct {
-    mbx_header: mailbox.MailboxHeader,
-    coe_header: coe.CoEHeader,
+    mbx_header: mailbox.Header,
+    coe_header: coe.Header,
     sdo_info_header: coe.SDOInfoHeader,
     list_type: coe.ODListType,
     index_list: []u16,
@@ -580,8 +580,8 @@ pub const GetODListResponse = struct {
 ///
 /// Ref: IEC 61158-6-12:2019 5.6.3.5.2
 pub const GetObjectDescriptionResponse = struct {
-    mbx_header: mailbox.MailboxHeader,
-    coe_header: coe.CoEHeader,
+    mbx_header: mailbox.Header,
+    coe_header: coe.Header,
     sdo_info_header: coe.SDOInfoHeader,
     index: u16,
     data_type: u16,
@@ -594,8 +594,8 @@ pub const GetObjectDescriptionResponse = struct {
 ///
 /// Ref: IEC 61158-6-12:2019 5.6.3.2
 pub const GetEntryDescriptionResponse = struct {
-    mbx_header: mailbox.MailboxHeader,
-    coe_header: coe.CoEHeader,
+    mbx_header: mailbox.Header,
+    coe_header: coe.Header,
     sdo_info_header: coe.SDOInfoHeader,
     index: u16,
     subindex: u8,
@@ -610,8 +610,8 @@ pub const GetEntryDescriptionResponse = struct {
 ///
 /// Ref: IEC 61158-6-12:2019 5.6.3.8
 pub const SDOInfoErrorRequest = packed struct {
-    mbx_header: mailbox.MailboxHeader,
-    coe_header: coe.CoEHeader,
+    mbx_header: mailbox.Header,
+    coe_header: coe.Header,
     sdo_info_header: coe.SDOInfoHeader,
     abort_code: SDOAbortCode,
 };
@@ -619,9 +619,9 @@ pub const SDOInfoErrorRequest = packed struct {
 /// Emergency Request
 ///
 /// Ref: IEC 61158-6-12:2019 5.6.4.1
-pub const EmergencyRequest = packed struct(u128) {
-    mbx_header: mailbox.MailboxHeader,
-    coe_header: coe.CoEHeader,
+pub const Emergency = packed struct(u128) {
+    mbx_header: mailbox.Header,
+    coe_header: coe.Header,
     error_code: u16,
     error_register: u8,
     data: u40,
@@ -632,8 +632,8 @@ pub const EmergencyRequest = packed struct(u128) {
         error_code: u16,
         error_register: u8,
         data: u40,
-    ) EmergencyRequest {
-        return EmergencyRequest{
+    ) Emergency {
+        return Emergency{
             .mbx_header = .{
                 .length = 10,
                 .address = station_address,
@@ -652,13 +652,13 @@ pub const EmergencyRequest = packed struct(u128) {
         };
     }
 
-    pub fn deserialize(buf: []const u8) !EmergencyRequest {
+    pub fn deserialize(buf: []const u8) !Emergency {
         var fbs = std.io.fixedBufferStream(buf);
         const reader = fbs.reader();
-        return try wire.packFromECatReader(EmergencyRequest, reader);
+        return try wire.packFromECatReader(Emergency, reader);
     }
 
-    pub fn serialize(self: EmergencyRequest, out: []u8) !usize {
+    pub fn serialize(self: Emergency, out: []u8) !usize {
         var fbs = std.io.fixedBufferStream(out);
         const writer = fbs.writer();
         try wire.eCatFromPackToWriter(self, writer);
@@ -667,7 +667,7 @@ pub const EmergencyRequest = packed struct(u128) {
 };
 
 test "serialize and deserialize emergency request" {
-    const expected = EmergencyRequest.init(
+    const expected = Emergency.init(
         4,
         234,
         2366,
@@ -677,6 +677,6 @@ test "serialize and deserialize emergency request" {
     var bytes = std.mem.zeroes([mailbox.max_size]u8);
     const byte_size = try expected.serialize(&bytes);
     try std.testing.expectEqual(@as(usize, 6 + 2 + 8), byte_size);
-    const actual = try EmergencyRequest.deserialize(&bytes);
+    const actual = try Emergency.deserialize(&bytes);
     try std.testing.expectEqualDeep(expected, actual);
 }

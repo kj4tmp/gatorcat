@@ -7,6 +7,8 @@ const commands = @import("commands.zig");
 const nic = @import("nic.zig");
 const esc = @import("esc.zig");
 const telegram = @import("telegram.zig");
+const coe = @import("mailbox/coe.zig");
+
 
 /// Mailbox Types
 ///
@@ -64,7 +66,7 @@ pub const StationAddress = u16;
 /// Mailbox Header
 ///
 /// Ref: IEC 61158-4-12:2019 5.6
-pub const MailboxHeader = packed struct(u48) {
+pub const Header = packed struct(u48) {
     /// length of mailbox service data
     length: u16,
     address: StationAddress,
@@ -92,7 +94,7 @@ pub const MailboxHeader = packed struct(u48) {
 ///
 /// Ref: IEC 61158-4-12:2019 5.6
 pub const Mailbox = struct {
-    mbx_header: MailboxHeader,
+    mbx_header: Header,
     /// mailbox service data
     data: []u8,
 };
@@ -238,6 +240,8 @@ pub fn sdoReadExpedited(
 //     }
 // }
 
+
+
 pub const MailboxContentType = enum {
     sdo_download_expedited_or_normal_response,
     sdo_download_segment_response,
@@ -255,6 +259,16 @@ pub const MailboxContentType = enum {
 
     emergency_request,
 };
+
+pub const MailboxContent = union {
+
+
+
+    pub fn identify(buf: []const u8) {
+        
+    }
+
+}
 
 // Messages that can be read from mailbox in.
 //
@@ -283,22 +297,22 @@ pub const MailboxContentType = enum {
 //         var fbs = std.io.fixedBufferStream(buf);
 //         var reader = fbs.reader();
 
-//         const mbx_header = try wire.packFromECatReader(MailboxHeader, &reader);
+//         const mbx_header = try wire.packFromECatReader(Header, &reader);
 
-//         if (mbx_header.length > buf.len - @divExact(@bitSizeOf(MailboxHeader), 8)) {
-//             return error.InvalidMailboxHeaderLength;
+//         if (mbx_header.length > buf.len - @divExact(@bitSizeOf(Header), 8)) {
+//             return error.InvalidHeaderLength;
 //         }
 
 //         switch (mbx_header.type) {
 //             _ => return error.InvalidProtocol,
 //             .ERR, .AoE, .EoE, .FoE, .SoE, .VoE => return error.UnsupportedMailboxProtocol,
 //             .CoE => {
-//                 const coe_header = try wire.packFromECatReader(CoEHeader, &reader);
+//                 const coe_header = try wire.packFromECatReader(Header, &reader);
 
 //                 switch (coe_header.service) {
 //                     _ => return error.InvalidService,
 //                     .sdo_request => {
-//                         const sdo_header = try wire.packFromECatReader(SDOHeaderClient, &reader);
+//                         const sdo_header = try wire.packFromECatReader(SDOHeader, &reader);
 
 //                         switch (sdo_header.command) {
 //                             .download_request => {

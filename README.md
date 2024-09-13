@@ -65,6 +65,7 @@ This library is in extremely early development.
         - [x] Download
         - [x] Upload
       - [x] Abort SDO Transfer Request
+      - [s] Emergency Request
   - [ ] SDO Read Expedited
   - [ ] SDO Read Normal
   - [ ] SDO Read Complete Access

@@ -619,10 +619,64 @@ pub const SDOInfoErrorRequest = packed struct {
 /// Emergency Request
 ///
 /// Ref: IEC 61158-6-12:2019 5.6.4.1
-pub const EmergencyRequest = packed struct {
+pub const EmergencyRequest = packed struct(u128) {
     mbx_header: mailbox.MailboxHeader,
     coe_header: coe.CoEHeader,
     error_code: u16,
     error_register: u8,
     data: u40,
+
+    pub fn init(
+        cnt: u3,
+        station_address: u16,
+        error_code: u16,
+        error_register: u8,
+        data: u40,
+    ) EmergencyRequest {
+        return EmergencyRequest{
+            .mbx_header = .{
+                .length = 10,
+                .address = station_address,
+                .channel = 0,
+                .priority = 0,
+                .type = .CoE,
+                .cnt = cnt,
+            },
+            .coe_header = .{
+                .number = 0,
+                .service = .emergency,
+            },
+            .error_code = error_code,
+            .error_register = error_register,
+            .data = data,
+        };
+    }
+
+    pub fn deserialize(buf: []const u8) !EmergencyRequest {
+        var fbs = std.io.fixedBufferStream(buf);
+        const reader = fbs.reader();
+        return try wire.packFromECatReader(EmergencyRequest, reader);
+    }
+
+    pub fn serialize(self: EmergencyRequest, out: []u8) !usize {
+        var fbs = std.io.fixedBufferStream(out);
+        const writer = fbs.writer();
+        try wire.eCatFromPackToWriter(self, writer);
+        return fbs.getWritten().len;
+    }
 };
+
+test "serialize and deserialize emergency request" {
+    const expected = EmergencyRequest.init(
+        4,
+        234,
+        2366,
+        23,
+        3425654,
+    );
+    var bytes = std.mem.zeroes([mailbox.max_size]u8);
+    const byte_size = try expected.serialize(&bytes);
+    try std.testing.expectEqual(@as(usize, 6 + 2 + 8), byte_size);
+    const actual = try EmergencyRequest.deserialize(&bytes);
+    try std.testing.expectEqualDeep(expected, actual);
+}

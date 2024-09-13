@@ -283,10 +283,10 @@ test "serialize deserialize SDO client normal" {
 pub const SDOClientSegment = struct {
     mbx_header: mailbox.MailboxHeader,
     coe_header: coe.CoEHeader,
-    sdo_seg_header: SDOSegmentHeaderClient,
+    seg_header: SDOSegmentHeaderClient,
     data: std.BoundedArray(u8, data_max_size),
 
-    pub const data_max_size = mailbox.max_size - 12;
+    pub const data_max_size = mailbox.max_size - 9;
 
     /// Create an SDO Download Segmented Request
     ///
@@ -324,7 +324,7 @@ pub const SDOClientSegment = struct {
                 .number = 0,
                 .service = .sdo_request,
             },
-            .sdo_seg_header = .{
+            .seg_header = .{
                 .more_follows = more_follows,
                 .seg_data_size = seg_data_size,
                 .toggle = toggle,
@@ -355,7 +355,7 @@ pub const SDOClientSegment = struct {
                 .number = 0,
                 .service = .sdo_request,
             },
-            .sdo_seg_header = .{
+            .seg_header = .{
                 .more_follows = false,
                 .seg_data_size = @enumFromInt(0),
                 .toggle = toggle,
@@ -370,7 +370,7 @@ pub const SDOClientSegment = struct {
         const reader = fbs.reader();
         const mbx_header = try wire.packFromECatReader(mailbox.MailboxHeader, reader);
         const coe_header = try wire.packFromECatReader(coe.CoEHeader, reader);
-        const sdo_seg_header = try wire.packFromECatReader(SDOSegmentHeaderClient, reader);
+        const seg_header = try wire.packFromECatReader(SDOSegmentHeaderClient, reader);
 
         if (mbx_header.length < 10) {
             return error.InvalidMbxHeaderLength;
@@ -382,7 +382,7 @@ pub const SDOClientSegment = struct {
         return SDOClientSegment{
             .mbx_header = mbx_header,
             .coe_header = coe_header,
-            .sdo_seg_header = sdo_seg_header,
+            .seg_header = seg_header,
             .data = data,
         };
     }
@@ -392,7 +392,7 @@ pub const SDOClientSegment = struct {
         const writer = fbs.writer();
         try wire.eCatFromPackToWriter(self.mbx_header, writer);
         try wire.eCatFromPackToWriter(self.coe_header, writer);
-        try wire.eCatFromPackToWriter(self.sdo_seg_header, writer);
+        try wire.eCatFromPackToWriter(self.seg_header, writer);
         try writer.writeAll(self.data.slice());
         return fbs.getWritten().len;
     }
@@ -402,7 +402,7 @@ pub const SDOClientSegment = struct {
             mailbox.max_size -
             @divExact(@bitSizeOf(mailbox.MailboxHeader), 8) -
             @divExact(@bitSizeOf(coe.CoEHeader), 8) -
-            @divExact(@bitSizeOf(SDOHeaderClient), 8));
+            @divExact(@bitSizeOf(SDOSegmentHeaderClient), 8));
     }
 
     comptime {
@@ -432,7 +432,7 @@ test "sdo client segment seg_data_size" {
         true,
         &.{ 1, 2, 3, 4 },
     );
-    try std.testing.expectEqual(coe.SegmentDataSize.four_octets, actual.sdo_seg_header.seg_data_size);
+    try std.testing.expectEqual(coe.SegmentDataSize.four_octets, actual.seg_header.seg_data_size);
 }
 
 /// SDO Segment Header Client
@@ -440,7 +440,7 @@ test "sdo client segment seg_data_size" {
 /// Client / server language is from CANopen.
 ///
 /// Ref: IEC 61158-6-12:2019 5.6.2.3.1
-pub const SDOSegmentHeaderClient = packed struct {
+pub const SDOSegmentHeaderClient = packed struct(u8) {
     more_follows: bool,
     seg_data_size: coe.SegmentDataSize,
     /// shall toggle with every segment, starting with 0x00

@@ -44,7 +44,7 @@ This library is in extremely early development.
   - [ ] Write SII EEPROM
 - [ ] CoE
   - [ ] CoE Structures
-    - [x] SDO Client 
+    - [x] SDO Client
       - [x] Expedited
         - [x] Upload
         - [x] Download
@@ -54,16 +54,17 @@ This library is in extremely early development.
       - [x] Segment
         - [x] Download
         - [x] Upload
-    - [ ] SDO Server
+    - [x] SDO Server
       - [x] Expedited
         - [x] Download
         - [x] Upload
-      - [ ] Normal
-        - [ ] Download
-        - [ ] Upload
-      - [ ] Segment
-        - [ ] Download
-        - [ ] Upload
+      - [x] Normal
+        - [x] Download
+        - [x] Upload
+      - [x] Segment
+        - [x] Download
+        - [x] Upload
+      - [x] Abort SDO Transfer Request
   - [ ] SDO Read Expedited
   - [ ] SDO Read Normal
   - [ ] SDO Read Complete Access

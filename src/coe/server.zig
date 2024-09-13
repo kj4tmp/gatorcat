@@ -70,6 +70,7 @@ pub const SDOServerExpedited = packed struct(u128) {
         index: u16,
         subindex: u8,
     ) SDOServerExpedited {
+        assert(cnt != 0);
         return SDOServerExpedited{
             .mbx_header = .{
                 .length = 10,
@@ -105,6 +106,7 @@ pub const SDOServerExpedited = packed struct(u128) {
     ) SDOServerExpedited {
         assert(data.len > 0);
         assert(data.len < 5);
+        assert(cnt != 0);
 
         const data_set_size: coe.DataSetSize = switch (data.len) {
             0 => unreachable,
@@ -187,6 +189,44 @@ pub const SDOServerNormal = struct {
 
     pub const data_max_size = mailbox.max_size - 16;
 
+    pub fn initUploadResponse(
+        cnt: u3,
+        station_address: u16,
+        index: u16,
+        subindex: u8,
+        complete_size: u32,
+        data: []const u8,
+    ) SDOServerNormal {
+        assert(cnt != 0);
+        assert(data.len < data_max_size);
+
+        return SDOServerNormal{
+            .mbx_header = .{
+                .length = @as(u16, @intCast(data.len)) + 10,
+                .address = station_address,
+                .channel = 0,
+                .priority = 0,
+                .type = .CoE,
+                .cnt = cnt,
+            },
+            .coe_header = .{
+                .number = 0,
+                .service = .sdo_response,
+            },
+            .sdo_header = .{
+                .size_indicator = true,
+                .transfer_type = .normal,
+                .data_set_size = @enumFromInt(0),
+                .complete_access = false,
+                .command = .upload_segment_response,
+                .index = index,
+                .subindex = subindex,
+            },
+            .complete_size = complete_size,
+            .data = std.BoundedArray(u8, data_max_size).fromSlice(data) catch unreachable,
+        };
+    }
+
     pub fn deserialize(buf: []const u8) !SDOServerNormal {
         var fbs = std.io.fixedBufferStream(buf);
         const reader = fbs.reader();
@@ -232,31 +272,14 @@ pub const SDOServerNormal = struct {
 };
 
 test "serialize and deserialize sdo server normal" {
-    const expected = SDOServerNormal{
-        .mbx_header = .{
-            .length = 14, // 4 bytes of payload
-            .address = 0x0,
-            .channel = 0,
-            .priority = 0,
-            .type = .CoE,
-            .cnt = 2,
-        },
-        .coe_header = .{
-            .number = 0,
-            .service = .sdo_response,
-        },
-        .sdo_header = .{
-            .size_indicator = true,
-            .transfer_type = .normal,
-            .data_set_size = .four_octets,
-            .complete_access = false,
-            .command = .initiate_upload_response,
-            .index = 1234,
-            .subindex = 0,
-        },
-        .complete_size = 12345,
-        .data = try std.BoundedArray(u8, SDOServerNormal.data_max_size).fromSlice(&.{ 1, 2, 3, 4 }),
-    };
+    const expected = SDOServerNormal.initUploadResponse(
+        2,
+        0,
+        1234,
+        12,
+        2345,
+        &.{ 1, 2, 3, 4 },
+    );
     var bytes = std.mem.zeroes([mailbox.max_size]u8);
     const byte_size = try expected.serialize(&bytes);
     try std.testing.expectEqual(@as(usize, 6 + 2 + 12), byte_size);
@@ -272,7 +295,164 @@ pub const SDOServerSegment = struct {
     mbx_header: mailbox.MailboxHeader,
     coe_header: coe.CoEHeader,
     seg_header: SDOSegmentHeaderServer,
+    data: std.BoundedArray(u8, data_max_size),
+
+    const data_max_size = mailbox.max_size - 9;
+
+    pub fn initDownloadResponse(
+        cnt: u3,
+        station_address: u16,
+        toggle: bool,
+    ) SDOServerSegment {
+        assert(cnt != 0);
+
+        return SDOServerSegment{
+            .mbx_header = .{
+                .length = 10,
+                .address = station_address,
+                .channel = 0,
+                .priority = 0,
+                .type = .CoE,
+                .cnt = cnt,
+            },
+            .coe_header = .{
+                .number = 0,
+                .service = .sdo_response,
+            },
+            .seg_header = .{
+                .more_follows = false,
+                .seg_data_size = @enumFromInt(0),
+
+                .toggle = toggle,
+                .command = .download_segment_response,
+            },
+            .data = std.BoundedArray(
+                u8,
+                data_max_size,
+            ).fromSlice(
+                &.{ 0, 0, 0, 0, 0, 0, 0 },
+            ) catch unreachable,
+        };
+    }
+
+    pub fn initUploadResponse(
+        cnt: u3,
+        station_address: u16,
+        more_follows: bool,
+        toggle: bool,
+        data: []const u8,
+    ) SDOServerSegment {
+        assert(cnt != 0);
+        assert(data.len < data_max_size);
+
+        const length = @max(10, @as(u16, @intCast(data.len + 3)));
+
+        const seg_data_size: coe.SegmentDataSize = switch (data.len) {
+            0 => .zero_octets,
+            1 => .one_octet,
+            2 => .two_octets,
+            3 => .three_octets,
+            4 => .four_octets,
+            5 => .five_octets,
+            6 => .six_octets,
+            else => .seven_octets,
+        };
+
+        return SDOServerSegment{
+            .mbx_header = .{
+                .length = length,
+                .address = station_address,
+                .channel = 0,
+                .priority = 0,
+                .type = .CoE,
+                .cnt = cnt,
+            },
+            .coe_header = .{
+                .number = 0,
+                .service = .sdo_response,
+            },
+            .seg_header = .{
+                .more_follows = more_follows,
+                .seg_data_size = seg_data_size,
+                .toggle = toggle,
+                .command = .upload_segment_response,
+            },
+            .data = std.BoundedArray(u8, data_max_size).fromSlice(data) catch unreachable,
+        };
+    }
+
+    pub fn deserialize(buf: []const u8) !SDOServerSegment {
+        var fbs = std.io.fixedBufferStream(buf);
+        const reader = fbs.reader();
+        const mbx_header = try wire.packFromECatReader(mailbox.MailboxHeader, reader);
+        const coe_header = try wire.packFromECatReader(coe.CoEHeader, reader);
+        const seg_header = try wire.packFromECatReader(SDOSegmentHeaderServer, reader);
+
+        var data_size: usize = 0;
+        if (mbx_header.length < 10) {
+            return error.InvalidMailboxHeaderLength;
+        } else if (mbx_header.length == 10) {
+            data_size = switch (seg_header.seg_data_size) {
+                .zero_octets => 0,
+                .one_octet => 1,
+                .two_octets => 2,
+                .three_octets => 3,
+                .four_octets => 4,
+                .five_octets => 5,
+                .six_octets => 6,
+                .seven_octets => 7,
+            };
+        } else {
+            assert(mbx_header.length > 10);
+            data_size = mbx_header.length - 3;
+            assert(data_size == mbx_header.length -
+                @divExact(@bitSizeOf(coe.CoEHeader), 8) -
+                @divExact(@bitSizeOf(SDOSegmentHeaderServer), 8));
+        }
+        var data = try std.BoundedArray(u8, data_max_size).init(data_size);
+        try reader.readNoEof(data.slice());
+
+        return SDOServerSegment{
+            .mbx_header = mbx_header,
+            .coe_header = coe_header,
+            .seg_header = seg_header,
+            .data = data,
+        };
+    }
+
+    pub fn serialize(self: *const SDOServerSegment, out: []u8) !usize {
+        var fbs = std.io.fixedBufferStream(out);
+        const writer = fbs.writer();
+        try wire.eCatFromPackToWriter(self.mbx_header, writer);
+        try wire.eCatFromPackToWriter(self.coe_header, writer);
+        try wire.eCatFromPackToWriter(self.seg_header, writer);
+        try writer.writeAll(self.data.slice());
+        return fbs.getWritten().len;
+    }
+
+    comptime {
+        assert(data_max_size == mailbox.max_size -
+            @divExact(@bitSizeOf(mailbox.MailboxHeader), 8) -
+            @divExact(@bitSizeOf(coe.CoEHeader), 8) -
+            @divExact(@bitSizeOf(SDOSegmentHeaderServer), 8));
+        assert(data_max_size >= 7);
+    }
 };
+
+test "serialize and deserialize sdo server segment" {
+    const expected = SDOServerSegment.initUploadResponse(
+        2,
+        0,
+        false,
+        false,
+        &.{ 1, 2, 3, 4 },
+    );
+    var bytes = std.mem.zeroes([mailbox.max_size]u8);
+    const byte_size = try expected.serialize(&bytes);
+    try std.testing.expectEqual(@as(usize, 6 + 2 + 5), byte_size);
+    const actual = try SDOServerSegment.deserialize(&bytes);
+    try std.testing.expectEqualDeep(expected, actual);
+}
 
 /// SDO Abort Codes
 ///
@@ -313,14 +493,77 @@ pub const SDOAbortCode = enum(u32) {
 /// Abort SDO Transfer Request
 ///
 /// Ref: IEC 61158-6-12:2019 5.6.2.7.1
-pub const AbortSDOTransferRequest = packed struct {
+pub const AbortSDOTransferRequest = packed struct(u128) {
     mbx_header: mailbox.MailboxHeader,
     coe_header: coe.CoEHeader,
     /// SDOHeaderServer is arbitrarily chosen here.
     /// Abort has no concept of client / server.
     sdo_header: SDOHeaderServer,
     abort_code: SDOAbortCode,
+
+    pub fn init(
+        cnt: u3,
+        station_address: u16,
+        index: u16,
+        subindex: u8,
+        abort_code: SDOAbortCode,
+    ) AbortSDOTransferRequest {
+        assert(cnt != 0);
+
+        return AbortSDOTransferRequest{
+            .mbx_header = .{
+                .length = 10,
+                .address = station_address,
+                .channel = 0,
+                .priority = 0,
+                .type = .CoE,
+                .cnt = cnt,
+            },
+            .coe_header = .{
+                .number = 0,
+                .service = .sdo_request,
+            },
+            .sdo_header = .{
+                .size_indicator = false,
+                .transfer_type = @enumFromInt(0),
+                .data_set_size = @enumFromInt(0),
+                .complete_access = false,
+                .command = .abort_transfer_request,
+                .index = index,
+                .subindex = subindex,
+            },
+            .abort_code = abort_code,
+        };
+    }
+
+    pub fn deserialize(buf: []const u8) !AbortSDOTransferRequest {
+        var fbs = std.io.fixedBufferStream(buf);
+        const reader = fbs.reader();
+        return try wire.packFromECatReader(AbortSDOTransferRequest, reader);
+    }
+
+    pub fn serialize(self: AbortSDOTransferRequest, out: []u8) !usize {
+        var fbs = std.io.fixedBufferStream(out);
+        const writer = fbs.writer();
+        try wire.eCatFromPackToWriter(self, writer);
+        return fbs.getWritten().len;
+    }
 };
+
+test "serialize and deserialize abort sdo transfer request" {
+    const expected = AbortSDOTransferRequest.init(
+        3,
+        345,
+        345,
+        3,
+        .AccessFailedDueToHardwareError,
+    );
+    var bytes = std.mem.zeroes([mailbox.max_size]u8);
+    const byte_size = try expected.serialize(&bytes);
+    try std.testing.expectEqual(@as(usize, 6 + 2 + 8), byte_size);
+    const actual = try AbortSDOTransferRequest.deserialize(&bytes);
+    try std.testing.expectEqualDeep(expected, actual);
+}
 
 /// Get OD List Response
 ///

@@ -146,7 +146,14 @@ pub fn busINIT(self: *MainDevice) !void {
         self.port,
         esc.ALControlRegister{
             .state = .INIT,
-            .ack = true, // ack errors
+
+            // Ack errors not required for init transition.
+            // Simple subdevices will copy the ack flag directly to the
+            // error flag in the AL Status register.
+            // Complex devices will not.
+            //
+            // Ref: IEC 61158-6-12:2019 6.4.1.1
+            .ack = false,
             .request_id = false,
         },
         .{
@@ -244,7 +251,6 @@ pub fn busPREOP(self: *MainDevice) !void {
             self.port,
             .PREOP,
             30000,
-            3,
             self.settings.recv_timeout_us,
         );
     }

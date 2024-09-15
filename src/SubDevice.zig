@@ -62,30 +62,30 @@ pub fn setALState(
     port: *nic.Port,
     state: esc.ALStateControl,
     change_timeout_us: u32,
-    retries: u8,
     recv_timeout_us: u32,
 ) !void {
+    // TODO: consider not using the ack bit
     const station_address: u16 = self.runtime_info.station_address orelse return error.InvalidRuntimeInfo;
-    // request state with ACK
-    for (0..retries) |_| {
-        const wkc = try commands.fpwrPack(
-            port,
-            esc.ALControlRegister{
-                .state = state,
-                .ack = true,
-                .request_id = false,
-            },
-            .{
-                .station_address = station_address,
-                .offset = @intFromEnum(esc.RegisterMap.AL_control),
-            },
-            recv_timeout_us,
-        );
-        if (wkc == 1) {
-            break;
-        }
-    } else {
-        return error.Timeout;
+
+    const wkc = try commands.fpwrPack(
+        port,
+        esc.ALControlRegister{
+            .state = state,
+            // simple subdevices will copy the ack bit
+            // into the AL status error bit.
+            //
+            // Ref: IEC 61158-6-12:2019 6.4.1.1
+            .ack = true,
+            .request_id = false,
+        },
+        .{
+            .station_address = station_address,
+            .offset = @intFromEnum(esc.RegisterMap.AL_control),
+        },
+        recv_timeout_us,
+    );
+    if (wkc != 1) {
+        return error.Wkc;
     }
 
     var timer = Timer.start() catch |err| switch (err) {
@@ -102,24 +102,24 @@ pub fn setALState(
             },
             recv_timeout_us,
         );
+        if (res.wkc != 1) return error.Wkc;
 
-        if (res.wkc == 1) {
-            const requested: u4 = @intFromEnum(state);
-            const actual: u4 = @intFromEnum(res.ps.state);
-            if (actual != requested) {
-                if (res.ps.err) {
-                    std.log.err(
-                        "station addr: 0x{x}, refused state change. Actual state: {}, Status Code: {}.",
-                        .{ station_address, actual, res.ps.status_code },
-                    );
-                    return error.StateChangeRefused;
-                }
-                continue;
-            } else {
-                return;
-            }
-        } else {
-            continue;
+        // we check if the actual state matches the requested
+        // state before checking the error bit becuase simple subdevices
+        // will just copy the ack bit to the error bit.
+        //
+        // Ref: IEC 61158-6-12:2019 6.4.1.1
+
+        const requested_int: u4 = @intFromEnum(state);
+        const actual_int: u4 = @intFromEnum(res.ps.state);
+        if (actual_int == requested_int) return;
+
+        if (res.ps.err) {
+            std.log.err(
+                "station addr: 0x{x}, refused state change to {}. Actual state: {}, Status Code: {}.",
+                .{ station_address, state, res.ps.state, res.ps.status_code },
+            );
+            return error.StateChangeRefused;
         }
     } else {
         return error.StateChangeTimeout;

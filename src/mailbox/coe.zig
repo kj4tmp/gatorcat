@@ -6,6 +6,25 @@ const wire = @import("../wire.zig");
 pub const server = @import("coe/server.zig");
 pub const client = @import("coe/client.zig");
 
+/// MailboxOut Content for CoE
+pub const OutContent = union(enum) {
+    expedited: client.Expedited,
+    normal: client.Normal,
+    segment: client.Segment,
+    abort: client.Abort,
+
+    // TODO: implement remaining CoE content types
+
+    pub fn serialize(self: OutContent, out: []const u8) !usize {
+        switch (self) {
+            .expedited => return self.expedited.serialize(out),
+            .normal => return self.normal.serialize(out),
+            .segment => return self.segment.serialize(out),
+            .abort => return self.abort.serialize(out),
+        }
+    }
+};
+
 /// MailboxIn Content for CoE.
 pub const InContent = union(enum) {
     expedited: server.Expedited,

@@ -11,6 +11,47 @@ const esc = @import("esc.zig");
 const telegram = @import("telegram.zig");
 const wire = @import("wire.zig");
 
+pub fn writeMailboxOut(
+    port: *nic.Port,
+    station_address: u16,
+    recv_timeout_us: u32,
+    content: OutContent,
+) !void {
+    const mbx_out = try commands.fprdPackWkc(
+        port,
+        esc.SyncManagerAttributes,
+        .{ .station_address = station_address, .offset = @intFromEnum(esc.RegisterMap.SM0) },
+        recv_timeout_us,
+        1,
+    );
+
+    // TODO: Check enable bit of the SM?
+
+    // mailbox configured correctly?
+    if (mbx_out.length == 0 or mbx_out.length > max_size) {
+        return error.InvalidMailboxConfiguration;
+    }
+
+    if (!mbx_out.status.mailbox_full) return error.Full;
+
+    var buf = std.mem.zeroes([max_size]u8);
+
+    const size = try content.serialize(&buf);
+
+    try commands.fpwrWkc(
+        port,
+        .{
+            .station_address = station_address,
+            .offset = mbx_out.physical_start_address,
+        },
+        buf[0..size],
+        recv_timeout_us,
+        1,
+    );
+
+    std.log.info("station address: 0x{x}. wrote {} bytes to mailbox out.", .{ station_address, size });
+}
+
 pub fn readMailboxIn(
     port: *nic.Port,
     station_address: u16,
@@ -26,37 +67,67 @@ pub fn readMailboxIn(
         recv_timeout_us,
         1,
     );
-    // mailbox configured?
+
+    // TODO: Check enable bit of the SM?
+
+    // mailbox configured correctly?
     if (mbx_in.length == 0 or mbx_in.length > max_size) {
         return error.InvalidMailboxConfiguration;
     }
 
     if (!mbx_in.status.mailbox_full) return error.Empty;
+
+    var buf = std.mem.zeroes([max_size]u8);
+
+    try commands.fprdWkc(
+        port,
+        .{
+            .station_address = station_address,
+            .offset = mbx_in.physical_start_address,
+        },
+        buf[0..mbx_in.length],
+        recv_timeout_us,
+        1,
+    );
+    const in_content = try InContent.deserialize(&buf);
+    std.log.info("station address: 0x{}. got mailbox in content: {}", .{ station_address, in_content });
+    return in_content;
 }
-/// All possible contents of MailboxIn
+
+/// All possible contents of MailboxOut (communication from maindevice to subdevice)
+pub const OutContent = union(enum) {
+    coe: coe.OutContent,
+
+    // TODO: implement other protocols
+
+    pub fn serialize(self: OutContent, out: []u8) !usize {
+        return switch (self) {
+            .coe => self.coe.serialize(out),
+        };
+    }
+};
+
+/// All possible contents of MailboxIn (communication from subdevice to maindevice)
 pub const InContent = union(enum) {
     coe: coe.InContent,
 
     // TODO: implement other protocols
 
-    fn deserialize(buf: []const u8) !InContent {
+    pub fn deserialize(buf: []const u8) !InContent {
         return switch (try identify(buf)) {
-            .CoE => return InContent{ .coe = coe.InContent.deserialize(buf) },
-            .ERR, .AoE, .EoE, .CoE, .FoE, .SoE, .VoE => return error.NotImplemented,
-            // already checked by identify
-            _ => unreachable,
+            .coe => return InContent{ .coe = try coe.InContent.deserialize(buf) },
         };
     }
 
     /// identifiy the content of the mailbox in buffer
-    fn identify(buf: []const u8) !std.meta.Tag(InContent) {
+    pub fn identify(buf: []const u8) !std.meta.Tag(InContent) {
         var fbs = std.io.fixedBufferStream(buf);
         const reader = fbs.reader();
         const mbx_header = try wire.packFromECatReader(Header, reader);
 
         return switch (mbx_header.type) {
             .CoE => return .coe,
-            .ERR, .AoE, .EoE, .CoE, .FoE, .SoE, .VoE => return error.NotImplemented,
+            .ERR, .AoE, .EoE, .FoE, .SoE, .VoE => return error.NotImplemented,
             _ => return error.InvalidMbxProtocol,
         };
     }
@@ -253,204 +324,3 @@ pub fn sdoReadExpedited(
         return error.InvalidMailboxConfiguration;
     }
 }
-
-// pub fn readMailbox(
-//     port: *nic.Port,
-//     station_address: u16,
-//     retries: u8,
-//     recv_timeout_us: u32,
-//     mbx_timeout_us: u32,
-// ) ![max_size]u8 {
-//     _ = retries;
-//     var timer = try Timer.start();
-
-//     const mbx_in: esc.SyncManagerAttributes = blk: {
-//         while (timer.read() < mbx_timeout_us * ns_per_us) {
-//             const sm1_res = try commands.fprdPack(
-//                 port,
-//                 esc.SyncManagerAttributes,
-//                 .{
-//                     .station_address = station_address,
-//                     .offset = @intFromEnum(esc.RegisterMap.SM1),
-//                 },
-//                 recv_timeout_us,
-//             );
-//             if (sm1_res.wkc == 1) {
-//                 if (sm1_res.ps.status.mailbox_full) {
-//                     break :blk sm1_res.ps;
-//                 }
-//             }
-//         } else {
-//             return error.Timeout;
-//         }
-//     };
-//     assert(mbx_in.status.mailbox_full);
-
-//     // mailbox configured?
-//     if (mbx_in.length == 0 or mbx_in.length > max_size) {
-//         return error.InvalidMailboxConfiguration;
-//     }
-// }
-
-// pub const MailboxContent = union {
-
-//     pub fn identify(buf: []const u8) {
-
-//     }
-
-// }
-
-// Messages that can be read from mailbox in.
-//
-// TODO: other mailbox protocols?
-// pub const MailboxMessage = union(enum) {
-//     sdo_download_expedited_request: SDODownloadExpeditedRequest,
-//     sdo_download_expedited_response: SDODownloadExpeditedResponse,
-//     // // sdo_download_normal_request: SDODownloadNormalRequest,
-//     // sdo_download_normal_response: SDODownloadNormalResponse,
-//     // sdo_download_segment_response: SDODownloadSegmentResponse,
-//     // sdo_upload_expedited_response: SDOUploadExpeditedResponse,
-//     // sdo_upload_normal_response: SDOUploadNormalResponse,
-//     // sdo_upload_segment_response: SDOUploadSegmentResponse,
-//     // abort_sdo_transfer_request: AbortSDOTransferRequest,
-//     // get_od_list_response: GetODListResponse,
-//     // get_object_description_response: GetObjectDescriptionResponse,
-//     // get_entry_description_response: GetEntryDescriptionResponse,
-//     // sdo_info_error_request: SDOInfoErrorRequest,
-//     emergency_request: EmergencyRequest,
-//     // rxpdo: RxPDOTransmission,
-//     // txpdo: TxPDOTransmission,
-//     // rxpdo_remote_request: RxPDORemoteTransmissionRequest,
-//     // txpdo_remote_request: TxPDORemoteTransmissionRequest,
-
-//     pub fn deserialize(buf: []const u8) !MailboxMessage {
-//         var fbs = std.io.fixedBufferStream(buf);
-//         var reader = fbs.reader();
-
-//         const mbx_header = try wire.packFromECatReader(Header, &reader);
-
-//         if (mbx_header.length > buf.len - @divExact(@bitSizeOf(Header), 8)) {
-//             return error.InvalidHeaderLength;
-//         }
-
-//         switch (mbx_header.type) {
-//             _ => return error.InvalidProtocol,
-//             .ERR, .AoE, .EoE, .FoE, .SoE, .VoE => return error.UnsupportedMailboxProtocol,
-//             .CoE => {
-//                 const coe_header = try wire.packFromECatReader(Header, &reader);
-
-//                 switch (coe_header.service) {
-//                     _ => return error.InvalidService,
-//                     .sdo_request => {
-//                         const sdo_header = try wire.packFromECatReader(SDOHeader, &reader);
-
-//                         switch (sdo_header.command) {
-//                             .download_request => {
-//                                 switch (sdo_header.transfer_type) {
-//                                     .expedited => {
-//                                         fbs.reset();
-//                                         const sdo_download_expedited_request = try wire.packFromECatReader(SDODownloadExpeditedRequest, &reader);
-//                                         return MailboxMessage{ .sdo_download_expedited_request = sdo_download_expedited_request };
-//                                     },
-//                                     .normal => {
-//                                         return error.NotImplemented;
-//                                     },
-//                                 }
-//                             },
-//                         }
-//                     },
-//                     // .sdo_response => {
-//                     //     const sdo_header = try wire.packFromECatReader(SDOHeader, &reader);
-//                     //     switch (sdo_header.command) {
-//                     //         .download_response => {
-//                     //             fbs.reset();
-//                     //             const sdo_download_expedited_response = try wire.packFromECatReader(SDODownloadExpeditedResponse, &reader);
-//                     //             return MailboxMessage{ .sdo_download_expedited_response = sdo_download_expedited_response };
-//                     //         },
-//                     //     }
-//                     // },
-//                     .emergency => {
-//                         fbs.reset();
-//                         const emergency_message = try wire.packFromECatReader(EmergencyRequest, &reader);
-//                         return MailboxMessage{ .emergency_request = emergency_message };
-//                     },
-//                     .sdo_response => error.NotImplemented,
-//                     .tx_pdo => return error.NotImplemented,
-//                     .rx_pdo => return error.NotImplemented,
-//                     .tx_pdo_remote_request => return error.NotImplemented,
-//                     .rx_pdo_remote_request => return error.NotImplemented,
-//                     .sdo_info => return error.NotImplemented,
-//                 }
-//             },
-//         }
-//         unreachable;
-//     }
-// };
-
-// test "deserialize emergency message" {
-//     const expected = EmergencyRequest{
-//         .mbx_header = .{
-//             .length = 10,
-//             .address = 0x1001,
-//             .channel = 0,
-//             .priority = 0x03,
-//             .type = .CoE,
-//             .cnt = 3,
-//         },
-//         .coe_header = .{
-//             .number = 0,
-//             .service = .emergency,
-//         },
-//         .error_code = 0x1234,
-//         .error_register = 23,
-//         .data = 12345,
-//     };
-//     const buf = nic.eCatFromPack(expected);
-//     var zero_buf = std.mem.zeroes([100]u8);
-//     @memcpy(zero_buf[0..16], buf[0..16]);
-//     const actual = try MailboxMessage.deserialize(&zero_buf);
-
-//     try std.testing.expectEqualDeep(expected, actual.emergency_request);
-// }
-
-// test "deserialized sdo download expedited request" {
-//     const expected = SDODownloadExpeditedRequest{
-//         .mbx_header = .{
-//             .length = 10,
-//             .address = 0x1001,
-//             .channel = 0,
-//             .priority = 0x01,
-//             .type = .CoE,
-//             .cnt = 2,
-//         },
-//         .coe_header = .{
-//             .number = 0,
-//             .service = .sdo_request,
-//         },
-//         .sdo_header = .{
-//             .size_indicator = true,
-//             .transfer_type = .expedited,
-//             .data_set_size = .one_octet,
-//             .complete_access = false,
-//             .command = .download_request,
-//             .index = 0x6000,
-//             .subindex = 34,
-//         },
-//         .data = @bitCast([4]u8{ 1, 2, 3, 4 }),
-//     };
-//     const buf = nic.eCatFromPack(expected);
-//     var zero_buf = std.mem.zeroes([100]u8);
-//     @memcpy(zero_buf[0..16], buf[0..16]);
-//     const actual = try MailboxMessage.deserialize(&zero_buf);
-
-//     try std.testing.expectEqualDeep(expected, actual.sdo_download_expedited_request);
-// }
-
-// fn deserializeMailboxData()
-
-// fn readMailbox(port: *nic.Port) !void {
-//     var buf = std.mem.zeroes([1486]u8); // yeet!
-//     // read raw mailbox data into the buffer
-//     read(port, &buf);
-//     _ = deserializeMialboxData(&buf);
-// }

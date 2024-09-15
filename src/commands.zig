@@ -155,6 +155,17 @@ pub fn fprd(
     );
 }
 
+pub fn fprdWkc(
+    port: *nic.Port,
+    address: telegram.StationAddress,
+    data: []u8,
+    timeout_us: u32,
+    expected_wkc: u16,
+) !void {
+    const wkc = try fprd(port, address, data, timeout_us);
+    if (wkc != expected_wkc) return error.Wkc;
+}
+
 /// Configured address physical read a packable type
 pub fn fprdPack(
     port: *nic.Port,
@@ -205,6 +216,17 @@ pub fn fpwr(
         data,
         timeout_us,
     );
+}
+
+pub fn fpwrWkc(
+    port: *nic.Port,
+    address: telegram.StationAddress,
+    data: []u8,
+    timeout_us: u32,
+    expected_wkc: u16,
+) !void {
+    const wkc = try fpwr(port, address, data, timeout_us);
+    if (wkc != expected_wkc) return error.Wkc;
 }
 
 /// Configured address physical write a packable type

@@ -66,6 +66,8 @@ This library is in extremely early development.
         - [x] Upload
       - [x] Abort SDO Transfer Request
       - [s] Emergency Request
+  - [x] Read mailbox in (subdevice to maindevice communication)
+  - [x] Write mailbox out (maindevice to subdevice communication)
   - [ ] SDO Read Expedited
   - [ ] SDO Read Normal
   - [ ] SDO Read Complete Access

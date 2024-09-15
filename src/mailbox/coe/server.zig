@@ -35,6 +35,15 @@ pub const SDOHeader = packed struct(u32) {
     index: u16,
     /// shall be zero or one if complete access is true.
     subindex: u8,
+
+    pub fn getDataSize(self: SDOHeader) usize {
+        return switch (self.data_set_size) {
+            .four_octets => 4,
+            .three_octets => 3,
+            .two_octets => 2,
+            .one_octet => 1,
+        };
+    }
 };
 
 /// SDO Segment Header Server
@@ -58,11 +67,11 @@ pub const SDOSegmentHeaderServer = packed struct {
 /// Ref: IEC 61158-6-12:2019 5.6.2.1.2 (SDO Download Expedited Response)
 /// Ref: IEC 61158-6-12:2019 5.6.2.2.2 (SDO Download Normal Response)
 /// Ref: IEC 61158-6-12:2019 5.6.2.4.2 (SDO Upload Expedited Response)
-pub const Expedited = packed struct(u128) {
+pub const Expedited = struct {
     mbx_header: mailbox.Header,
     coe_header: coe.Header,
     sdo_header: SDOHeader,
-    data: u32 = 0,
+    data: std.BoundedArray(u8, 4),
 
     pub fn initDownloadResponse(
         cnt: u3,
@@ -93,7 +102,7 @@ pub const Expedited = packed struct(u128) {
                 .index = index,
                 .subindex = subindex,
             },
-            .data = 0,
+            .data = std.BoundedArray(u8, 4).fromSlice(&.{ 0, 0, 0, 0 }) catch unreachable,
         };
     }
 
@@ -117,11 +126,6 @@ pub const Expedited = packed struct(u128) {
             else => unreachable,
         };
 
-        var data_buf = std.mem.zeroes([4]u8);
-        var fbs = std.io.fixedBufferStream(&data_buf);
-        const writer = fbs.writer();
-        writer.writeAll(data) catch unreachable;
-
         return Expedited{
             .mbx_header = .{
                 .length = 10,
@@ -144,20 +148,36 @@ pub const Expedited = packed struct(u128) {
                 .index = index,
                 .subindex = subindex,
             },
-            .data = @bitCast(data_buf),
+            // data length already asserted
+            .data = std.BoundedArray(u8, 4).fromSlice(data) catch unreachable,
         };
     }
 
     pub fn deserialize(buf: []const u8) !Expedited {
         var fbs = std.io.fixedBufferStream(buf);
         const reader = fbs.reader();
-        return try wire.packFromECatReader(Expedited, reader);
+        const mbx_header = try wire.packFromECatReader(mailbox.Header, reader);
+        const coe_header = try wire.packFromECatReader(coe.Header, reader);
+        const sdo_header = try wire.packFromECatReader(SDOHeader, reader);
+        const data_size: usize = sdo_header.getDataSize();
+        var data = try std.BoundedArray(u8, 4).init(data_size);
+        try reader.readNoEof(data.slice());
+
+        return Expedited{
+            .mbx_header = mbx_header,
+            .coe_header = coe_header,
+            .sdo_header = sdo_header,
+            .data = data,
+        };
     }
 
     pub fn serialize(self: Expedited, out: []u8) !usize {
         var fbs = std.io.fixedBufferStream(out);
         const writer = fbs.writer();
-        try wire.eCatFromPackToWriter(self, writer);
+        try wire.eCatFromPackToWriter(self.mbx_header, writer);
+        try wire.eCatFromPackToWriter(self.coe_header, writer);
+        try wire.eCatFromPackToWriter(self.sdo_header, writer);
+        try writer.writeAll(self.data.slice());
         return fbs.getWritten().len;
     }
 };
@@ -235,9 +255,8 @@ pub const Normal = struct {
         const sdo_header = try wire.packFromECatReader(SDOHeader, reader);
         const complete_size = try wire.packFromECatReader(u32, reader);
 
-        if (mbx_header.length < 10) {
-            return error.InvalidMbxHeaderLength;
-        }
+        if (mbx_header.length < 10) return error.InvalidMbxContent;
+
         const data_length: u16 = mbx_header.length -| 10;
         var data = try std.BoundedArray(u8, data_max_size).init(data_length);
         try reader.readNoEof(data.slice());
@@ -390,7 +409,7 @@ pub const Segment = struct {
 
         var data_size: usize = 0;
         if (mbx_header.length < 10) {
-            return error.InvalidHeaderLength;
+            return error.InvalidMbxContent;
         } else if (mbx_header.length == 10) {
             data_size = switch (seg_header.seg_data_size) {
                 .zero_octets => 0,

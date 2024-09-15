@@ -33,23 +33,19 @@ pub fn main() !void {
     try main_device.busINIT();
     try main_device.busPREOP();
     //try main_device.busSAFEOP();
-    //subdevices[1].runtime_info.station_address = 0x1001;
-    // _ = ecm.SubDevice.setALState(
-    //     &subdevices[1],
-    //     &port,
-    //     .PREOP,
-    //     30000,
-    //     3000,
-    // ) catch |err| switch (err) {
-    //     error.StateChangeRefused => .{},
-    //     error.LinkError => unreachable,
-    //     error.TransactionContention => unreachable,
-    //     error.RecvTimeout => return error.RecvTimeout,
-    //     error.CurruptedFrame => return error.CurruptedFrame,
-    //     error.InvalidRuntimeInfo => unreachable,
-    //     error.StateChangeTimeout => unreachable,
-    //     error.Wkc => return error.Wkc,
-    // };
 
-    std.debug.print("{any}", .{try ecm.mailbox.readMailboxIn(&port, 0x1001, 3000)});
+    // read product code from EL3314 (should be 0xcf23052)
+    // const res2 = try ecm.mailbox.readMailboxIn(&port, 0x1001, 3000);
+    // std.log.warn("got {}", .{res2});
+    const res = try ecm.mailbox.coe.sdoReadExpedited(
+        &port,
+        0x1001,
+        0x1018,
+        2,
+        u32,
+        3000,
+        100_000,
+        1,
+    );
+    std.log.warn("got 0x{x}", .{res});
 }

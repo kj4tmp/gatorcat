@@ -1,10 +1,86 @@
 const std = @import("std");
+const Timer = std.time.Timer;
+const ns_per_us = std.time.ns_per_us;
+const assert = std.debug.assert;
 
 const mailbox = @import("../mailbox.zig");
 const wire = @import("../wire.zig");
+const nic = @import("../nic.zig");
 
 pub const server = @import("coe/server.zig");
 pub const client = @import("coe/client.zig");
+
+/// SDO Expedited Read
+///
+/// For data with length 1-4 bytes.
+pub fn sdoReadExpedited(
+    port: *nic.Port,
+    station_address: u16,
+    index: u16,
+    subindex: u8,
+    comptime packed_type: type,
+    recv_timeout_us: u32,
+    mbx_timeout_us: u32,
+    cnt: u3,
+) !packed_type {
+    assert(cnt != 0);
+    comptime assert(wire.isECatPackable(packed_type));
+    comptime assert(wire.zerosFromPack(packed_type).len > 0);
+    comptime assert(wire.zerosFromPack(packed_type).len < 5);
+
+    const request = mailbox.OutContent{
+        .coe = OutContent{
+            .expedited = client.Expedited.initUploadRequest(
+                cnt,
+                index,
+                subindex,
+            ),
+        },
+    };
+    try mailbox.writeMailboxOut(
+        port,
+        station_address,
+        recv_timeout_us,
+        request,
+    );
+
+    var timer = Timer.start() catch unreachable;
+
+    while (timer.read() < mbx_timeout_us * ns_per_us) {
+        const response = mailbox.readMailboxIn(
+            port,
+            station_address,
+            recv_timeout_us,
+        ) catch |err| {
+            std.log.warn("err: {}", .{err});
+            switch (err) {
+                error.LinkError => return error.LinkError,
+                error.TransactionContention => continue,
+                error.RecvTimeout => continue,
+                error.CurruptedFrame => continue,
+                error.Wkc => continue,
+                error.Empty => continue,
+                error.InvalidMbxContent => return error.InvalidMbxContent,
+                error.NotImplemented => return error.NotImplemented,
+                error.InvalidMbxConfiguration => return error.InvalidMbxConfiguration,
+            }
+        };
+
+        if (response != .coe) {
+            return error.WrongProtocol;
+        }
+
+        if (response.coe != .expedited) {
+            return error.WrongResponse;
+        }
+        const data = response.coe.expedited.data;
+        // TODO: add a reader() method to boundedArray in standard library
+
+        var fbs = std.io.fixedBufferStream(data.slice());
+        const reader = fbs.reader();
+        return wire.packFromECatReader(packed_type, reader) catch error.InvalidResponseDataLength;
+    } else return error.MbxTimeout;
+}
 
 /// MailboxOut Content for CoE
 pub const OutContent = union(enum) {
@@ -15,7 +91,7 @@ pub const OutContent = union(enum) {
 
     // TODO: implement remaining CoE content types
 
-    pub fn serialize(self: OutContent, out: []const u8) !usize {
+    pub fn serialize(self: OutContent, out: []u8) !usize {
         switch (self) {
             .expedited => return self.expedited.serialize(out),
             .normal => return self.normal.serialize(out),
@@ -68,7 +144,7 @@ pub const InContent = union(enum) {
                 const sdo_header = try wire.packFromECatReader(server.SDOHeader, reader);
                 return switch (sdo_header.command) {
                     .abort_transfer_request => .abort,
-                    else => error.InvalidSDORequest,
+                    else => error.InvalidMbxContent,
                 };
             },
             .sdo_response => {
@@ -82,11 +158,11 @@ pub const InContent = union(enum) {
                     },
                     .initiate_download_response => return .expedited,
                     .abort_transfer_request => return .abort,
-                    _ => return error.InvalidSDOResponseSDOHeader,
+                    _ => return error.InvalidMbxContent,
                 }
             },
             .emergency => return .emergency,
-            _ => return error.InvalidCoEService,
+            _ => return error.InvalidMbxContent,
         }
     }
 };

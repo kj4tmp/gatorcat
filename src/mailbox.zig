@@ -1,15 +1,13 @@
 const std = @import("std");
-const Timer = std.time.Timer;
-const ns_per_us = std.time.ns_per_us;
 const assert = std.debug.assert;
-
-pub const coe = @import("mailbox/coe.zig");
 
 const commands = @import("commands.zig");
 const nic = @import("nic.zig");
 const esc = @import("esc.zig");
 const telegram = @import("telegram.zig");
 const wire = @import("wire.zig");
+
+pub const coe = @import("mailbox/coe.zig");
 
 pub fn writeMailboxOut(
     port: *nic.Port,
@@ -27,12 +25,19 @@ pub fn writeMailboxOut(
 
     // TODO: Check enable bit of the SM?
 
-    // mailbox configured correctly?
-    if (mbx_out.length == 0 or mbx_out.length > max_size) {
-        return error.InvalidMailboxConfiguration;
+    // Mailbox configured correctly?
+    // Can check this for free since we already have the full SM attr.
+    if (mbx_out.length == 0 or
+        mbx_out.length > max_size or
+        mbx_out.control.buffer_type != .mailbox or
+        mbx_out.control.direction != .output or
+        mbx_out.activate.channel_enable != true)
+    {
+        // This may occur if the subdevice loses power etc.
+        return error.InvalidMbxConfiguration;
     }
 
-    if (!mbx_out.status.mailbox_full) return error.Full;
+    if (mbx_out.status.mailbox_full) return error.Full;
 
     var buf = std.mem.zeroes([max_size]u8);
 
@@ -68,11 +73,20 @@ pub fn readMailboxIn(
         1,
     );
 
+    std.log.warn("attr: {}", .{mbx_in});
+
     // TODO: Check enable bit of the SM?
 
-    // mailbox configured correctly?
-    if (mbx_in.length == 0 or mbx_in.length > max_size) {
-        return error.InvalidMailboxConfiguration;
+    // Mailbox configured correctly?
+    // Can check this for free since we already have the full SM attr.
+    if (mbx_in.length == 0 or
+        mbx_in.length > max_size or
+        mbx_in.control.buffer_type != .mailbox or
+        mbx_in.control.direction != .input or
+        mbx_in.activate.channel_enable != true)
+    {
+        // This may occur if the subdevice loses power etc.
+        return error.InvalidMbxConfiguration;
     }
 
     if (!mbx_in.status.mailbox_full) return error.Empty;
@@ -115,7 +129,7 @@ pub const InContent = union(enum) {
 
     pub fn deserialize(buf: []const u8) !InContent {
         return switch (try identify(buf)) {
-            .coe => return InContent{ .coe = try coe.InContent.deserialize(buf) },
+            .coe => InContent{ .coe = coe.InContent.deserialize(buf) catch return error.InvalidMbxContent },
         };
     }
 
@@ -123,12 +137,12 @@ pub const InContent = union(enum) {
     pub fn identify(buf: []const u8) !std.meta.Tag(InContent) {
         var fbs = std.io.fixedBufferStream(buf);
         const reader = fbs.reader();
-        const mbx_header = try wire.packFromECatReader(Header, reader);
+        const mbx_header = wire.packFromECatReader(Header, reader) catch return error.InvalidMbxContent;
 
         return switch (mbx_header.type) {
             .CoE => return .coe,
             .ERR, .AoE, .EoE, .FoE, .SoE, .VoE => return error.NotImplemented,
-            _ => return error.InvalidMbxProtocol,
+            _ => return error.InvalidMbxContent,
         };
     }
 };
@@ -231,96 +245,4 @@ comptime {
         @divExact(@bitSizeOf(telegram.EtherCATHeader), 8) - // u16
         @divExact(@bitSizeOf(telegram.DatagramHeader), 8) - // u80
         @divExact(@bitSizeOf(u16), 8)); // wkc
-}
-
-/// Send an Expedited SDO Read.
-///
-/// This is for data of length 1-4 bytes.
-///
-/// 1. Send sdo client expedited upload request until wkc = 1 or timeout
-pub fn sdoReadExpedited(
-    port: *nic.Port,
-    station_address: u16,
-    index: u16,
-    subindex: u8,
-    retries: u8,
-    recv_timeout_us: u32,
-    mbx_timeout_us: u32,
-) !void {
-    _ = mbx_timeout_us;
-    _ = index;
-    _ = subindex;
-
-    // 1. send read
-
-    // If mailbox in has got something in it, read mailbox to wipe it.
-    const mbx_in: esc.SyncManagerAttributes = blk: {
-        for (0..retries +% 1) |_| {
-            const sm1_res = try commands.fprdPack(
-                port,
-                esc.SyncManagerAttributes,
-                .{
-                    .station_address = station_address,
-                    .offset = @intFromEnum(esc.RegisterMap.SM1),
-                },
-                recv_timeout_us,
-            );
-            if (sm1_res.wkc == 1) {
-                std.log.info("sm1 status: {}", .{sm1_res.ps.status});
-                break :blk sm1_res.ps;
-            }
-        } else {
-            return error.SubDeviceUnresponsive;
-        }
-        unreachable;
-    };
-    // mailbox configured?
-    if (mbx_in.length == 0 or mbx_in.length > max_size) {
-        return error.InvalidMailboxConfiguration;
-    }
-
-    if (mbx_in.status.mailbox_full) {
-        var buf = std.mem.zeroes([max_size]u8); // yeet!
-        for (0..retries +% 1) |_| {
-            const wkc = try commands.fprd(
-                port,
-                .{
-                    .station_address = station_address,
-                    .offset = mbx_in.physical_start_address,
-                },
-                &buf,
-                recv_timeout_us,
-            );
-            if (wkc == 1) {
-                break;
-            }
-        } else {
-            return error.SubDeviceUnresponsive;
-        }
-    }
-
-    const mbx_out: esc.SyncManagerAttributes = blk: {
-        for (0..retries +% 1) |_| {
-            const sm0_res = try commands.fprdPack(
-                port,
-                esc.SyncManagerAttributes,
-                .{
-                    .station_address = station_address,
-                    .offset = @intFromEnum(esc.RegisterMap.SM0),
-                },
-                recv_timeout_us,
-            );
-            if (sm0_res.wkc == 1) {
-                std.log.info("sm1 status: {}", .{sm0_res.ps.status});
-                break :blk sm0_res.ps;
-            }
-        } else {
-            return error.SubDeviceUnresponsive;
-        }
-        unreachable;
-    };
-    // mailbox configured?
-    if (mbx_out.length == 0 or mbx_out.length > max_size) {
-        return error.InvalidMailboxConfiguration;
-    }
 }

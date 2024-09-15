@@ -214,7 +214,10 @@ pub const Normal = struct {
                 .subindex = subindex,
             },
             .complete_size = complete_size,
-            .data = try std.BoundedArray(u8, data_max_size).fromSlice(data),
+            .data = try std.BoundedArray(
+                u8,
+                data_max_size,
+            ).fromSlice(data),
         };
     }
 
@@ -226,11 +229,12 @@ pub const Normal = struct {
         const sdo_header = try wire.packFromECatReader(SDOHeader, reader);
         const complete_size = try wire.packFromECatReader(u32, reader);
 
-        if (mbx_header.length < 10) {
-            return error.InvalidMbxHeaderLength;
-        }
+        if (mbx_header.length < 10) return error.InvalidMbxContent;
         const data_length: u16 = mbx_header.length -| 10;
-        var data = try std.BoundedArray(u8, data_max_size).init(data_length);
+        var data = try std.BoundedArray(
+            u8,
+            data_max_size,
+        ).init(data_length);
         try reader.readNoEof(data.slice());
 
         return Normal{
@@ -330,7 +334,10 @@ pub const Segment = struct {
                 .toggle = toggle,
                 .command = .download_segment_request,
             },
-            .data = try std.BoundedArray(u8, data_max_size).fromSlice(data),
+            .data = try std.BoundedArray(
+                u8,
+                data_max_size,
+            ).fromSlice(data),
         };
     }
 
@@ -361,7 +368,10 @@ pub const Segment = struct {
                 .toggle = toggle,
                 .command = .upload_segment_request,
             },
-            .data = std.BoundedArray(u8, data_max_size).fromSlice(&.{ 0, 0, 0, 0, 0, 0, 0 }) catch unreachable,
+            .data = std.BoundedArray(
+                u8,
+                data_max_size,
+            ).fromSlice(&.{ 0, 0, 0, 0, 0, 0, 0 }) catch unreachable,
         };
     }
 
@@ -376,7 +386,10 @@ pub const Segment = struct {
             return error.InvalidMbxHeaderLength;
         }
         const data_length: u16 = mbx_header.length -| 3;
-        var data = try std.BoundedArray(u8, data_max_size).init(data_length);
+        var data = try std.BoundedArray(
+            u8,
+            data_max_size,
+        ).init(data_length);
         try reader.readNoEof(data.slice());
 
         return Segment{
@@ -432,7 +445,10 @@ test "sdo client segment seg_data_size" {
         true,
         &.{ 1, 2, 3, 4 },
     );
-    try std.testing.expectEqual(coe.SegmentDataSize.four_octets, actual.seg_header.seg_data_size);
+    try std.testing.expectEqual(
+        coe.SegmentDataSize.four_octets,
+        actual.seg_header.seg_data_size,
+    );
 }
 
 /// SDO Segment Header Client

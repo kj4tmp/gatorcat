@@ -3,12 +3,64 @@ const Timer = std.time.Timer;
 const ns_per_us = std.time.ns_per_us;
 const assert = std.debug.assert;
 
+pub const coe = @import("mailbox/coe.zig");
+
 const commands = @import("commands.zig");
 const nic = @import("nic.zig");
 const esc = @import("esc.zig");
 const telegram = @import("telegram.zig");
-const coe = @import("mailbox/coe.zig");
+const wire = @import("wire.zig");
 
+pub fn readMailboxIn(
+    port: *nic.Port,
+    station_address: u16,
+    recv_timeout_us: u32,
+) !InContent {
+    const mbx_in = try commands.fprdPackWkc(
+        port,
+        esc.SyncManagerAttributes,
+        .{
+            .station_address = station_address,
+            .offset = @intFromEnum(esc.RegisterMap.SM1),
+        },
+        recv_timeout_us,
+        1,
+    );
+    // mailbox configured?
+    if (mbx_in.length == 0 or mbx_in.length > max_size) {
+        return error.InvalidMailboxConfiguration;
+    }
+
+    if (!mbx_in.status.mailbox_full) return error.Empty;
+}
+/// All possible contents of MailboxIn
+pub const InContent = union(enum) {
+    coe: coe.InContent,
+
+    // TODO: implement other protocols
+
+    fn deserialize(buf: []const u8) !InContent {
+        return switch (try identify(buf)) {
+            .CoE => return InContent{ .coe = coe.InContent.deserialize(buf) },
+            .ERR, .AoE, .EoE, .CoE, .FoE, .SoE, .VoE => return error.NotImplemented,
+            // already checked by identify
+            _ => unreachable,
+        };
+    }
+
+    /// identifiy the content of the mailbox in buffer
+    fn identify(buf: []const u8) !std.meta.Tag(InContent) {
+        var fbs = std.io.fixedBufferStream(buf);
+        const reader = fbs.reader();
+        const mbx_header = try wire.packFromECatReader(Header, reader);
+
+        return switch (mbx_header.type) {
+            .CoE => return .coe,
+            .ERR, .AoE, .EoE, .CoE, .FoE, .SoE, .VoE => return error.NotImplemented,
+            _ => return error.InvalidMbxProtocol,
+        };
+    }
+};
 
 /// Mailbox Types
 ///
@@ -120,7 +172,7 @@ pub fn sdoReadExpedited(
     station_address: u16,
     index: u16,
     subindex: u8,
-    retries: u32,
+    retries: u8,
     recv_timeout_us: u32,
     mbx_timeout_us: u32,
 ) !void {
@@ -205,7 +257,7 @@ pub fn sdoReadExpedited(
 // pub fn readMailbox(
 //     port: *nic.Port,
 //     station_address: u16,
-//     retries: u32,
+//     retries: u8,
 //     recv_timeout_us: u32,
 //     mbx_timeout_us: u32,
 // ) ![max_size]u8 {
@@ -240,35 +292,13 @@ pub fn sdoReadExpedited(
 //     }
 // }
 
+// pub const MailboxContent = union {
 
+//     pub fn identify(buf: []const u8) {
 
-pub const MailboxContentType = enum {
-    sdo_download_expedited_or_normal_response,
-    sdo_download_segment_response,
+//     }
 
-    sdo_upload_expedited_response,
-    sdo_upload_normal_response,
-    sdo_upload_segment_response,
-
-    abort_sdo_transfer_request,
-
-    get_od_list_response,
-    get_object_description_response,
-    get_entry_description_response,
-    sdo_info_error,
-
-    emergency_request,
-};
-
-pub const MailboxContent = union {
-
-
-
-    pub fn identify(buf: []const u8) {
-        
-    }
-
-}
+// }
 
 // Messages that can be read from mailbox in.
 //

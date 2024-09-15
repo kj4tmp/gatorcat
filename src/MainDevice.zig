@@ -21,7 +21,7 @@ pub const BusConfiguration = struct {
 
 pub const Settings = struct {
     recv_timeout_us: u32 = 2000,
-    retries: u32 = 3,
+    retries: u8 = 3,
     eeprom_timeout_us: u32 = 10000,
 };
 

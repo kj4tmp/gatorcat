@@ -12,6 +12,8 @@ fn sendDatagram(
     data: []u8,
     timeout_us: u32,
 ) !u16 {
+    assert(data.len <= telegram.Datagram.max_data_length);
+
     var datagrams: [1]telegram.Datagram = .{
         telegram.Datagram.init(
             command,
@@ -21,10 +23,17 @@ fn sendDatagram(
             data,
         ),
     };
-    try port.send_recv_datagrams(
+    port.send_recv_datagrams(
         &datagrams,
         timeout_us,
-    );
+    ) catch |err| switch (err) {
+        // only one datagram so it should fit
+        error.FrameSerializationFailure => unreachable,
+        error.RecvTimeout => return error.RecvTimeout,
+        error.LinkError => return error.LinkError,
+        error.CurruptedFrame => return error.CurruptedFrame,
+        error.TransactionContention => return error.TransactionContention,
+    };
     return datagrams[0].wkc;
 }
 
@@ -156,6 +165,28 @@ pub fn fprdPack(
     var data = wire.zerosFromPack(packed_type);
     const wkc = try fprd(port, address, &data, timeout_us);
     return .{ .ps = wire.packFromECat(packed_type, data), .wkc = wkc };
+}
+
+/// Configured address physical read a packable type, expect wkc
+//
+// TODO: refactor wkc handling?
+pub fn fprdPackWkc(
+    port: *nic.Port,
+    comptime packed_type: type,
+    address: telegram.StationAddress,
+    timeout_us: u32,
+    expected_wkc: u16,
+) !packed_type {
+    const res = try fprdPack(
+        port,
+        packed_type,
+        address,
+        timeout_us,
+    );
+    if (res.wkc != expected_wkc) {
+        return error.Wkc;
+    }
+    return res.ps;
 }
 
 /// Configured address physical write.

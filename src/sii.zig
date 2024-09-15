@@ -394,7 +394,7 @@ pub fn readSIIString(
     port: *nic.Port,
     station_address: u16,
     index: u8,
-    retries: u32,
+    retries: u8,
     recv_timeout_us: u32,
     eeprom_timeout_us: u32,
 ) !?SIIString {
@@ -454,7 +454,7 @@ pub const FindCatagoryResult = struct {
 pub fn readFMMUCatagory(
     port: *nic.Port,
     station_address: u16,
-    retries: u32,
+    retries: u8,
     recv_timeout_us: u32,
     eeprom_timeout_us: u32,
 ) !?[16]?FMMUFunction {
@@ -496,7 +496,7 @@ pub fn readFMMUCatagory(
 pub fn readSMCatagory(
     port: *nic.Port,
     station_address: u16,
-    retries: u32,
+    retries: u8,
     recv_timeout_us: u32,
     eeprom_timeout_us: u32,
 ) !?[16]?SyncM {
@@ -537,7 +537,7 @@ pub fn readSMCatagory(
     unreachable;
 }
 
-pub fn readGeneralCatagory(port: *nic.Port, station_address: u16, retries: u32, recv_timeout_us: u32, eeprom_timeout_us: u32) !?CatagoryGeneral {
+pub fn readGeneralCatagory(port: *nic.Port, station_address: u16, retries: u8, recv_timeout_us: u32, eeprom_timeout_us: u32) !?CatagoryGeneral {
     const gen_catagory = try findCatagoryFP(
         port,
         station_address,
@@ -575,7 +575,7 @@ pub fn readGeneralCatagory(port: *nic.Port, station_address: u16, retries: u32, 
 /// find the word address of a catagory in the eeprom, uses station addressing.
 ///
 /// Returns null if catagory is not found.
-pub fn findCatagoryFP(port: *nic.Port, station_address: u16, catagory: CatagoryType, retries: u32, recv_timeout_us: u32, eeprom_timeout_us: u32) !?FindCatagoryResult {
+pub fn findCatagoryFP(port: *nic.Port, station_address: u16, catagory: CatagoryType, retries: u8, recv_timeout_us: u32, eeprom_timeout_us: u32) !?FindCatagoryResult {
 
     // there shouldn't be more than 1000 catagories..right??
     const word_address: u16 = @intFromEnum(ParameterMap.first_catagory_header);
@@ -615,7 +615,7 @@ pub fn readSIIFP_ps(
     comptime T: type,
     station_address: u16,
     eeprom_address: u16,
-    retries: u32,
+    retries: u8,
     recv_timeout_us: u32,
     eeprom_timeout_us: u32,
 ) !T {
@@ -634,7 +634,7 @@ pub fn readSIIFP_ps(
 }
 
 /// read bytes from SII into slice, uses station addressing
-// pub fn readSIIString(port: *Port, station_address: u16, string_idx: u8, out: []u8, retries: u32, recv_timeout_us: u32, eeprom_timeout_us: u32) !void {
+// pub fn readSIIString(port: *Port, station_address: u16, string_idx: u8, out: []u8, retries: u8, recv_timeout_us: u32, eeprom_timeout_us: u32) !void {
 //     const str_catagory = try findCatagoryFP(
 //         port,
 //         station_address,
@@ -677,7 +677,7 @@ pub fn readSIIFP_ps(
 //     eeprom_address: u16,
 //     skip_first_byte: bool,
 //     out: []u8,
-//     retries: u32,
+//     retries: u8,
 //     recv_timeout_us: u32,
 //     eeprom_timeout_us: u32,
 // ) !void {
@@ -709,7 +709,7 @@ pub fn readSIIFP_ps(
 pub const SIIStream = struct {
     port: *nic.Port,
     station_address: u16,
-    retries: u32,
+    retries: u8,
     recv_timeout_us: u32,
     eeprom_timeout_us: u32,
     eeprom_address: u16, // WORD (2-byte) address
@@ -721,7 +721,7 @@ pub const SIIStream = struct {
         port: *nic.Port,
         station_address: u16,
         eeprom_address: u16,
-        retries: u32,
+        retries: u8,
         recv_timeout_us: u32,
         eeprom_timeout_us: u32,
     ) SIIStream {
@@ -737,7 +737,7 @@ pub const SIIStream = struct {
 
     pub const ReadError = error{
         Timeout,
-        SocketError,
+        LinkError,
     };
 
     // pub fn reader(self: *SIIStream) std.io.AnyReader {
@@ -791,7 +791,7 @@ test {
 
 pub const ReadSIIError = error{
     Timeout,
-    SocketError,
+    LinkError,
 };
 
 /// read 4 bytes from SII, using station addressing
@@ -799,7 +799,7 @@ pub fn readSII4ByteFP(
     port: *nic.Port,
     station_address: u16,
     eeprom_address: u16,
-    retries: u32,
+    retries: u8,
     recv_timeout_us: u32,
     eeprom_timeout_us: u32,
 ) ReadSIIError![4]u8 {
@@ -818,9 +818,9 @@ pub fn readSII4ByteFP(
             },
             recv_timeout_us,
         ) catch |err| switch (err) {
-            error.SocketError => return error.SocketError,
-            error.NoTransactionAvailableTimeout => continue,
-            error.FrameSerializationFailure => unreachable,
+            error.LinkError => return error.LinkError,
+            error.TransactionContention => continue,
+            // error.FrameSerializationFailure => unreachable,
             error.CurruptedFrame => continue,
             error.RecvTimeout => continue,
         };
@@ -843,9 +843,9 @@ pub fn readSII4ByteFP(
             &data,
             recv_timeout_us,
         ) catch |err| switch (err) {
-            error.SocketError => return error.SocketError,
-            error.NoTransactionAvailableTimeout => continue,
-            error.FrameSerializationFailure => unreachable,
+            error.LinkError => return error.LinkError,
+            error.TransactionContention => continue,
+            // error.FrameSerializationFailure => unreachable,
             error.CurruptedFrame => continue,
             error.RecvTimeout => continue,
         };
@@ -881,9 +881,9 @@ pub fn readSII4ByteFP(
             },
             recv_timeout_us,
         ) catch |err| switch (err) {
-            error.SocketError => return error.SocketError,
-            error.NoTransactionAvailableTimeout => continue,
-            error.FrameSerializationFailure => unreachable,
+            error.LinkError => return error.LinkError,
+            error.TransactionContention => continue,
+            // error.FrameSerializationFailure => unreachable,
             error.CurruptedFrame => continue,
             error.RecvTimeout => continue,
         };
@@ -909,9 +909,9 @@ pub fn readSII4ByteFP(
             },
             recv_timeout_us,
         ) catch |err| switch (err) {
-            error.SocketError => return error.SocketError,
-            error.NoTransactionAvailableTimeout => continue,
-            error.FrameSerializationFailure => unreachable,
+            error.LinkError => return error.LinkError,
+            error.TransactionContention => continue,
+            // error.FrameSerializationFailure => unreachable,
             error.CurruptedFrame => continue,
             error.RecvTimeout => continue,
         };
@@ -947,9 +947,9 @@ pub fn readSII4ByteFP(
             &data,
             recv_timeout_us,
         ) catch |err| switch (err) {
-            error.SocketError => return error.SocketError,
-            error.NoTransactionAvailableTimeout => continue,
-            error.FrameSerializationFailure => unreachable,
+            error.LinkError => return error.LinkError,
+            error.TransactionContention => continue,
+            // error.FrameSerializationFailure => unreachable,
             error.CurruptedFrame => continue,
             error.RecvTimeout => continue,
         };

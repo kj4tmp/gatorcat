@@ -5,29 +5,29 @@ const wire = @import("../wire.zig");
 
 pub const server = @import("coe/server.zig");
 pub const client = @import("coe/client.zig");
-pub const common = @import("coe/common.zig");
-
-pub const MailboxInContentTag = enum {
-    expedited,
-    normal,
-    segment,
-    abort,
-    emergency,
-};
 
 /// MailboxIn Content for CoE.
-pub const MailboxInContent = union(enum) {
+pub const InContent = union(enum) {
     expedited: server.Expedited,
     normal: server.Normal,
     segment: server.Segment,
     abort: server.Abort,
     emergency: server.Emergency,
 
-    // pub fn deserialize(buf: [] const u8) MailboxInContent {
+    // TODO: implement remaining CoE content types
 
-    // }
+    pub fn deserialize(buf: []const u8) !InContent {
+        switch (try identify(buf)) {
+            .expedited => return InContent{ .expedited = try server.Expedited.deserialize(buf) },
+            .normal => return InContent{ .normal = try server.Normal.deserialize(buf) },
+            .segment => return InContent{ .segment = try server.Segment.deserialize(buf) },
+            .abort => return InContent{ .abort = try server.Abort.deserialize(buf) },
+            .emergency => return InContent{ .emergency = try server.Emergency.deserialize(buf) },
+        }
+    }
 
-    pub fn identify(buf: []const u8) !MailboxInContentTag {
+    /// Identify what kind of CoE content is in MailboxIn
+    fn identify(buf: []const u8) !std.meta.Tag(InContent) {
         var fbs = std.io.fixedBufferStream(buf);
         const reader = fbs.reader();
         const mbx_header = try wire.packFromECatReader(mailbox.Header, reader);
@@ -39,28 +39,55 @@ pub const MailboxInContent = union(enum) {
         const header = try wire.packFromECatReader(Header, reader);
 
         switch (header.service) {
+            .tx_pdo => return error.NotImplemented,
+            .rx_pdo => return error.NotImplemented,
+            .tx_pdo_remote_request => return error.NotImplemented,
+            .rx_pdo_remote_request => return error.NotImplemented,
+            .sdo_info => return error.NotImplemented,
+
             .sdo_request => {
                 const sdo_header = try wire.packFromECatReader(server.SDOHeader, reader);
                 return switch (sdo_header.command) {
                     .abort_transfer_request => .abort,
-                    else => error.InvalidSDOCommand,
+                    else => error.InvalidSDORequest,
                 };
             },
             .sdo_response => {
                 const sdo_header = try wire.packFromECatReader(server.SDOHeader, reader);
-
                 switch (sdo_header.command) {
                     .upload_segment_response => return .segment,
                     .download_segment_response => return .segment,
+                    .initiate_upload_response => switch (sdo_header.transfer_type) {
+                        .normal => return .normal,
+                        .expedited => return .expedited,
+                    },
                     .initiate_download_response => return .expedited,
-
-                    /// WORK IN PROGRESS
+                    .abort_transfer_request => return .abort,
+                    _ => return error.InvalidSDOResponseSDOHeader,
                 }
             },
             .emergency => return .emergency,
+            _ => return error.InvalidCoEService,
         }
     }
 };
+
+test "serialize deserialize mailbox in content" {
+    const expected = InContent{
+        .expedited = server.Expedited.initDownloadResponse(
+            3,
+            234,
+            23,
+            4,
+        ),
+    };
+
+    var bytes = std.mem.zeroes([mailbox.max_size]u8);
+    const byte_size = try expected.expedited.serialize(&bytes);
+    try std.testing.expectEqual(@as(usize, 6 + 2 + 8), byte_size);
+    const actual = try InContent.deserialize(&bytes);
+    try std.testing.expectEqualDeep(expected, actual);
+}
 
 pub const DataSetSize = enum(u2) {
     four_octets = 0x00,

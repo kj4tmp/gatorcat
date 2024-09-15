@@ -1,10 +1,9 @@
 const std = @import("std");
 const assert = std.debug.assert;
 
-const nic = @import("../nic.zig");
 const coe = @import("../coe.zig");
-const mailbox = @import("../mailbox.zig");
-const wire = @import("../wire.zig");
+const mailbox = @import("../../mailbox.zig");
+const wire = @import("../../wire.zig");
 
 /// Client Command Specifer
 ///

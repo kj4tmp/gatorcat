@@ -160,7 +160,7 @@ pub const Port = struct {
         {
             self.send_mutex.lock();
             defer self.send_mutex.unlock();
-            _ = std.posix.write(self.socket, out) catch return error.SocketError;
+            _ = std.posix.write(self.socket, out) catch return error.LinkError;
         }
         {
             self.recv_datagrams_status_mutex.lock();
@@ -188,8 +188,8 @@ pub const Port = struct {
         }
         self.recv_frame() catch |err| switch (err) {
             error.FrameNotFound => {},
-            error.SocketError => {
-                return error.SocketError;
+            error.LinkError => {
+                return error.LinkError;
             },
             error.InvalidFrame => {},
         };
@@ -213,7 +213,7 @@ pub const Port = struct {
                 error.WouldBlock => return error.FrameNotFound,
                 else => {
                     std.log.err("Socket error: {}", .{err});
-                    return error.SocketError;
+                    return error.LinkError;
                 },
             };
         }
@@ -266,11 +266,19 @@ pub const Port = struct {
         };
     }
 
+    pub const SendRecvError = error{
+        TransactionContention,
+        RecvTimeout,
+        FrameSerializationFailure,
+        LinkError,
+        CurruptedFrame,
+    };
+
     pub fn send_recv_datagrams(
         self: *Port,
         send_datagrams: []telegram.Datagram,
         timeout_us: u32,
-    ) !void {
+    ) SendRecvError!void {
         assert(send_datagrams.len != 0); // no datagrams
         assert(send_datagrams.len <= 15); // too many datagrams
 
@@ -284,7 +292,7 @@ pub const Port = struct {
             };
             break;
         } else {
-            return error.NoTransactionAvailableTimeout;
+            return error.TransactionContention;
         }
         defer self.release_transaction(idx);
 

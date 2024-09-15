@@ -1,10 +1,9 @@
 const std = @import("std");
 const assert = std.debug.assert;
 
-const nic = @import("../nic.zig");
 const coe = @import("../coe.zig");
-const mailbox = @import("../mailbox.zig");
-const wire = @import("../wire.zig");
+const mailbox = @import("../../mailbox.zig");
+const wire = @import("../../wire.zig");
 
 /// Server Command Specifier
 ///
@@ -15,8 +14,9 @@ pub const CommandSpecifier = enum(u3) {
     initiate_upload_response = 2,
     initiate_download_response = 3,
     abort_transfer_request = 4,
-    block_download = 5,
-    block_upload = 6,
+    // block_download = 5,
+    // block_upload = 6,
+    _,
 };
 
 /// SDO Header for CoE for subdevice to maindevice (server to client)
@@ -496,8 +496,6 @@ pub const SDOAbortCode = enum(u32) {
 pub const Abort = packed struct(u128) {
     mbx_header: mailbox.Header,
     coe_header: coe.Header,
-    /// SDOHeader is arbitrarily chosen here.
-    /// Abort has no concept of client / server.
     sdo_header: SDOHeader,
     abort_code: SDOAbortCode,
 

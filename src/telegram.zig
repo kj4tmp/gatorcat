@@ -165,7 +165,7 @@ pub const Datagram = struct {
             @divExact(@bitSizeOf(u16), 8);
     }
 
-    const max_data_length = EtherCATFrame.max_datagrams_length -
+    pub const max_data_length = EtherCATFrame.max_datagrams_length -
         @divExact(@bitSizeOf(DatagramHeader), 8) -
         @divExact(@bitSizeOf(u16), 8);
 };
@@ -471,7 +471,6 @@ test "ethernet frame serialization / deserialization" {
 
     try std.testing.expectEqualDeep(frame.ethercat_frame.datagrams, &datagrams2);
 }
-
 
 /// Max frame length
 /// Includes header, but not FCS (intended to be the max allowable size to

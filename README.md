@@ -122,18 +122,23 @@ This library is in extremely early development.
 
 1. Cannot tell if my tests have run or not (even with --summary all) !!!!!!!!!!!!!!!!!!
 2. Packed structs are not well described in the language reference
-3. Where to I look for the implementation of flags.parse? root.zig? I don't know where
-anything is!
+3. root.zig is not explained anywhere
 4. Cannot have arrays in packed structs. (See SM and FMMU structs).
 5. For loops over slices / arrays: I have to look up the syntax every time.
 6. Bitcasting packed structs can circumvent enum safety. <https://github.com/ziglang/zig/issues/21372>
+7. Impossible errors in function return type error sets are not a compile error.
+8. std.Time.Timer can return an error
+9. lazyness of compiler makes it easy to write a lot of code with a lot of errors until you actually use it
 
 ### zig wins
 
-big endian archs tests:
-
-1. sudo apt install qemu-system-ppc qemu-utils binfmt-support qemu-user-static
-2. zig build -fqemu -Dtarget=powerpc64-linux test --summary all
+1. Can test for big endian architecture automatically using QEMU.
+    sudo apt install qemu-system-ppc qemu-utils binfmt-support qemu-user-static
+    zig build -fqemu -Dtarget=powerpc64-linux test --summary all
+2. errors as values
+3. no exceptions
+4. bitfields
+5. cross-compilation is easy
 
 ## TODOs
 

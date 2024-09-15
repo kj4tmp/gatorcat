@@ -62,7 +62,7 @@ pub fn setALState(
     port: *nic.Port,
     state: esc.ALStateControl,
     change_timeout_us: u32,
-    retries: u32,
+    retries: u8,
     recv_timeout_us: u32,
 ) !void {
     const station_address: u16 = self.runtime_info.station_address orelse return error.InvalidRuntimeInfo;
@@ -179,7 +179,7 @@ pub fn transitionIP(
     port: *nic.Port,
     station_address: u16,
     autoinc_address: u16,
-    retries: u32,
+    retries: u8,
     recv_timeout_us: u32,
     eeprom_timeout_us: u32,
 ) !void {

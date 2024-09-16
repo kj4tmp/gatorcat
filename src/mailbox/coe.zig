@@ -10,10 +10,8 @@ const nic = @import("../nic.zig");
 pub const server = @import("coe/server.zig");
 pub const client = @import("coe/client.zig");
 
-/// SDO Expedited Read
-///
-/// For data with length 1-4 bytes.
-pub fn sdoReadExpedited(
+// TODO: support more than expedited reads
+pub fn sdoRead(
     port: *nic.Port,
     station_address: u16,
     index: u16,
@@ -22,11 +20,19 @@ pub fn sdoReadExpedited(
     recv_timeout_us: u32,
     mbx_timeout_us: u32,
     cnt: u3,
+    mbx_in_start_addr: u16,
+    mbx_in_length: u16,
+    mbx_out_start_addr: u16,
+    mbx_out_length: u16,
 ) !packed_type {
+    comptime assert(wire.packedSize(packed_type) > 0);
+    comptime assert(wire.packedSize(packed_type) < 5);
+
     assert(cnt != 0);
-    comptime assert(wire.isECatPackable(packed_type));
-    comptime assert(wire.zerosFromPack(packed_type).len > 0);
-    comptime assert(wire.zerosFromPack(packed_type).len < 5);
+    assert(mbx_in_length > 0);
+    assert(mbx_in_length <= mailbox.max_size);
+    assert(mbx_out_length > 0);
+    assert(mbx_out_length <= mailbox.max_size);
 
     const request = mailbox.OutContent{
         .coe = OutContent{
@@ -41,6 +47,8 @@ pub fn sdoReadExpedited(
         port,
         station_address,
         recv_timeout_us,
+        mbx_out_start_addr,
+        mbx_out_length,
         request,
     );
 
@@ -51,8 +59,9 @@ pub fn sdoReadExpedited(
             port,
             station_address,
             recv_timeout_us,
+            mbx_in_start_addr,
+            mbx_in_length,
         ) catch |err| {
-            std.log.warn("err: {}", .{err});
             switch (err) {
                 error.LinkError => return error.LinkError,
                 error.TransactionContention => continue,
@@ -65,6 +74,8 @@ pub fn sdoReadExpedited(
                 error.InvalidMbxConfiguration => return error.InvalidMbxConfiguration,
             }
         };
+        // TODO: handle emergency messages
+        // TODO: handle eoe?
 
         if (response != .coe) {
             return error.WrongProtocol;
@@ -78,6 +89,7 @@ pub fn sdoReadExpedited(
 
         var fbs = std.io.fixedBufferStream(data.slice());
         const reader = fbs.reader();
+        std.log.warn("time req: {}us", .{timer.read() / ns_per_us});
         return wire.packFromECatReader(packed_type, reader) catch error.InvalidResponseDataLength;
     } else return error.MbxTimeout;
 }

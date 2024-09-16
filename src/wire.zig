@@ -4,7 +4,13 @@ const std = @import("std");
 const assert = std.debug.assert;
 const native_endian = @import("builtin").target.cpu.arch.endian();
 
+pub fn packedSize(comptime T: type) comptime_int {
+    comptime assert(isECatPackable(T));
+    return @divExact(@bitSizeOf(T), 8);
+}
+
 pub fn isECatPackable(comptime T: type) bool {
+    if (@bitSizeOf(T) % 8 != 0) return false;
     return switch (@typeInfo(T)) {
         .Struct => |_struct| blk: {
             // must be a packed struct

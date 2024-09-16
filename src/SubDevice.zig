@@ -8,6 +8,8 @@ const commands = @import("commands.zig");
 const sii = @import("sii.zig");
 const telegram = @import("telegram.zig");
 const wire = @import("wire.zig");
+const coe = @import("mailbox/coe.zig");
+const mailbox = @import("mailbox.zig");
 
 runtime_info: RuntimeInfo = .{},
 prior_info: PriorInfo,
@@ -325,11 +327,11 @@ pub fn transitionIP(
     self.runtime_info.sms = std.mem.zeroes(esc.SMRegister);
     if (info.std_recv_mbx_offset > 0) { // mbx supported?
         self.runtime_info.sms.?.SM0 = esc.SyncManagerAttributes.mbxOutDefaults(
-            info.bootstrap_recv_mbx_offset,
+            info.std_recv_mbx_offset,
             info.std_recv_mbx_size,
         );
         self.runtime_info.sms.?.SM1 = esc.SyncManagerAttributes.mbxInDefaults(
-            info.bootstrap_send_mbx_offset,
+            info.std_send_mbx_offset,
             info.std_send_mbx_size,
         );
     }
@@ -407,4 +409,44 @@ pub fn transitionIP(
         },
     );
     std.log.info("    DCSupported: {}", .{self.runtime_info.dl_info.?.DCSupported});
+}
+
+pub fn sdoRead(
+    self: *SubDevice,
+    port: *nic.Port,
+    comptime T: type,
+    index: u16,
+    subindex: u8,
+    recv_timeout_us: u32,
+    mbx_timeout_us: u32,
+) !T {
+    const info = self.runtime_info.info orelse return error.InvalidRuntimeInfo;
+    const station_address = self.runtime_info.station_address orelse return error.InvalidRuntimeInfo;
+
+    // subdevice supports CoE?
+    if (!info.mbx_protocol.CoE) return error.CoENotSupported;
+
+    // bad mailbox configuration?
+    if (info.std_recv_mbx_size == 0 or
+        info.std_send_mbx_size == 0)
+    {
+        return error.InvalidSubdeviceInfo;
+    }
+
+    // TODO: support customizable mailbox configuration?
+
+    return coe.sdoRead(
+        port,
+        station_address,
+        index,
+        subindex,
+        T,
+        recv_timeout_us,
+        mbx_timeout_us,
+        1,
+        info.std_send_mbx_offset,
+        info.std_send_mbx_size,
+        info.std_recv_mbx_offset,
+        info.std_send_mbx_size,
+    );
 }

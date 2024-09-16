@@ -13,47 +13,55 @@ pub fn writeMailboxOut(
     port: *nic.Port,
     station_address: u16,
     recv_timeout_us: u32,
+    mbx_out_start_addr: u16,
+    mbx_out_length: u16,
     content: OutContent,
 ) !void {
-    const mbx_out = try commands.fprdPackWkc(
+    assert(mbx_out_length <= max_size);
+    assert(mbx_out_length > 0);
+
+    const act_mbx_out = try commands.fprdPackWkc(
         port,
         esc.SyncManagerAttributes,
         .{ .station_address = station_address, .offset = @intFromEnum(esc.RegisterMap.SM0) },
         recv_timeout_us,
         1,
     );
-    // TODO: Check enable bit of the SM?
 
     // Mailbox configured correctly?
     // Can check this for free since we already have the full SM attr.
-    if (mbx_out.length == 0 or
-        mbx_out.length > max_size or
-        mbx_out.control.buffer_type != .mailbox or
-        mbx_out.control.direction != .output or
-        mbx_out.control.DLS_user_event_enable != true or
-        mbx_out.activate.channel_enable != true)
+    if (act_mbx_out.length != mbx_out_length or
+        act_mbx_out.physical_start_address != mbx_out_start_addr or
+        act_mbx_out.control.buffer_type != .mailbox or
+        act_mbx_out.control.direction != .output or
+        act_mbx_out.control.DLS_user_event_enable != true or
+        act_mbx_out.activate.channel_enable != true)
     {
-        // This may occur if the subdevice loses power etc.
+        // This may occur if:
+        // 1. the subdevice loses power etc.
+        // 2. we screwed up the configuration
         return error.InvalidMbxConfiguration;
     }
 
-    if (mbx_out.status.mailbox_full) return error.Full;
+    // Mailbox out full?
+    if (act_mbx_out.status.mailbox_full) return error.Full;
 
     var buf = std.mem.zeroes([max_size]u8);
-
     const size = try content.serialize(&buf);
     assert(size > 0);
 
-    if (size > mbx_out.length) return error.ContentTooLargeForMailbox;
+    if (size > act_mbx_out.length) return error.ContentTooLargeForMailbox;
 
     // The mailbox
     try commands.fpwrWkc(
         port,
         .{
             .station_address = station_address,
-            .offset = mbx_out.physical_start_address,
+            .offset = act_mbx_out.physical_start_address,
         },
-        buf[0..mbx_out.length], // doesn't work unless frame data size exactly matches mailbox size !!
+        // The datagram size must exactly match the mailbox size,
+        // otherwise the subdevice seems to do nothing.
+        buf[0..act_mbx_out.length],
         recv_timeout_us,
         1,
     );
@@ -65,8 +73,13 @@ pub fn readMailboxIn(
     port: *nic.Port,
     station_address: u16,
     recv_timeout_us: u32,
+    mbx_in_start_addr: u16,
+    mbx_in_length: u16,
 ) !InContent {
-    const mbx_in = try commands.fprdPackWkc(
+    assert(mbx_in_length <= max_size);
+    assert(mbx_in_length > 0);
+
+    const act_mbx_in = try commands.fprdPackWkc(
         port,
         esc.SyncManagerAttributes,
         .{
@@ -77,32 +90,33 @@ pub fn readMailboxIn(
         1,
     );
 
-    // TODO: Check enable bit of the SM?
-
     // Mailbox configured correctly?
     // Can check this for free since we already have the full SM attr.
-    if (mbx_in.length == 0 or
-        mbx_in.length > max_size or
-        mbx_in.control.buffer_type != .mailbox or
-        mbx_in.control.direction != .input or
-        mbx_in.control.DLS_user_event_enable != true or
-        mbx_in.activate.channel_enable != true)
+    if (act_mbx_in.length != mbx_in_length or
+        act_mbx_in.physical_start_address != mbx_in_start_addr or
+        act_mbx_in.control.buffer_type != .mailbox or
+        act_mbx_in.control.direction != .input or
+        act_mbx_in.control.DLS_user_event_enable != true or
+        act_mbx_in.activate.channel_enable != true)
     {
-        // This may occur if the subdevice loses power etc.
+        // This may occur if:
+        // 1. the subdevice loses power etc.
+        // 2. we screwed up the configuration
         return error.InvalidMbxConfiguration;
     }
 
-    if (!mbx_in.status.mailbox_full) return error.Empty;
+    // Mialbox empty?
+    if (!act_mbx_in.status.mailbox_full) return error.Empty;
 
     var buf = std.mem.zeroes([max_size]u8);
-
     try commands.fprdWkc(
         port,
         .{
             .station_address = station_address,
-            .offset = mbx_in.physical_start_address,
+            .offset = act_mbx_in.physical_start_address,
         },
-        buf[0..mbx_in.length],
+        // subdevice will do nothing if this size is too big.
+        buf[0..act_mbx_in.length],
         recv_timeout_us,
         1,
     );

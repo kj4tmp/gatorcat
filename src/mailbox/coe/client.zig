@@ -21,8 +21,8 @@ pub const CommandSpecifier = enum(u3) {
     initiate_upload_request = 2,
     upload_segment_request = 3,
     abort_transfer_request = 4,
-    block_upload = 5,
-    block_download = 6,
+    // block_upload = 5,
+    // block_download = 6,
 };
 
 /// SDO Header for CoE for maindevice to subdevice (client to server)

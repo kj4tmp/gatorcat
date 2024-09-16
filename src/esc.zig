@@ -696,6 +696,7 @@ pub const SyncManagerBufferType = enum(u2) {
     mailbox = 0x02,
 };
 
+/// Ref: IEC 61158-4-12:2019 6.7.2
 pub const SyncManagerDirection = enum(u2) {
     /// read by maindevice
     input = 0x00,
@@ -751,6 +752,11 @@ pub const SyncManagerAttributes = packed struct(u64) {
     repeat_ack: bool,
     reserved4: u6 = 0,
 
+    /// SM0 should be used for mailbox out.
+    ///
+    /// Ref: Ethercat Device Protocol Poster
+    ///
+    /// SOEM uses 0x00010026 for the
     pub fn mbxOutDefaults(
         physical_start_address: u16,
         length: u16,
@@ -758,6 +764,7 @@ pub const SyncManagerAttributes = packed struct(u64) {
         return SyncManagerAttributes{
             .physical_start_address = physical_start_address,
             .length = length,
+            // SOEM uses 0x26 (0b00100110) for the control byte
             .control = .{
                 .buffer_type = .mailbox,
                 .direction = .output,
@@ -765,17 +772,24 @@ pub const SyncManagerAttributes = packed struct(u64) {
                 .DLS_user_event_enable = true,
                 .watchdog_enable = false,
             },
+            // SOEM uses 0x00 for the status byte
             .status = @bitCast(@as(u8, 0)),
+            // SOEM uses 0x01 for the activate byte
             .activate = .{
                 .channel_enable = true,
                 .repeat = false,
                 .DC_event_0_bus_access = false,
                 .DC_event_0_local_access = false,
             },
+            // SOEM uses 0x00 for the remaining
             .channel_enable_PDI = false,
             .repeat_ack = false,
         };
     }
+
+    /// SM1 should be used for mailbox in.
+    ///
+    /// Ref: EtherCAT Device Protocol Poster.
     pub fn mbxInDefaults(
         physical_start_address: u16,
         length: u16,

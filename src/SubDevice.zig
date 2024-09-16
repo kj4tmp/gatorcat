@@ -320,8 +320,8 @@ pub fn transitionIP(
 
     // Set default syncmanager configurations.
     // If mailbox is supported:
-    // SM0 should be used for Mailbox Out (from maindevice)
-    // SM1 should be used for Mailbox In (from maindevice)
+    // SM0 should be used for Mailbox Out (from maindevice to subdevice)
+    // SM1 should be used for Mailbox In (from subdevice to maindevice)
     self.runtime_info.sms = std.mem.zeroes(esc.SMRegister);
     if (info.std_recv_mbx_offset > 0) { // mbx supported?
         self.runtime_info.sms.?.SM0 = esc.SyncManagerAttributes.mbxOutDefaults(

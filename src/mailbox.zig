@@ -22,7 +22,6 @@ pub fn writeMailboxOut(
         recv_timeout_us,
         1,
     );
-
     // TODO: Check enable bit of the SM?
 
     // Mailbox configured correctly?
@@ -31,6 +30,7 @@ pub fn writeMailboxOut(
         mbx_out.length > max_size or
         mbx_out.control.buffer_type != .mailbox or
         mbx_out.control.direction != .output or
+        mbx_out.control.DLS_user_event_enable != true or
         mbx_out.activate.channel_enable != true)
     {
         // This may occur if the subdevice loses power etc.
@@ -42,14 +42,18 @@ pub fn writeMailboxOut(
     var buf = std.mem.zeroes([max_size]u8);
 
     const size = try content.serialize(&buf);
+    assert(size > 0);
 
+    if (size > mbx_out.length) return error.ContentTooLargeForMailbox;
+
+    // The mailbox
     try commands.fpwrWkc(
         port,
         .{
             .station_address = station_address,
             .offset = mbx_out.physical_start_address,
         },
-        buf[0..size],
+        buf[0..mbx_out.length], // doesn't work unless frame data size exactly matches mailbox size !!
         recv_timeout_us,
         1,
     );
@@ -73,8 +77,6 @@ pub fn readMailboxIn(
         1,
     );
 
-    std.log.warn("attr: {}", .{mbx_in});
-
     // TODO: Check enable bit of the SM?
 
     // Mailbox configured correctly?
@@ -83,6 +85,7 @@ pub fn readMailboxIn(
         mbx_in.length > max_size or
         mbx_in.control.buffer_type != .mailbox or
         mbx_in.control.direction != .input or
+        mbx_in.control.DLS_user_event_enable != true or
         mbx_in.activate.channel_enable != true)
     {
         // This may occur if the subdevice loses power etc.

@@ -365,6 +365,8 @@ pub const Segment = struct {
         assert(data.len < data_max_size);
 
         const length = @max(10, @as(u16, @intCast(data.len + 3)));
+        const padding_length: usize = @min(7, data.len -| 7);
+        assert(padding_length <= 7);
 
         const seg_data_size: coe.SegmentDataSize = switch (data.len) {
             0 => .zero_octets,
@@ -376,6 +378,13 @@ pub const Segment = struct {
             6 => .six_octets,
             else => .seven_octets,
         };
+
+        var temp_data = std.BoundedArray(
+            u8,
+            data_max_size,
+        ).fromSlice(data) catch unreachable;
+        temp_data.appendNTimes(@as(u8, 0), padding_length) catch unreachable;
+        assert(temp_data.len >= 7);
 
         return Segment{
             .mbx_header = .{
@@ -396,7 +405,7 @@ pub const Segment = struct {
                 .toggle = toggle,
                 .command = .upload_segment_response,
             },
-            .data = std.BoundedArray(u8, data_max_size).fromSlice(data) catch unreachable,
+            .data = temp_data,
         };
     }
 

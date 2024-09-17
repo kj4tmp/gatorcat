@@ -302,7 +302,11 @@ pub const Segment = struct {
         data: []const u8,
     ) !Segment {
         assert(cnt != 0);
+        // We must always send a minimum of 7 octets in the data section.
+        // The first octets are used and the remaining are padded with zeros.
         const length = @max(10, @as(u16, @intCast(data.len + 3)));
+        const padding_length: usize = @min(7, data.len -| 7);
+        assert(padding_length <= 7);
 
         const seg_data_size: coe.SegmentDataSize = switch (data.len) {
             0 => .zero_octets,
@@ -314,6 +318,13 @@ pub const Segment = struct {
             6 => .six_octets,
             else => .seven_octets,
         };
+
+        var temp_data = try std.BoundedArray(
+            u8,
+            data_max_size,
+        ).fromSlice(data);
+        try temp_data.appendNTimes(@as(u8, 0), padding_length);
+        assert(temp_data.len >= 7);
 
         return Segment{
             .mbx_header = .{
@@ -334,10 +345,7 @@ pub const Segment = struct {
                 .toggle = toggle,
                 .command = .download_segment_request,
             },
-            .data = try std.BoundedArray(
-                u8,
-                data_max_size,
-            ).fromSlice(data),
+            .data = temp_data,
         };
     }
 

@@ -47,7 +47,9 @@ pub fn writeMailboxOut(
     if (act_mbx_out.status.mailbox_full) return error.Full;
 
     var buf = std.mem.zeroes([max_size]u8);
-    const size = try content.serialize(&buf);
+    const size = content.serialize(&buf) catch |err| switch (err) {
+        error.NoSpaceLeft => return error.InvalidParameterContentTooLarge,
+    };
     assert(size > 0);
 
     if (size > act_mbx_out.length) return error.ContentTooLargeForMailbox;
@@ -255,7 +257,9 @@ pub const Mailbox = struct {
 
 /// The maximum mailbox size is limited by the maximum data that can be
 /// read by a single datagram.
+/// This applies to both mailbox out and mailbox in.
 pub const max_size = 1486;
+// Derivation of max_size:
 comptime {
     assert(max_size == telegram.max_frame_length - // 1514
         @divExact(@bitSizeOf(telegram.EthernetHeader), 8) - // u112
@@ -263,3 +267,12 @@ comptime {
         @divExact(@bitSizeOf(telegram.DatagramHeader), 8) - // u80
         @divExact(@bitSizeOf(u16), 8)); // wkc
 }
+
+/// The minimum mailbox size is the size required to hold
+/// the max of:
+/// 1. smallest coe segment request.
+/// 2. smallest coe normal request.
+/// 3. smallest coe expedited request.
+pub const min_size = 16;
+
+// TODO: derive min_size

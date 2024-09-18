@@ -1,5 +1,7 @@
 const std = @import("std");
 const assert = std.debug.assert;
+const Timer = std.time.Timer;
+const ns_per_us = std.time.ns_per_us;
 
 const commands = @import("commands.zig");
 const nic = @import("nic.zig");
@@ -17,8 +19,9 @@ pub fn writeMailboxOut(
     mbx_out_length: u16,
     content: OutContent,
 ) !void {
+    assert(mbx_out_start_addr != 0);
     assert(mbx_out_length <= max_size);
-    assert(mbx_out_length > 0);
+    assert(mbx_out_length >= min_size);
 
     const act_mbx_out = try commands.fprdPackWkc(
         port,
@@ -71,6 +74,41 @@ pub fn writeMailboxOut(
     std.log.info("station address: 0x{x}. wrote {} bytes to mailbox out.", .{ station_address, size });
 }
 
+pub fn readMailboxInTimeout(
+    port: *nic.Port,
+    station_address: u16,
+    recv_timeout_us: u32,
+    mbx_in_start_addr: u16,
+    mbx_in_length: u16,
+    mbx_timeout_us: u32,
+) !InContent {
+    assert(mbx_in_start_addr != 0);
+    assert(mbx_in_length <= max_size);
+    assert(mbx_in_length >= min_size);
+
+    var timer = Timer.start() catch |err| switch (err) {
+        error.TimerUnsupported => unreachable,
+    };
+
+    while (timer.read() < timeout_us * ns_per_us) {
+        return readMailboxIn(
+            port,
+            station_address,
+            recv_timeout_us,
+            mbx_in_start_addr,
+            mbx_in_length,
+        ) catch |err| switch (err) {
+            error.CurruptedFrame => continue,
+            error.FrameSerializationFailure => |this_err| return this_err,
+            error.LinkError => return error.LinkError,
+            error.TransactionContention => return error.TransactionContention,
+            error.RecvTimeout => continue,
+        };
+    } else {
+        return error.MbxTimeout;
+    }
+}
+
 pub fn readMailboxIn(
     port: *nic.Port,
     station_address: u16,
@@ -78,8 +116,9 @@ pub fn readMailboxIn(
     mbx_in_start_addr: u16,
     mbx_in_length: u16,
 ) !InContent {
+    assert(mbx_in_start_addr != 0);
     assert(mbx_in_length <= max_size);
-    assert(mbx_in_length > 0);
+    assert(mbx_in_length >= min_size);
 
     const act_mbx_in = try commands.fprdPackWkc(
         port,

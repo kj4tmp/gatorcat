@@ -30,48 +30,85 @@ pub fn sdoReadSlice(
     mbx_out_start_addr: u16,
     mbx_out_length: u16,
 ) !usize {
-    assert(out.len > 0);
+
     // comptime assert(wire.packedSize(packed_type) > 0);
     // comptime assert(wire.packedSize(packed_type) < 5);
-
     assert(cnt != 0);
-    assert(mbx_in_length > 0);
+    assert(mbx_in_start_addr != 0);
     assert(mbx_in_length <= mailbox.max_size);
-    assert(mbx_out_length > 0);
+    assert(mbx_in_length >= mailbox.min_size);
+    assert(mbx_out_start_addr != 0);
     assert(mbx_out_length <= mailbox.max_size);
-
-    // The coding of a normal and expedited upload request is identical.
-    // We issue and upload request and the server may respond with an
-    // expedited, normal, or segmented response. The server will respond
-    // with an expedited response if the data is less than 4 bytes,
-    // a normal response if the data is more than 4 bytes and can fit into
-    // a single mailbox, and a segmented response if the data is larger
-    // than the mailbox.
-    const request = mailbox.OutContent{
-        .coe = OutContent{
-            .expedited = client.Expedited.initUploadRequest(
-                cnt,
-                index,
-                subindex,
-            ),
-        },
-    };
-    mailbox.writeMailboxOut(
-        port,
-        station_address,
-        recv_timeout_us,
-        mbx_out_start_addr,
-        mbx_out_length,
-        request,
-    ) catch |err| switch (err) {
-        error.InvalidParameterContentTooLarge => unreachable,
-        else => |err_subset| return err_subset,
-    };
+    assert(mbx_out_length >= mailbox.min_size);
 
     var timer = Timer.start() catch unreachable;
 
     var fbs = std.io.fixedBufferStream(out);
     const writer = fbs.writer();
+
+    const State = enum {
+        start_send_upload_request,
+        send_upload_segment_request,
+        read_mbx,
+        parse_expedited_response,
+        parse_segmented_response,
+        retry_request,
+    };
+
+    var in_content: InContent = undefined;
+    state: switch (State.start_send_upload_request) {
+        .start_send_upload_request => {
+            // The coding of a normal and expedited upload request is identical.
+            // We issue and upload request and the server may respond with an
+            // expedited, normal, or segmented response. The server will respond
+            // with an expedited response if the data is less than 4 bytes,
+            // a normal response if the data is more than 4 bytes and can fit into
+            // a single mailbox, and a segmented response if the data is larger
+            // than the mailbox.
+            const request = mailbox.OutContent{
+                .coe = OutContent{
+                    .expedited = client.Expedited.initUploadRequest(
+                        cnt,
+                        index,
+                        subindex,
+                    ),
+                },
+            };
+            mailbox.writeMailboxOut(
+                port,
+                station_address,
+                recv_timeout_us,
+                mbx_out_start_addr,
+                mbx_out_length,
+                request,
+            ) catch |err| switch (err) {
+                error.InvalidParameterContentTooLarge => unreachable,
+                else => |err_subset| return err_subset,
+            };
+
+            // continue :state .read_mbx
+        },
+
+        .read_mbx => {
+            in_content = try mailbox.readMailboxInTimeout(
+                port,
+                station_address,
+                recv_timeout_us,
+                mbx_in_start_addr,
+                mbx_in_length,
+                mbx_timeout_us,
+            );
+
+            if (in_content != .coe) return error.WrongProtocol;
+            switch (in_content.coe) {
+                .abort => return error.Aborted,
+                .expedited => continue .parse_expedited_response,
+                .segment => continue
+            }
+
+            /// WIP
+        },
+    }
 
     while (timer.read() < mbx_timeout_us * ns_per_us) {
         const response = mailbox.readMailboxIn(

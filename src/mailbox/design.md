@@ -15,7 +15,7 @@ graph TB;
     expedited --> success;
     read_mbx -->|normal response| normal;
     normal --> |complete| success;
-    normal --> |not complete| request_segment
+    normal --> |incomplete| request_segment
     request_segment --> read_mbx_segment;
     read_mbx_segment --> segment;
     segment -->|not more follows| success;
@@ -23,3 +23,15 @@ graph TB;
 ```
 
 ### SDO Write State Machine
+
+```mermaid
+graph TB;  
+    send_write_request -->|expedited| read_mbx;
+    send_write_request -->|normal complete| read_mbx;
+    read_mbx --> success;
+    send_write_request -->|normal incomplete| read_mbx_segment;
+    read_mbx_segment -->|incomplete| send_segment;
+    read_mbx_segment -->|complete|success;
+    send_segment --> read_mbx_segment;
+
+```

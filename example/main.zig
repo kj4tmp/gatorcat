@@ -37,13 +37,14 @@ pub fn main() !void {
     // read product code from EL3314 (should be 0xcf23052)
     // const res2 = try ecm.mailbox.readMailboxIn(&port, 0x1001, 3000);
     // std.log.warn("got {}", .{res2});
-    const res = try subdevices[1].sdoRead(
+    var bytes = std.mem.zeroes([255]u8);
+    const n_bytes = try subdevices[1].sdoRead(
         &port,
-        u32,
-        0x1018,
-        2,
+        &bytes,
+        0x100A,
+        0,
         3000,
         10_000,
     );
-    std.log.warn("got 0x{x}", .{res});
+    std.log.warn("got {s}", .{bytes[0..n_bytes]});
 }

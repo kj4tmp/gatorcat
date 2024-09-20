@@ -10,13 +10,13 @@ const nic = @import("../nic.zig");
 pub const server = @import("coe/server.zig");
 pub const client = @import("coe/client.zig");
 
-// TODO: support more than expedited reads
+pub fn sdoWrite() !void {}
 
+// TODO: support segmented reads
 /// Read the SDO from the subdevice into a buffer.
 ///
-/// Returns error if the data is too large for the buffer.
 /// Returns number of bytes written on success.
-pub fn sdoReadSlice(
+pub fn sdoRead(
     port: *nic.Port,
     station_address: u16,
     index: u16,
@@ -31,9 +31,6 @@ pub fn sdoReadSlice(
     mbx_out_length: u16,
     diag: ?*mailbox.InContent,
 ) !usize {
-
-    // comptime assert(wire.packedSize(packed_type) > 0);
-    // comptime assert(wire.packedSize(packed_type) < 5);
     assert(cnt != 0);
     assert(mbx_in_start_addr != 0);
     assert(mbx_in_length <= mailbox.max_size);
@@ -132,14 +129,16 @@ pub fn sdoReadSlice(
         .normal => {
             assert(in_content == .coe);
             assert(in_content.coe == .normal);
-            return error.NotImplemented;
+
+            const data: []u8 = in_content.coe.normal.data.slice();
+            try writer.writeAll(data);
+            if (in_content.coe.normal.complete_size > data.len) {
+                continue :state .request_segment;
+            }
+            return fbs.getWritten().len;
         },
-        .request_segment => {
-            return error.NotImplemented;
-        },
-        .segment => {
-            return error.NotImplemented;
-        },
+        .request_segment => return error.NotImplemented,
+        .segment => return error.NotImplemented,
         .read_mbx_segment => return error.NotImplemented,
     }
     unreachable;

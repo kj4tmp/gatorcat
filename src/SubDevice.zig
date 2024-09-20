@@ -436,12 +436,12 @@ pub fn transitionIP(
 pub fn sdoRead(
     self: *SubDevice,
     port: *nic.Port,
-    comptime T: type,
+    out: []u8,
     index: u16,
     subindex: u8,
     recv_timeout_us: u32,
     mbx_timeout_us: u32,
-) !T {
+) !usize {
     const info = self.runtime_info.info orelse return error.InvalidRuntimeInfo;
     const station_address = self.runtime_info.station_address orelse return error.InvalidRuntimeInfo;
 
@@ -451,13 +451,12 @@ pub fn sdoRead(
         info.std_send_mbx_size == 0) return error.CoENotSupported;
 
     // TODO: support customizable mailbox configuration?
-    var bytes = std.mem.zeroes([4]u8);
-    _ = try coe.sdoReadSlice(
+    return coe.sdoRead(
         port,
         station_address,
         index,
         subindex,
-        &bytes,
+        out,
         recv_timeout_us,
         mbx_timeout_us,
         self.runtime_info.nextCnt(),
@@ -467,5 +466,4 @@ pub fn sdoRead(
         info.std_send_mbx_size,
         null,
     );
-    return wire.packFromECat(T, bytes);
 }

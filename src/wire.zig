@@ -12,12 +12,12 @@ pub fn packedSize(comptime T: type) comptime_int {
 pub fn isECatPackable(comptime T: type) bool {
     if (@bitSizeOf(T) % 8 != 0) return false;
     return switch (@typeInfo(T)) {
-        .Struct => |_struct| blk: {
+        .@"struct" => |_struct| blk: {
             // must be a packed struct
             break :blk (_struct.layout == .@"packed");
         },
-        .Int, .Float => true,
-        .Union => |_union| blk: {
+        .int, .float => true,
+        .@"union" => |_union| blk: {
             // must be a packed union
             break :blk (_union.layout == .@"packed");
         },

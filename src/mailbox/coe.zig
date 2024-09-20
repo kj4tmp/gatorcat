@@ -29,6 +29,7 @@ pub fn sdoReadSlice(
     mbx_in_length: u16,
     mbx_out_start_addr: u16,
     mbx_out_length: u16,
+    diag: ?*mailbox.InContent,
 ) !usize {
 
     // comptime assert(wire.packedSize(packed_type) > 0);
@@ -41,23 +42,21 @@ pub fn sdoReadSlice(
     assert(mbx_out_length <= mailbox.max_size);
     assert(mbx_out_length >= mailbox.min_size);
 
-    var timer = Timer.start() catch unreachable;
-
     var fbs = std.io.fixedBufferStream(out);
     const writer = fbs.writer();
 
+    var in_content: mailbox.InContent = undefined;
     const State = enum {
-        start_send_upload_request,
-        send_upload_segment_request,
+        send_read_request,
         read_mbx,
-        parse_expedited_response,
-        parse_segmented_response,
-        retry_request,
+        expedited,
+        normal,
+        segment,
+        request_segment,
+        read_mbx_segment,
     };
-
-    var in_content: InContent = undefined;
-    state: switch (State.start_send_upload_request) {
-        .start_send_upload_request => {
+    state: switch (State.send_read_request) {
+        .send_read_request => {
             // The coding of a normal and expedited upload request is identical.
             // We issue and upload request and the server may respond with an
             // expedited, normal, or segmented response. The server will respond
@@ -74,19 +73,15 @@ pub fn sdoReadSlice(
                     ),
                 },
             };
-            mailbox.writeMailboxOut(
+            try mailbox.writeMailboxOut(
                 port,
                 station_address,
                 recv_timeout_us,
                 mbx_out_start_addr,
                 mbx_out_length,
                 request,
-            ) catch |err| switch (err) {
-                error.InvalidParameterContentTooLarge => unreachable,
-                else => |err_subset| return err_subset,
-            };
-
-            // continue :state .read_mbx
+            );
+            continue :state .read_mbx;
         },
 
         .read_mbx => {
@@ -99,54 +94,55 @@ pub fn sdoReadSlice(
                 mbx_timeout_us,
             );
 
-            if (in_content != .coe) return error.WrongProtocol;
+            if (in_content != .coe) {
+                if (diag) |diag_ptr| {
+                    diag_ptr.* = in_content;
+                }
+                return error.WrongProtocol;
+            }
             switch (in_content.coe) {
-                .abort => return error.Aborted,
-                .expedited => continue .parse_expedited_response,
-                .segment => continue
+                .abort => {
+                    if (diag) |diag_ptr| {
+                        diag_ptr.* = in_content;
+                    }
+                    return error.Aborted;
+                },
+                .expedited => continue :state .expedited,
+                .segment => {
+                    if (diag) |diag_ptr| {
+                        diag_ptr.* = in_content;
+                    }
+                    return error.UnexpectedSegment;
+                },
+                .normal => continue :state .normal,
+                .emergency => {
+                    if (diag) |diag_ptr| {
+                        diag_ptr.* = in_content;
+                    }
+                    return error.Emergency;
+                },
             }
-
-            /// WIP
         },
+        .expedited => {
+            assert(in_content == .coe);
+            assert(in_content.coe == .expedited);
+            try writer.writeAll(in_content.coe.expedited.data.slice());
+            return fbs.getWritten().len;
+        },
+        .normal => {
+            assert(in_content == .coe);
+            assert(in_content.coe == .normal);
+            return error.NotImplemented;
+        },
+        .request_segment => {
+            return error.NotImplemented;
+        },
+        .segment => {
+            return error.NotImplemented;
+        },
+        .read_mbx_segment => return error.NotImplemented,
     }
-
-    while (timer.read() < mbx_timeout_us * ns_per_us) {
-        const response = mailbox.readMailboxIn(
-            port,
-            station_address,
-            recv_timeout_us,
-            mbx_in_start_addr,
-            mbx_in_length,
-        ) catch |err| {
-            switch (err) {
-                error.LinkError => return error.LinkError,
-                error.TransactionContention => continue,
-                error.RecvTimeout => continue,
-                error.CurruptedFrame => continue,
-                error.Wkc => continue,
-                error.Empty => continue,
-                error.InvalidMbxContent => return error.InvalidMbxContent,
-                error.NotImplemented => return error.NotImplemented,
-                error.InvalidMbxConfiguration => return error.InvalidMbxConfiguration,
-            }
-        };
-        // TODO: handle emergency messages
-        // TODO: handle eoe?
-
-        if (response != .coe) {
-            return error.WrongProtocol;
-        }
-
-        switch (response.coe) {
-            .expedited => {
-                try writer.writeAll(response.coe.expedited.data.slice());
-            },
-            else => unreachable,
-        }
-
-        std.log.warn("time req: {}us", .{timer.read() / ns_per_us});
-        return fbs.getWritten().len;
-    } else return error.MbxTimeout;
+    unreachable;
 }
 
 /// MailboxOut Content for CoE

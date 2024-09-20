@@ -11,6 +11,11 @@ const wire = @import("wire.zig");
 
 pub const coe = @import("mailbox/coe.zig");
 
+/// Write to mailbox out (write data from maindevice to subdevice mailbox).
+///
+/// You must ensure that the size of the content will fit in the mailbox size
+/// specified.
+/// The mailbox configuration is checked against the provided parameters.
 pub fn writeMailboxOut(
     port: *nic.Port,
     station_address: u16,
@@ -47,17 +52,23 @@ pub fn writeMailboxOut(
     }
 
     // Mailbox out full?
-    if (act_mbx_out.status.mailbox_full) return error.Full;
+    // This is an error since it should almost never happen.
+    // If it happens it is an indication of incorrect use of this function
+    // or malfunctioning subdevice.
+    if (act_mbx_out.status.mailbox_full) return error.MbxOutFull;
 
     var buf = std.mem.zeroes([max_size]u8);
+
+    // impossible to contruct OutContent that is too large
     const size = content.serialize(&buf) catch |err| switch (err) {
-        error.NoSpaceLeft => return error.InvalidParameterContentTooLarge,
+        error.NoSpaceLeft => unreachable,
     };
     assert(size > 0);
 
-    if (size > act_mbx_out.length) return error.ContentTooLargeForMailbox;
+    // you should know the size of the mailbox when calling this function
+    // and you should ensure that the data will fit.
+    if (size > act_mbx_out.length) unreachable;
 
-    // The mailbox
     try commands.fpwrWkc(
         port,
         .{
@@ -90,32 +101,33 @@ pub fn readMailboxInTimeout(
         error.TimerUnsupported => unreachable,
     };
 
-    while (timer.read() < timeout_us * ns_per_us) {
-        return readMailboxIn(
+    while (timer.read() < mbx_timeout_us * ns_per_us) {
+        if (try readMailboxIn(
             port,
             station_address,
             recv_timeout_us,
             mbx_in_start_addr,
             mbx_in_length,
-        ) catch |err| switch (err) {
-            error.CurruptedFrame => continue,
-            error.FrameSerializationFailure => |this_err| return this_err,
-            error.LinkError => return error.LinkError,
-            error.TransactionContention => return error.TransactionContention,
-            error.RecvTimeout => continue,
-        };
+        )) |in_content| {
+            return in_content;
+        }
     } else {
         return error.MbxTimeout;
     }
 }
 
+/// Read mailbox in (communications from subdevice to maindevice).
+///
+/// Returns null if mailbox is empty.
+///
+/// The mailbox configuration is checked against the provided parameters.
 pub fn readMailboxIn(
     port: *nic.Port,
     station_address: u16,
     recv_timeout_us: u32,
     mbx_in_start_addr: u16,
     mbx_in_length: u16,
-) !InContent {
+) !?InContent {
     assert(mbx_in_start_addr != 0);
     assert(mbx_in_length <= max_size);
     assert(mbx_in_length >= min_size);
@@ -147,7 +159,7 @@ pub fn readMailboxIn(
     }
 
     // Mialbox empty?
-    if (!act_mbx_in.status.mailbox_full) return error.Empty;
+    if (!act_mbx_in.status.mailbox_full) return null;
 
     var buf = std.mem.zeroes([max_size]u8);
     try commands.fprdWkc(

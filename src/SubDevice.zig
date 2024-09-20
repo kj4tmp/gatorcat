@@ -446,23 +446,18 @@ pub fn sdoRead(
     const station_address = self.runtime_info.station_address orelse return error.InvalidRuntimeInfo;
 
     // subdevice supports CoE?
-    if (!info.mbx_protocol.CoE) return error.CoENotSupported;
-
-    // bad mailbox configuration?
-    if (info.std_recv_mbx_size == 0 or
-        info.std_send_mbx_size == 0)
-    {
-        return error.InvalidSubdeviceInfo;
-    }
+    if (!info.mbx_protocol.CoE or
+        info.std_recv_mbx_size == 0 or
+        info.std_send_mbx_size == 0) return error.CoENotSupported;
 
     // TODO: support customizable mailbox configuration?
-
-    return coe.sdoRead(
+    var bytes = std.mem.zeroes([4]u8);
+    _ = try coe.sdoReadSlice(
         port,
         station_address,
         index,
         subindex,
-        T,
+        &bytes,
         recv_timeout_us,
         mbx_timeout_us,
         self.runtime_info.nextCnt(),
@@ -470,5 +465,7 @@ pub fn sdoRead(
         info.std_send_mbx_size,
         info.std_recv_mbx_offset,
         info.std_send_mbx_size,
+        null,
     );
+    return wire.packFromECat(T, bytes);
 }

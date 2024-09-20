@@ -42,8 +42,8 @@ pub const Port = struct {
             std.mem.nativeToBig(u32, ETH_P_ETHERCAT),
         );
         var timeout_rcv = std.posix.timeval{
-            .tv_sec = 0,
-            .tv_usec = 1,
+            .sec = 0,
+            .usec = 1,
         };
         try std.posix.setsockopt(
             socket,
@@ -53,8 +53,8 @@ pub const Port = struct {
         );
 
         var timeout_snd = std.posix.timeval{
-            .tv_sec = 0,
-            .tv_usec = 1,
+            .sec = 0,
+            .usec = 1,
         };
         try std.posix.setsockopt(
             socket,

@@ -433,6 +433,46 @@ pub fn transitionIP(
     std.log.info("    DCSupported: {}", .{self.runtime_info.dl_info.?.DCSupported});
 }
 
+pub fn sdoWrite(
+    self: *SubDevice,
+    port: *nic.Port,
+    buf: []const u8,
+    index: u16,
+    subindex: u8,
+    complete_access: bool,
+    recv_timeout_us: u32,
+    mbx_timeout_us: u32,
+) !void {
+    const info = self.runtime_info.info orelse return error.InvalidRuntimeInfo;
+    const station_address = self.runtime_info.station_address orelse return error.InvalidRuntimeInfo;
+    const sms = self.runtime_info.sms orelse return error.InvalidRuntimeInfo;
+
+    // subdevice supports CoE?
+    if (!info.mbx_protocol.CoE or
+        sms.SM0.physical_start_address == 0 or
+        sms.SM0.length == 0 or
+        sms.SM1.physical_start_address == 0 or
+        sms.SM1.length == 0) return error.CoENotSupported;
+
+    return try coe.sdoWrite(
+        port,
+        station_address,
+        index,
+        subindex,
+        complete_access,
+        buf,
+        recv_timeout_us,
+        mbx_timeout_us,
+        self.runtime_info.nextCnt(), // SM1 is mailbox in
+        sms.SM1.physical_start_address,
+        sms.SM1.length,
+        // SM0 is mailbox out
+        sms.SM0.physical_start_address,
+        sms.SM0.length,
+        null,
+    );
+}
+
 pub fn sdoRead(
     self: *SubDevice,
     port: *nic.Port,
@@ -454,7 +494,7 @@ pub fn sdoRead(
         sms.SM1.physical_start_address == 0 or
         sms.SM1.length == 0) return error.CoENotSupported;
 
-    return coe.sdoRead(
+    return try coe.sdoRead(
         port,
         station_address,
         index,

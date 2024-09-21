@@ -36,9 +36,18 @@ pub fn main() !void {
     try main_device.busPREOP();
     //try main_device.busSAFEOP();
 
-    // read product code from EL3314 (should be 0xcf23052)
-    // const res2 = try ecm.mailbox.readMailboxIn(&port, 0x1001, 3000);
-    // std.log.warn("got {}", .{res2});
+    // config EL3314 for high resolution mode
+
+    try subdevices[1].sdoWrite(
+        &port,
+        &.{2},
+        0x8000,
+        0x2,
+        false,
+        3000,
+        10_000,
+    );
+
     var bytes = std.mem.zeroes([255]u8);
     const n_bytes = try subdevices[1].sdoRead(
         &port,

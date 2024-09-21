@@ -199,8 +199,9 @@ pub const Normal = struct {
         complete_access: bool,
         complete_size: u32,
         data: []const u8,
-    ) !Normal {
+    ) Normal {
         assert(cnt != 0);
+        assert(data.len <= data_max_size);
         if (complete_access) {
             assert(subindex == 1 or subindex == 0);
         }
@@ -227,10 +228,10 @@ pub const Normal = struct {
                 .subindex = subindex,
             },
             .complete_size = complete_size,
-            .data = try std.BoundedArray(
+            .data = std.BoundedArray(
                 u8,
                 data_max_size,
-            ).fromSlice(data),
+            ).fromSlice(data) catch unreachable,
         };
     }
 
@@ -270,6 +271,18 @@ pub const Normal = struct {
         return fbs.getWritten().len;
     }
 
+    /// Get the maximum size of data that can be transfered
+    /// in a single mailbox transfer given the size of the mailbox.
+    pub fn dataMaxSizeForMailbox(mbx_size: u16) u16 {
+        assert(mbx_size <= mailbox.max_size);
+        assert(mbx_size >= mailbox.min_size);
+
+        return mbx_size - @divExact(@bitSizeOf(mailbox.Header), 8) -
+            @divExact(@bitSizeOf(coe.Header), 8) -
+            @divExact(@bitSizeOf(SDOHeader), 8) -
+            @divExact(@bitSizeOf(u32), 8);
+    }
+
     comptime {
         assert(data_max_size ==
             mailbox.max_size -
@@ -281,7 +294,7 @@ pub const Normal = struct {
 };
 
 test "serialize deserialize SDO client normal" {
-    const expected = try Normal.initDownloadRequest(
+    const expected = Normal.initDownloadRequest(
         2,
         1000,
         1,

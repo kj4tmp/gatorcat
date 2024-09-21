@@ -10,10 +10,176 @@ const nic = @import("../nic.zig");
 pub const server = @import("coe/server.zig");
 pub const client = @import("coe/client.zig");
 
-// pub fn sdoWrite() !void {
-//     port: *nic.Port,
+pub fn sdoWrite(
+    port: *nic.Port,
+    station_address: u16,
+    index: u16,
+    subindex: u8,
+    complete_access: bool,
+    buf: []const u8,
+    recv_timeout_us: u32,
+    mbx_timeout_us: u32,
+    cnt: u3,
+    mbx_in_start_addr: u16,
+    mbx_in_length: u16,
+    mbx_out_start_addr: u16,
+    mbx_out_length: u16,
+    diag: ?*mailbox.InContent,
+) !void {
+    assert(cnt != 0);
+    if (complete_access) {
+        assert(subindex == 1 or subindex == 0);
+    }
+    assert(buf.len > 0);
+    assert(buf.len <= std.math.maxInt(u32));
+    // Valid mailbox configuration?
+    assert(mbx_in_start_addr != 0);
+    assert(mbx_in_length <= mailbox.max_size);
+    assert(mbx_in_length >= mailbox.min_size);
+    assert(mbx_out_start_addr != 0);
+    assert(mbx_out_length <= mailbox.max_size);
+    assert(mbx_out_length >= mailbox.min_size);
 
-// }
+    // var fbs = std.io.fixedBufferStream(buf);
+
+    const State = enum {
+        start,
+        send_expedited_request,
+        send_normal_request,
+        // send_first_segment,
+        read_mbx,
+        // read_mbx_first_segment,
+    };
+
+    // var subdevice_cnt: ?u3 = null;
+    state: switch (State.start) {
+        .start => {
+            if (buf.len < 5) continue :state .send_expedited_request;
+
+            if (buf.len <= client.Normal.dataMaxSizeForMailbox(mbx_out_length)) {
+                continue :state .send_normal_request;
+            } else {
+                return error.NotImplemented;
+                // continue :state .send_first_segment;
+            }
+        },
+        .send_expedited_request => {
+            assert(buf.len < 5);
+
+            const out_content = OutContent{ .expedited = client.Expedited.initDownloadRequest(
+                cnt,
+                index,
+                subindex,
+                complete_access,
+                buf,
+            ) };
+
+            try mailbox.writeMailboxOut(
+                port,
+                station_address,
+                recv_timeout_us,
+                mbx_out_start_addr,
+                mbx_out_length,
+                .{ .coe = out_content },
+            );
+            continue :state .read_mbx;
+        },
+        .send_normal_request => {
+            assert(buf.len > 4);
+            assert(buf.len <= client.Normal.dataMaxSizeForMailbox(mbx_out_length));
+
+            const out_content = OutContent{ .normal = client.Normal.initDownloadRequest(
+                cnt,
+                index,
+                subindex,
+                complete_access,
+                @intCast(buf.len),
+                buf,
+            ) };
+
+            try mailbox.writeMailboxOut(
+                port,
+                station_address,
+                recv_timeout_us,
+                mbx_out_start_addr,
+                mbx_out_length,
+                .{ .coe = out_content },
+            );
+            continue :state .read_mbx;
+        },
+        // .send_first_segment => {
+        // assert(buf.size > 4);
+        // const max_segment_size = client.normal.dataMaxSizeForMailbox(mbx_out_length);
+        // assert(buf.size > max_segment_size);
+        // assert(fbs.getPos() catch unreachable == 0);
+
+        // const out_content = OutContent{ .normal = client.Normal.initDownloadRequest(
+        //     cnt,
+        //     index,
+        //     subindex,
+        //     complete_access,
+        //     buf.size,
+        //     buf[fbs.getPos() catch unreachable .. max_segment_size],
+        // ) };
+        // try mailbox.writeMailboxOut(
+        //     port,
+        //     station_address,
+        //     recv_timeout_us,
+        //     mbx_out_start_addr,
+        //     mbx_out_length,
+        //     .{ .coe = out_content },
+        // );
+
+        // fbs.seekBy(max_segment_size) catch unreachable;
+
+        // continue :state .read_mbx_first_segment;
+        // },
+        .read_mbx => {
+            const in_content = try mailbox.readMailboxInTimeout(
+                port,
+                station_address,
+                recv_timeout_us,
+                mbx_in_start_addr,
+                mbx_in_length,
+                mbx_timeout_us,
+            );
+
+            if (in_content != .coe) {
+                if (diag) |diag_ptr| {
+                    diag_ptr.* = in_content;
+                }
+                return error.WrongProtocol;
+            }
+            switch (in_content.coe) {
+                .abort => {
+                    if (diag) |diag_ptr| {
+                        diag_ptr.* = in_content;
+                    }
+                    return error.Aborted;
+                },
+                .segment => {
+                    if (diag) |diag_ptr| {
+                        diag_ptr.* = in_content;
+                    }
+                    return error.UnexpectedSegment;
+                },
+                .normal => {
+                    if (diag) |diag_ptr| {
+                        diag_ptr.* = in_content;
+                    }
+                    return error.UnexpectedNormal;
+                },
+                .emergency => {
+                    if (diag) |diag_ptr| {
+                        diag_ptr.* = in_content;
+                    }
+                    return error.Emergency;
+                },
+                .expedited => return,
+            }
+        },
+    }
+}
 
 // TODO: support segmented reads
 /// Read the SDO from the subdevice into a buffer.

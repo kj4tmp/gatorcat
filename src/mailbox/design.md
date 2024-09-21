@@ -25,13 +25,18 @@ graph TB;
 ### SDO Write State Machine
 
 ```mermaid
-graph TB;  
-    send_write_request -->|expedited| read_mbx_normal;
-    send_write_request -->|normal complete| read_mbx_normal;
-    read_mbx_normal --> success;
-    send_write_request -->|normal incomplete| read_mbx_segment;
-    read_mbx_segment -->|incomplete| send_segment;
-    read_mbx_segment -->|complete|success;
+graph TB;
+    start --> |fits in expedited| send_expedited_request;
+    send_expedited_request --> read_mbx;
+    read_mbx --> success
+    start --> |fits in normal| send_normal_request;
+    send_normal_request --> read_mbx;
+    start --> |fits in segmented| send_first_segment;
+    send_first_segment --> read_mbx_first_segment;
+    read_mbx_first_segment --> send_segment;
     send_segment --> read_mbx_segment;
+    read_mbx_segment --> |data remaining| send_segment;
+    read_mbx_segment --> |no data remaining| success;
+
 
 ```

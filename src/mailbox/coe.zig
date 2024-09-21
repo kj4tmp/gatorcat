@@ -10,10 +10,10 @@ const nic = @import("../nic.zig");
 pub const server = @import("coe/server.zig");
 pub const client = @import("coe/client.zig");
 
-pub fn sdoWrite() !void {
-    port: *nic.Port,
-    
-}
+// pub fn sdoWrite() !void {
+//     port: *nic.Port,
+
+// }
 
 // TODO: support segmented reads
 /// Read the SDO from the subdevice into a buffer.

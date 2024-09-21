@@ -9,11 +9,13 @@ pub const std_options = .{
 const beckhoff_EK1100 = ecm.SubDevice.PriorInfo{ .vendor_id = 0x2, .product_code = 0x44c2c52, .revision_number = 0x110000 };
 const beckhoff_EL3314 = ecm.SubDevice.PriorInfo{ .vendor_id = 0x2, .product_code = 0xcf23052, .revision_number = 0x120000 };
 const beckhoff_EL3048 = ecm.SubDevice.PriorInfo{ .vendor_id = 0x2, .product_code = 0xbe83052, .revision_number = 0x130000 };
+const beckhoff_EL7041_1000 = ecm.SubDevice.PriorInfo{ .vendor_id = 0x2, .product_code = 0x1b813052, .revision_number = 0x1503e8 };
 
-var subdevices: [3]ecm.SubDevice = .{
+var subdevices: [4]ecm.SubDevice = .{
     ecm.SubDevice.init(beckhoff_EK1100),
     ecm.SubDevice.init(beckhoff_EL3314),
     ecm.SubDevice.init(beckhoff_EL3048),
+    ecm.SubDevice.init(beckhoff_EL7041_1000),
 };
 
 const bus = ecm.MainDevice.BusConfiguration{
@@ -41,11 +43,14 @@ pub fn main() !void {
     const n_bytes = try subdevices[1].sdoRead(
         &port,
         &bytes,
-        0x1601,
-        1,
-        true,
+        0x6000,
+        0x11,
+        false,
         3000,
         10_000,
     );
     std.log.warn("got {} bytes: {x}", .{ n_bytes, bytes[0..n_bytes] });
+    var fbs = std.io.fixedBufferStream(&bytes);
+    const reader = fbs.reader();
+    std.log.warn("got {}", .{try ecm.wire.packFromECatReader(i16, reader)});
 }

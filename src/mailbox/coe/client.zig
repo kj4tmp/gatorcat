@@ -58,11 +58,15 @@ pub const Expedited = packed struct(u128) {
         cnt: u3,
         index: u16,
         subindex: u8,
+        complete_access: bool,
         data: []const u8,
     ) Expedited {
         assert(cnt != 0);
         assert(data.len > 0);
         assert(data.len < 5);
+        if (complete_access) {
+            assert(subindex == 1 or subindex == 0);
+        }
 
         const size: coe.DataSetSize = switch (data.len) {
             1 => .one_octet,
@@ -94,7 +98,7 @@ pub const Expedited = packed struct(u128) {
                 .size_indicator = true,
                 .transfer_type = .expedited,
                 .data_set_size = size,
-                .complete_access = false,
+                .complete_access = complete_access,
                 .command = .initiate_download_request,
                 .index = index,
                 .subindex = subindex,
@@ -111,8 +115,12 @@ pub const Expedited = packed struct(u128) {
         cnt: u3,
         index: u16,
         subindex: u8,
+        complete_access: bool,
     ) Expedited {
         assert(cnt != 0);
+        if (complete_access) {
+            assert(subindex == 1 or subindex == 0);
+        }
         return Expedited{
             .mbx_header = .{
                 .length = 0x0A,
@@ -131,7 +139,7 @@ pub const Expedited = packed struct(u128) {
                 .size_indicator = false,
                 .transfer_type = @enumFromInt(0),
                 .data_set_size = @enumFromInt(0),
-                .complete_access = false,
+                .complete_access = complete_access,
                 .command = .initiate_upload_request,
                 .index = index,
                 .subindex = subindex,
@@ -160,6 +168,7 @@ test "serialize deserialize sdo client expedited" {
         5,
         1234,
         23,
+        false,
         &.{ 1, 2, 3, 4 },
     );
 
@@ -187,10 +196,14 @@ pub const Normal = struct {
         cnt: u3,
         index: u16,
         subindex: u8,
+        complete_access: bool,
         complete_size: u32,
         data: []const u8,
     ) !Normal {
         assert(cnt != 0);
+        if (complete_access) {
+            assert(subindex == 1 or subindex == 0);
+        }
         return Normal{
             .mbx_header = .{
                 .length = @as(u16, @intCast(data.len)) + 10,
@@ -208,7 +221,7 @@ pub const Normal = struct {
                 .size_indicator = true,
                 .transfer_type = .normal,
                 .data_set_size = .four_octets,
-                .complete_access = false,
+                .complete_access = complete_access,
                 .command = .initiate_download_request,
                 .index = index,
                 .subindex = subindex,
@@ -271,7 +284,8 @@ test "serialize deserialize SDO client normal" {
     const expected = try Normal.initDownloadRequest(
         2,
         1000,
-        23,
+        1,
+        true,
         12345,
         &.{ 1, 2, 3 },
     );
@@ -305,7 +319,7 @@ pub const Segment = struct {
         // We must always send a minimum of 7 octets in the data section.
         // The first octets are used and the remaining are padded with zeros.
         const length = @max(10, @as(u16, @intCast(data.len + 3)));
-        const padding_length: usize = @min(7, data.len -| 7);
+        const padding_length: usize = @min(7, 7 -| data.len);
         assert(padding_length <= 7);
 
         const seg_data_size: coe.SegmentDataSize = switch (data.len) {

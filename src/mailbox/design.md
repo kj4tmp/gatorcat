@@ -26,9 +26,9 @@ graph TB;
 
 ```mermaid
 graph TB;  
-    send_write_request -->|expedited| read_mbx;
-    send_write_request -->|normal complete| read_mbx;
-    read_mbx --> success;
+    send_write_request -->|expedited| read_mbx_normal;
+    send_write_request -->|normal complete| read_mbx_normal;
+    read_mbx_normal --> success;
     send_write_request -->|normal incomplete| read_mbx_segment;
     read_mbx_segment -->|incomplete| send_segment;
     read_mbx_segment -->|complete|success;

@@ -439,6 +439,7 @@ pub fn sdoRead(
     out: []u8,
     index: u16,
     subindex: u8,
+    complete_access: bool,
     recv_timeout_us: u32,
     mbx_timeout_us: u32,
 ) !usize {
@@ -456,6 +457,7 @@ pub fn sdoRead(
         station_address,
         index,
         subindex,
+        complete_access,
         out,
         recv_timeout_us,
         mbx_timeout_us,

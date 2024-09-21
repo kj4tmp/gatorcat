@@ -41,10 +41,11 @@ pub fn main() !void {
     const n_bytes = try subdevices[1].sdoRead(
         &port,
         &bytes,
-        0x100A,
-        0,
+        0x1601,
+        1,
+        true,
         3000,
         10_000,
     );
-    std.log.warn("got {s}", .{bytes[0..n_bytes]});
+    std.log.warn("got {} bytes: {x}", .{ n_bytes, bytes[0..n_bytes] });
 }

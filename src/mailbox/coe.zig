@@ -21,6 +21,7 @@ pub fn sdoRead(
     station_address: u16,
     index: u16,
     subindex: u8,
+    complete_access: bool,
     out: []u8,
     recv_timeout_us: u32,
     mbx_timeout_us: u32,
@@ -32,6 +33,9 @@ pub fn sdoRead(
     diag: ?*mailbox.InContent,
 ) !usize {
     assert(cnt != 0);
+    if (complete_access) {
+        assert(subindex == 1 or subindex == 0);
+    }
     assert(mbx_in_start_addr != 0);
     assert(mbx_in_length <= mailbox.max_size);
     assert(mbx_in_length >= mailbox.min_size);
@@ -67,6 +71,7 @@ pub fn sdoRead(
                         cnt,
                         index,
                         subindex,
+                        complete_access,
                     ),
                 },
             };
@@ -236,6 +241,7 @@ test "serialize deserialize mailbox in content" {
             234,
             23,
             4,
+            false,
         ),
     };
 

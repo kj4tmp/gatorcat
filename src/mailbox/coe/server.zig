@@ -51,7 +51,7 @@ pub const SDOHeader = packed struct(u32) {
 /// Client / server language is from CANopen.
 ///
 /// Ref: IEC 61158-6-12:2019 5.6.2.3.1
-pub const SDOSegmentHeaderServer = packed struct {
+pub const SegmentHeader = packed struct {
     more_follows: bool,
     seg_data_size: coe.SegmentDataSize,
     /// shall toggle with every segment, starting with 0x00
@@ -78,8 +78,12 @@ pub const Expedited = struct {
         station_address: u16,
         index: u16,
         subindex: u8,
+        complete_access: bool,
     ) Expedited {
         assert(cnt != 0);
+        if (complete_access) {
+            assert(subindex == 1 or subindex == 0);
+        }
         return Expedited{
             .mbx_header = .{
                 .length = 10,
@@ -97,7 +101,7 @@ pub const Expedited = struct {
                 .size_indicator = false,
                 .transfer_type = .normal,
                 .data_set_size = .four_octets,
-                .complete_access = false,
+                .complete_access = complete_access,
                 .command = .initiate_download_response,
                 .index = index,
                 .subindex = subindex,
@@ -111,11 +115,15 @@ pub const Expedited = struct {
         station_address: u16,
         index: u16,
         subindex: u8,
+        complete_access: bool,
         data: []const u8,
     ) Expedited {
         assert(data.len > 0);
         assert(data.len < 5);
         assert(cnt != 0);
+        if (complete_access) {
+            assert(subindex == 1 or subindex == 0);
+        }
 
         const data_set_size: coe.DataSetSize = switch (data.len) {
             0 => unreachable,
@@ -143,7 +151,7 @@ pub const Expedited = struct {
                 .size_indicator = true,
                 .transfer_type = .expedited,
                 .data_set_size = data_set_size,
-                .complete_access = false,
+                .complete_access = complete_access,
                 .command = .initiate_upload_response,
                 .index = index,
                 .subindex = subindex,
@@ -188,6 +196,7 @@ test "SDO Server Expedited Serialize Deserialize" {
         234,
         23,
         4,
+        false,
     );
 
     var bytes = std.mem.zeroes([mailbox.max_size]u8);
@@ -214,11 +223,15 @@ pub const Normal = struct {
         station_address: u16,
         index: u16,
         subindex: u8,
+        complete_access: bool,
         complete_size: u32,
         data: []const u8,
     ) Normal {
         assert(cnt != 0);
         assert(data.len < data_max_size);
+        if (complete_access) {
+            assert(subindex == 1 or subindex == 0);
+        }
 
         return Normal{
             .mbx_header = .{
@@ -237,7 +250,7 @@ pub const Normal = struct {
                 .size_indicator = true,
                 .transfer_type = .normal,
                 .data_set_size = @enumFromInt(0),
-                .complete_access = false,
+                .complete_access = complete_access,
                 .command = .upload_segment_response,
                 .index = index,
                 .subindex = subindex,
@@ -295,7 +308,8 @@ test "serialize and deserialize sdo server normal" {
         2,
         0,
         1234,
-        12,
+        0,
+        true,
         2345,
         &.{ 1, 2, 3, 4 },
     );
@@ -313,7 +327,7 @@ test "serialize and deserialize sdo server normal" {
 pub const Segment = struct {
     mbx_header: mailbox.Header,
     coe_header: coe.Header,
-    seg_header: SDOSegmentHeaderServer,
+    seg_header: SegmentHeader,
     data: std.BoundedArray(u8, data_max_size),
 
     const data_max_size = mailbox.max_size - 9;
@@ -345,12 +359,12 @@ pub const Segment = struct {
                 .toggle = toggle,
                 .command = .download_segment_response,
             },
+            // the serialize and deserialize methods will handle
+            // the required seven padding bytes
             .data = std.BoundedArray(
                 u8,
                 data_max_size,
-            ).fromSlice(
-                &.{ 0, 0, 0, 0, 0, 0, 0 },
-            ) catch unreachable,
+            ).init(0) catch unreachable,
         };
     }
 
@@ -362,11 +376,9 @@ pub const Segment = struct {
         data: []const u8,
     ) Segment {
         assert(cnt != 0);
-        assert(data.len < data_max_size);
+        assert(data.len <= data_max_size);
 
         const length = @max(10, @as(u16, @intCast(data.len + 3)));
-        const padding_length: usize = @min(7, data.len -| 7);
-        assert(padding_length <= 7);
 
         const seg_data_size: coe.SegmentDataSize = switch (data.len) {
             0 => .zero_octets,
@@ -378,13 +390,6 @@ pub const Segment = struct {
             6 => .six_octets,
             else => .seven_octets,
         };
-
-        var temp_data = std.BoundedArray(
-            u8,
-            data_max_size,
-        ).fromSlice(data) catch unreachable;
-        temp_data.appendNTimes(@as(u8, 0), padding_length) catch unreachable;
-        assert(temp_data.len >= 7);
 
         return Segment{
             .mbx_header = .{
@@ -405,16 +410,20 @@ pub const Segment = struct {
                 .toggle = toggle,
                 .command = .upload_segment_response,
             },
-            .data = temp_data,
+            // the serialize and deserialize methods will handle
+            // the sometimes required seven padding bytes
+            .data = std.BoundedArray(
+                u8,
+                data_max_size,
+            ).fromSlice(data) catch unreachable,
         };
     }
-
     pub fn deserialize(buf: []const u8) !Segment {
         var fbs = std.io.fixedBufferStream(buf);
         const reader = fbs.reader();
         const mbx_header = try wire.packFromECatReader(mailbox.Header, reader);
         const coe_header = try wire.packFromECatReader(coe.Header, reader);
-        const seg_header = try wire.packFromECatReader(SDOSegmentHeaderServer, reader);
+        const seg_header = try wire.packFromECatReader(SegmentHeader, reader);
 
         var data_size: usize = 0;
         if (mbx_header.length < 10) {
@@ -435,7 +444,7 @@ pub const Segment = struct {
             data_size = mbx_header.length - 3;
             assert(data_size == mbx_header.length -
                 @divExact(@bitSizeOf(coe.Header), 8) -
-                @divExact(@bitSizeOf(SDOSegmentHeaderServer), 8));
+                @divExact(@bitSizeOf(SegmentHeader), 8));
         }
         var data = try std.BoundedArray(u8, data_max_size).init(data_size);
         try reader.readNoEof(data.slice());
@@ -455,6 +464,13 @@ pub const Segment = struct {
         try wire.eCatFromPackToWriter(self.coe_header, writer);
         try wire.eCatFromPackToWriter(self.seg_header, writer);
         try writer.writeAll(self.data.slice());
+        const padding_length: usize = @min(7, 7 -| self.data.len);
+        assert(padding_length <= 7);
+        try writer.writeByteNTimes(0, padding_length);
+        assert(fbs.getWritten().len >=
+            wire.packedSize(mailbox.Header) +
+            wire.packedSize(coe.Header) +
+            wire.packedSize(SegmentHeader) + 7);
         return fbs.getWritten().len;
     }
 
@@ -462,7 +478,7 @@ pub const Segment = struct {
         assert(data_max_size == mailbox.max_size -
             @divExact(@bitSizeOf(mailbox.Header), 8) -
             @divExact(@bitSizeOf(coe.Header), 8) -
-            @divExact(@bitSizeOf(SDOSegmentHeaderServer), 8));
+            @divExact(@bitSizeOf(SegmentHeader), 8));
         assert(data_max_size >= 7);
     }
 };
@@ -477,7 +493,22 @@ test "serialize and deserialize sdo server segment" {
     );
     var bytes = std.mem.zeroes([mailbox.max_size]u8);
     const byte_size = try expected.serialize(&bytes);
-    try std.testing.expectEqual(@as(usize, 6 + 2 + 5), byte_size);
+    try std.testing.expectEqual(@as(usize, 6 + 2 + 8), byte_size);
+    const actual = try Segment.deserialize(&bytes);
+    try std.testing.expectEqualDeep(expected, actual);
+}
+
+test "serialize and deserialize sdo server segment longer than 7 bytes" {
+    const expected = Segment.initUploadResponse(
+        2,
+        0,
+        false,
+        false,
+        &.{ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13 },
+    );
+    var bytes = std.mem.zeroes([mailbox.max_size]u8);
+    const byte_size = try expected.serialize(&bytes);
+    try std.testing.expectEqual(@as(usize, 6 + 2 + 14), byte_size);
     const actual = try Segment.deserialize(&bytes);
     try std.testing.expectEqualDeep(expected, actual);
 }

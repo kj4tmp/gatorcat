@@ -10,12 +10,20 @@ const nic = @import("../nic.zig");
 pub const server = @import("coe/server.zig");
 pub const client = @import("coe/client.zig");
 
-pub fn sdoWrite() !void {}
+pub fn sdoWrite() !void {
+    port: *nic.Port,
+    
+}
 
 // TODO: support segmented reads
 /// Read the SDO from the subdevice into a buffer.
 ///
 /// Returns number of bytes written on success.
+///
+/// Rather weirdly, it appears that complete access = true and subindex 0
+/// will return two bytes for subindex 0, which is given type u8 in the
+/// the beckhoff manuals.
+/// You should probably just use complete access = true, subindex 1.
 pub fn sdoRead(
     port: *nic.Port,
     station_address: u16,
@@ -36,6 +44,7 @@ pub fn sdoRead(
     if (complete_access) {
         assert(subindex == 1 or subindex == 0);
     }
+    // Valid mailbox configuration?
     assert(mbx_in_start_addr != 0);
     assert(mbx_in_length <= mailbox.max_size);
     assert(mbx_in_length >= mailbox.min_size);

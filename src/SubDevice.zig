@@ -445,13 +445,15 @@ pub fn sdoRead(
 ) !usize {
     const info = self.runtime_info.info orelse return error.InvalidRuntimeInfo;
     const station_address = self.runtime_info.station_address orelse return error.InvalidRuntimeInfo;
+    const sms = self.runtime_info.sms orelse return error.InvalidRuntimeInfo;
 
     // subdevice supports CoE?
     if (!info.mbx_protocol.CoE or
-        info.std_recv_mbx_size == 0 or
-        info.std_send_mbx_size == 0) return error.CoENotSupported;
+        sms.SM0.physical_start_address == 0 or
+        sms.SM0.length == 0 or
+        sms.SM1.physical_start_address == 0 or
+        sms.SM1.length == 0) return error.CoENotSupported;
 
-    // TODO: support customizable mailbox configuration?
     return coe.sdoRead(
         port,
         station_address,
@@ -462,10 +464,12 @@ pub fn sdoRead(
         recv_timeout_us,
         mbx_timeout_us,
         self.runtime_info.nextCnt(),
-        info.std_send_mbx_offset,
-        info.std_send_mbx_size,
-        info.std_recv_mbx_offset,
-        info.std_send_mbx_size,
+        // SM1 is mailbox in
+        sms.SM1.physical_start_address,
+        sms.SM1.length,
+        // SM0 is mailbox out
+        sms.SM0.physical_start_address,
+        sms.SM0.length,
         null,
     );
 }

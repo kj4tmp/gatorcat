@@ -68,15 +68,21 @@ This library is in extremely early development.
       - [s] Emergency Request
   - [x] Read mailbox in (subdevice to maindevice communication)
   - [x] Write mailbox out (maindevice to subdevice communication)
-  - [ ] SDO Read Expedited
-  - [ ] SDO Read Normal
-  - [ ] SDO Read Complete Access
-  - [ ] SDO Write Expedited
-  - [ ] SDO Write Normal
-  - [ ] SDO Write Complete Access
+  - [ ] SDO Read
+    - [x] Expedited
+    - [x] Normal
+    - [ ] Segmented
+    - [x] Complete Access
+  - [ ] SDO Write
+    - [ ] Expedited
+    - [ ] Normal
+    - [ ] Segmented
+    - [ ] Complete Access
+  - [ ] Dispatch protocols (EoE)
   - [ ] SDO Errors
   - [ ] Emergency Messages
   - [ ] SDO Startup Parameters
+- [ ] EoE
 - [ ] Configuration
   - [ ] INIT
     - [x] Wipe FMMUs.

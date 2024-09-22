@@ -2,11 +2,13 @@
 
 ## CoE
 
-### SDO Read State Machiine
-
 > Ref: IEC 61158-5-12:2019 6.1.4.1.3 SDO Interactions
+>
+> The resilient mailbox state machine(RMSM) is not implemented.
+>
+> Ref: IEC 61158-4-12:2019 A.3.1
 
-Repeat requests are not implemented for simplicity.
+### SDO Read State Machiine
 
 ```mermaid
 graph TB;

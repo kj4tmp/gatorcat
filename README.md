@@ -43,7 +43,7 @@ This library is in extremely early development.
   - [x] Read SII EEPROM
   - [ ] Write SII EEPROM
 - [ ] CoE
-  - [ ] CoE Structures
+  - [x] CoE Structures
     - [x] SDO Client
       - [x] Expedited
         - [x] Upload
@@ -74,10 +74,10 @@ This library is in extremely early development.
     - [ ] Segmented
     - [x] Complete Access
   - [ ] SDO Write
-    - [ ] Expedited
-    - [ ] Normal
+    - [x] Expedited
+    - [x] Normal
     - [ ] Segmented
-    - [ ] Complete Access
+    - [x] Complete Access
   - [ ] Dispatch protocols (EoE)
   - [ ] SDO Errors
   - [ ] Emergency Messages

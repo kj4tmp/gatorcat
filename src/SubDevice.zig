@@ -454,6 +454,13 @@ pub fn sdoWrite(
         sms.SM1.physical_start_address == 0 or
         sms.SM1.length == 0) return error.CoENotSupported;
 
+    // supports complete access?
+    if (self.runtime_info.general) |general| {
+        if (!general.coe_details.enable_SDO_complete_access and complete_access) {
+            return error.CompleteAccessNotSupported;
+        }
+    }
+
     return try coe.sdoWrite(
         port,
         station_address,
@@ -493,6 +500,13 @@ pub fn sdoRead(
         sms.SM0.length == 0 or
         sms.SM1.physical_start_address == 0 or
         sms.SM1.length == 0) return error.CoENotSupported;
+
+    // supports complete access?
+    if (self.runtime_info.general) |general| {
+        if (!general.coe_details.enable_SDO_complete_access and complete_access) {
+            return error.CompleteAccessNotSupported;
+        }
+    }
 
     return try coe.sdoRead(
         port,

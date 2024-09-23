@@ -14,8 +14,9 @@ const MainDevice = @This();
 
 port: *nic.Port,
 settings: Settings,
-eni: ENI,
+eni: *const ENI,
 subdevices: []SubDevice,
+process_image: []u8,
 
 pub const Settings = struct {
     recv_timeout_us: u32 = 2000,
@@ -26,10 +27,10 @@ pub const Settings = struct {
 pub fn init(
     port: *nic.Port,
     settings: Settings,
-    eni: ENI,
+    eni: *const ENI,
     subdevices: []SubDevice,
+    process_image: []u8,
 ) MainDevice {
-    assert(eni.subdevices.len > 0); // no subdevices  in config
     assert(eni.subdevices.len < 65537); // too many subdevices
 
     for (subdevices[0..eni.subdevices.len], eni.subdevices) |*subdevice, subdevice_config| {
@@ -40,6 +41,7 @@ pub fn init(
         .settings = settings,
         .eni = eni,
         .subdevices = subdevices,
+        .process_image = process_image,
     };
 }
 
@@ -271,7 +273,17 @@ pub fn busPREOP(self: *MainDevice) !void {
 }
 
 pub fn busSAFEOP(self: *MainDevice) !void {
-    _ = self;
+    // perform PS tasks for each subdevice
+    for (self.subdevices[0..self.eni.subdevices.len], self.eni.subdevices) |*subdevice, subdevice_config| {
+        _ = subdevice_config;
+        try subdevice.transitionPS(self.port, self.settings.recv_timeout_us);
+        try subdevice.setALState(
+            self.port,
+            .SAFEOP,
+            30000,
+            self.settings.recv_timeout_us,
+        );
+    }
 }
 
 /// Assign configured station address.

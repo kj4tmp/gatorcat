@@ -37,6 +37,7 @@ pub const CoEStartupParameter = struct {
     direction: Direction,
     index: u16,
     subindex: u8,
+    complete_access: bool,
     data: []const u8,
 
     pub const Direction = enum {
@@ -45,7 +46,7 @@ pub const CoEStartupParameter = struct {
     };
 };
 
-const Transition = enum {
+pub const Transition = enum {
     /// INIT -> PREOP
     IP,
     /// INIT -> SAFEOP

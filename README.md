@@ -148,6 +148,7 @@ This library is in extremely early development.
 3. no exceptions
 4. bitfields
 5. cross-compilation is easy
+6. refactoring between `: *const foo` and `: foo` parameters is generally effortless since the semantics are identical.
 
 ## TODOs
 

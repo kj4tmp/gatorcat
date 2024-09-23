@@ -141,40 +141,6 @@ pub fn setALState(
     unreachable;
 }
 
-/// The maindevice should perform these tasks before commanding the PS transision.
-///
-/// [ ] Set configuration objects via SDO.
-/// [ ] Set RxPDO / TxPDO Assignment.
-/// [ ] Set RxPDO / TxPDO Mapping.
-/// [ ] Set SM2 for outputs.
-/// [ ] Set SM3 for inputs.
-/// [ ] Set FMMU0 (map outputs).
-/// [ ] Set FMMU1 (map inputs).
-///
-/// If DC:
-/// [ ] Configure SYNC/LATCH unit.
-/// [ ] Set SYNC cycle time.
-/// [ ] Set DC start time.
-/// [ ] Set DC SYNC OUT unit.
-/// [ ] Set DC LATCH IN unit.
-/// [ ] Start continuous drift compensation.
-///
-/// Start:
-/// [ ] Cyclic Process Data
-/// [ ] Provide valid inputs
-///
-/// Ref: EtherCAT Device Protocol Poster
-// fn transitionPS(
-//     self: *SubDevice,
-// ) !void {
-//     // if CoE is supported, the subdevice PDOs can be mapped using information
-//     // from CoE. otherwise it can be obtained from the SII.
-//     // Ref: IEC 61158-5-12:2019 6.1.1.1
-
-//     if (self.runtime_info.general) |general|
-
-// }
-
 /// The maindevice should perform these tasks before commanding the IP transition in the subdevice.
 ///
 /// [x] Set configured station address (also called "fixed physical address").
@@ -404,6 +370,73 @@ pub fn transitionIP(
         },
     );
     std.log.info("    DCSupported: {}", .{self.runtime_info.dl_info.?.DCSupported});
+}
+
+/// The maindevice should perform these tasks before commanding the PS transision.
+///
+/// [x] Set configuration objects via SDO.
+/// [ ] Set RxPDO / TxPDO Assignment.
+/// [ ] Set RxPDO / TxPDO Mapping.
+/// [ ] Set SM2 for outputs.
+/// [ ] Set SM3 for inputs.
+/// [ ] Set FMMU0 (map outputs).
+/// [ ] Set FMMU1 (map inputs).
+///
+/// If DC:
+/// [ ] Configure SYNC/LATCH unit.
+/// [ ] Set SYNC cycle time.
+/// [ ] Set DC start time.
+/// [ ] Set DC SYNC OUT unit.
+/// [ ] Set DC LATCH IN unit.
+/// [ ] Start continuous drift compensation.
+///
+/// Start:
+/// [ ] Cyclic Process Data
+/// [ ] Provide valid inputs
+///
+/// Ref: EtherCAT Device Protocol Poster
+pub fn transitionPS(
+    self: *SubDevice,
+    port: *nic.Port,
+    recv_timeout_us: u32,
+) !void {
+    // if CoE is supported, the subdevice PDOs can be mapped using information
+    // from CoE. otherwise it can be obtained from the SII.
+    // Ref: IEC 61158-5-12:2019 6.1.1.1
+
+    try self.doStartupParameters(port, .PS, recv_timeout_us);
+
+    // configure PDOs from SII
+
+    // configure PDOs from CoE
+
+    // TODO: configure PDOs from SoE
+
+}
+
+pub fn doStartupParameters(
+    self: *SubDevice,
+    port: *nic.Port,
+    transition: ENI.Transition,
+    recv_timeout_us: u32,
+) !void {
+    const parameters = self.prior_info.coe_startup_parameters orelse return;
+    for (parameters) |parameter| {
+        // TODO: support reads?
+        if (parameter.transition == transition) {
+            std.log.info("station address: 0x{x}, doing startup parameter: {}", .{ self.prior_info.station_address, parameter });
+
+            try self.sdoWrite(
+                port,
+                parameter.data,
+                parameter.index,
+                parameter.subindex,
+                parameter.complete_access,
+                recv_timeout_us,
+                parameter.timeout_us,
+            );
+        }
+    }
 }
 
 pub fn sdoWrite(

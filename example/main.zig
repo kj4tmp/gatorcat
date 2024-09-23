@@ -11,7 +11,7 @@ const beckhoff_EL3314 = ecm.sii.SubDeviceIdentity{ .vendor_id = 0x2, .product_co
 const beckhoff_EL3048 = ecm.sii.SubDeviceIdentity{ .vendor_id = 0x2, .product_code = 0xbe83052, .revision_number = 0x130000 };
 const beckhoff_EL7041_1000 = ecm.sii.SubDeviceIdentity{ .vendor_id = 0x2, .product_code = 0x1b813052, .revision_number = 0x1503e8 };
 
-var subdevices = [_]ecm.SubDevice{} ** 4;
+var subdevices: [4]ecm.SubDevice = undefined;
 
 const eni = ecm.ENI{
     .subdevices = &.{

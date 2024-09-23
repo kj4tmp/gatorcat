@@ -137,6 +137,7 @@ This library is in extremely early development.
 7. Impossible errors in function return type error sets are not a compile error.
 8. std.Time.Timer can return an error
 9. lazyness of compiler makes it easy to write a lot of code with a lot of errors until you actually use it
+10. I can never get array initialization syntax right with the ** operator.
 
 ### zig wins
 

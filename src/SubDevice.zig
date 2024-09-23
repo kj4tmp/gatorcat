@@ -377,11 +377,10 @@ pub fn transitionIP(
 
     // TODO: require transition to init
 
-    std.log.info("0x{x}: {s}", .{ self.runtime_info.station_address.?, order_id orelse "null" });
+    std.log.info("0x{x}: {s}", .{ station_address, order_id orelse "null" });
     std.log.info("    vendor_id: 0x{x}", .{self.runtime_info.info.?.vendor_id});
     std.log.info("    product_code: 0x{x}", .{self.runtime_info.info.?.product_code});
     std.log.info("    revision_number: 0x{x}", .{self.runtime_info.info.?.revision_number});
-    std.log.info("    autoinc_address: 0x{x}", .{self.runtime_info.autoinc_address.?});
     std.log.info("    protocols: AoE: {}, EoE: {}, CoE: {}, FoE: {}, SoE: {}, VoE: {}", .{
         self.runtime_info.info.?.mbx_protocol.AoE,
         self.runtime_info.info.?.mbx_protocol.EoE,

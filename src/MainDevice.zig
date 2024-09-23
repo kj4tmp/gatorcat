@@ -32,7 +32,7 @@ pub fn init(
     assert(eni.subdevices.len > 0); // no subdevices  in config
     assert(eni.subdevices.len < 65537); // too many subdevices
 
-    for (subdevices, eni.subdevices) |*subdevice, subdevice_config| {
+    for (subdevices[0..eni.subdevices.len], eni.subdevices) |*subdevice, subdevice_config| {
         subdevice.* = SubDevice.init(subdevice_config);
     }
     return MainDevice{
@@ -237,18 +237,14 @@ pub fn busINIT(self: *MainDevice) !void {
 pub fn busPREOP(self: *MainDevice) !void {
 
     // perform IP tasks for each subdevice
-    for (self.subdevices) |*subdevice| {
-        try self.assignStationAddress(subdevice.prior_info.station_address, subdevice.prior_info.ring_position);
+    for (self.subdevices[0..self.eni.subdevices.len], self.eni.subdevices) |*subdevice, subdevice_config| {
+        try self.assignStationAddress(subdevice_config.station_address, subdevice_config.ring_position);
         try subdevice.transitionIP(
             self.port,
             self.settings.retries,
             self.settings.recv_timeout_us,
             self.settings.eeprom_timeout_us,
         );
-    }
-
-    // command PREOP on all subdevices
-    for (self.subdevices) |subdevice| {
         try subdevice.setALState(
             self.port,
             .PREOP,

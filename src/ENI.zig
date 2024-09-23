@@ -6,9 +6,9 @@
 //! to be simpler and easier to define.
 //!
 //! The ENI is constant, and will never be modified by the MainDevice.
-const ENI = @This();
-
 const sii = @import("sii.zig");
+
+const ENI = @This();
 
 subdevices: []const SubDeviceConfiguration,
 

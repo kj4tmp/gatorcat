@@ -6,20 +6,36 @@ pub const std_options = .{
     .log_level = .info,
 };
 
-const beckhoff_EK1100 = ecm.SubDevice.PriorInfo{ .vendor_id = 0x2, .product_code = 0x44c2c52, .revision_number = 0x110000 };
-const beckhoff_EL3314 = ecm.SubDevice.PriorInfo{ .vendor_id = 0x2, .product_code = 0xcf23052, .revision_number = 0x120000 };
-const beckhoff_EL3048 = ecm.SubDevice.PriorInfo{ .vendor_id = 0x2, .product_code = 0xbe83052, .revision_number = 0x130000 };
-const beckhoff_EL7041_1000 = ecm.SubDevice.PriorInfo{ .vendor_id = 0x2, .product_code = 0x1b813052, .revision_number = 0x1503e8 };
+const beckhoff_EK1100 = ecm.sii.SubDeviceIdentity{ .vendor_id = 0x2, .product_code = 0x44c2c52, .revision_number = 0x110000 };
+const beckhoff_EL3314 = ecm.sii.SubDeviceIdentity{ .vendor_id = 0x2, .product_code = 0xcf23052, .revision_number = 0x120000 };
+const beckhoff_EL3048 = ecm.sii.SubDeviceIdentity{ .vendor_id = 0x2, .product_code = 0xbe83052, .revision_number = 0x130000 };
+const beckhoff_EL7041_1000 = ecm.sii.SubDeviceIdentity{ .vendor_id = 0x2, .product_code = 0x1b813052, .revision_number = 0x1503e8 };
 
-var subdevices: [4]ecm.SubDevice = .{
-    ecm.SubDevice.init(beckhoff_EK1100),
-    ecm.SubDevice.init(beckhoff_EL3314),
-    ecm.SubDevice.init(beckhoff_EL3048),
-    ecm.SubDevice.init(beckhoff_EL7041_1000),
-};
+var subdevices = [_]ecm.SubDevice{} ** 4;
 
-const bus = ecm.MainDevice.BusConfiguration{
-    .subdevices = &subdevices,
+const eni = ecm.ENI{
+    .subdevices = &.{
+        .{
+            .identity = beckhoff_EK1100,
+            .station_address = 0x1000,
+            .ring_position = 0,
+        },
+        .{
+            .identity = beckhoff_EL3314,
+            .station_address = 0x1001,
+            .ring_position = 1,
+        },
+        .{
+            .identity = beckhoff_EL3048,
+            .station_address = 0x1002,
+            .ring_position = 2,
+        },
+        .{
+            .identity = beckhoff_EL7041_1000,
+            .station_address = 0x1003,
+            .ring_position = 3,
+        },
+    },
 };
 
 pub fn main() !void {
@@ -29,7 +45,8 @@ pub fn main() !void {
     var main_device = ecm.MainDevice.init(
         &port,
         .{},
-        bus,
+        eni,
+        &subdevices,
     );
 
     try main_device.busINIT();

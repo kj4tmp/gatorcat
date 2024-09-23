@@ -8,16 +8,14 @@ const commands = @import("commands.zig");
 const esc = @import("esc.zig");
 const sii = @import("sii.zig");
 const SubDevice = @import("SubDevice.zig");
+const ENI = @import("ENI.zig");
 
 const MainDevice = @This();
 
 port: *nic.Port,
 settings: Settings,
-bus: BusConfiguration,
-
-pub const BusConfiguration = struct {
-    subdevices: []SubDevice,
-};
+eni: ENI,
+subdevices: []SubDevice,
 
 pub const Settings = struct {
     recv_timeout_us: u32 = 2000,
@@ -28,15 +26,20 @@ pub const Settings = struct {
 pub fn init(
     port: *nic.Port,
     settings: Settings,
-    bus: BusConfiguration,
+    eni: ENI,
+    subdevices: []SubDevice,
 ) MainDevice {
-    assert(bus.subdevices.len > 0); // no subdevices  in config
-    assert(bus.subdevices.len < 65537); // too many subdevices
+    assert(eni.subdevices.len > 0); // no subdevices  in config
+    assert(eni.subdevices.len < 65537); // too many subdevices
 
+    for (subdevices, eni.subdevices) |*subdevice, subdevice_config| {
+        subdevice.* = SubDevice.init(subdevice_config);
+    }
     return MainDevice{
         .port = port,
         .settings = settings,
-        .bus = bus,
+        .eni = eni,
+        .subdevices = subdevices,
     };
 }
 
@@ -206,8 +209,8 @@ pub fn busINIT(self: *MainDevice) !void {
         self.settings.recv_timeout_us,
     );
     std.log.info("detected {} subdevices", .{wkc});
-    if (wkc != self.bus.subdevices.len) {
-        std.log.err("Found {} subdevices, expected {}.", .{ wkc, self.bus.subdevices.len });
+    if (wkc != self.eni.subdevices.len) {
+        std.log.err("Found {} subdevices, expected {}.", .{ wkc, self.eni.subdevices.len });
         return error.WrongNumberOfSubDevices;
     }
 
@@ -234,11 +237,10 @@ pub fn busINIT(self: *MainDevice) !void {
 pub fn busPREOP(self: *MainDevice) !void {
 
     // perform IP tasks for each subdevice
-    for (self.bus.subdevices, 0..) |*subdevice, ring_position| {
+    for (self.subdevices) |*subdevice| {
+        try self.assignStationAddress(subdevice.prior_info.station_address, subdevice.prior_info.ring_position);
         try subdevice.transitionIP(
             self.port,
-            calc_station_addr(@intCast(ring_position)),
-            calc_autoinc_addr(@intCast(ring_position)),
             self.settings.retries,
             self.settings.recv_timeout_us,
             self.settings.eeprom_timeout_us,
@@ -246,7 +248,7 @@ pub fn busPREOP(self: *MainDevice) !void {
     }
 
     // command PREOP on all subdevices
-    for (self.bus.subdevices) |subdevice| {
+    for (self.subdevices) |subdevice| {
         try subdevice.setALState(
             self.port,
             .PREOP,
@@ -276,14 +278,34 @@ pub fn busSAFEOP(self: *MainDevice) !void {
     _ = self;
 }
 
+/// Assign configured station address.
+fn assignStationAddress(self: *MainDevice, station_address: u16, ring_position: u16) !void {
+    const autoinc_address = calc_autoinc_addr(ring_position);
+    const wkc = try commands.apwrPack(
+        self.port,
+        esc.ConfiguredStationAddressRegister{
+            .configured_station_address = station_address,
+        },
+        telegram.PositionAddress{
+            .autoinc_address = autoinc_address,
+            .offset = @intFromEnum(esc.RegisterMap.station_address),
+        },
+        self.settings.recv_timeout_us,
+    );
+    if (wkc != 1) {
+        std.log.err("WKCError on station address config: expected wkc 1, got {}.", .{wkc});
+        return error.WKCError;
+    }
+}
+
 /// Calcuate the auto increment address of a subdevice
 /// for commands which use position addressing.
 ///
 /// The position parameter is the the subdevice's position
 /// in the ethercat bus. 0 is the first subdevice.
-fn calc_autoinc_addr(position: u16) u16 {
+pub fn calc_autoinc_addr(ring_position: u16) u16 {
     var rval: u16 = 0;
-    rval -%= position;
+    rval -%= ring_position;
     return rval;
 }
 
@@ -300,6 +322,6 @@ test "calc_autoinc_addr" {
 ///
 /// The position parameter is the subdevice's position
 /// inthe ethercat bus. 0 is the first subdevice.
-fn calc_station_addr(position: u16) u16 {
+pub fn calc_station_addr(position: u16) u16 {
     return 0x1000 +% position;
 }

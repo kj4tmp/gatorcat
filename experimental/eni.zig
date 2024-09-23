@@ -16,23 +16,6 @@ const EtherType = enum(u16) {
 
 const InitECatCmds = struct { ecat_cmds: []ECatCmd };
 
-const Transition = enum {
-    IP,
-    PS,
-    PI,
-    SP,
-    SO,
-    SI,
-    OS,
-    OP,
-    OI,
-    IB,
-    BI,
-    II,
-    PP,
-    SS,
-};
-
 const ECatCmd = struct {
     transitions: []Transition,
     before_subdevice: ?bool,

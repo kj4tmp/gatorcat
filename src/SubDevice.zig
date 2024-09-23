@@ -11,30 +11,20 @@ const telegram = @import("telegram.zig");
 const wire = @import("wire.zig");
 const coe = @import("mailbox/coe.zig");
 const mailbox = @import("mailbox.zig");
+const ENI = @import("ENI.zig");
 
 runtime_info: RuntimeInfo = .{},
-prior_info: PriorInfo,
+prior_info: ENI.SubDeviceConfiguration,
 
-pub fn init(prior_info: PriorInfo) SubDevice {
+pub fn init(prior_info: ENI.SubDeviceConfiguration) SubDevice {
     return SubDevice{
         .prior_info = prior_info,
     };
 }
 
-pub const PriorInfo = struct {
-    // information required to be entered by user
-    vendor_id: u32,
-    product_code: u32,
-    revision_number: u32,
-};
-
-pub const Transition = enum { IP, PS, PI, SP, SO, SI, OS, OP, OI, IB, BI, II, PP, SS };
-
 // info gathered at runtime from bus,
 // will be filled in when available
 pub const RuntimeInfo = struct {
-    autoinc_address: ?u16 = null,
-    station_address: ?u16 = null,
     status: ?esc.ALStatusRegister = null,
 
     /// DL Info from ESC
@@ -89,7 +79,7 @@ pub fn setALState(
     recv_timeout_us: u32,
 ) !void {
     // TODO: consider not using the ack bit
-    const station_address: u16 = self.runtime_info.station_address orelse return error.InvalidRuntimeInfo;
+    const station_address: u16 = self.prior_info.station_address;
 
     const wkc = try commands.fpwrPack(
         port,
@@ -174,11 +164,16 @@ pub fn setALState(
 /// [ ] Provide valid inputs
 ///
 /// Ref: EtherCAT Device Protocol Poster
-// fn subdevice_PS_tasks(
-//     self: *MainDevice,
-//     expected_subdevice: config.SubDevice,
-//     runtime_info: *SubDeviceRuntimeInfo,
-// ) !void {}
+// fn transitionPS(
+//     self: *SubDevice,
+// ) !void {
+//     // if CoE is supported, the subdevice PDOs can be mapped using information
+//     // from CoE. otherwise it can be obtained from the SII.
+//     // Ref: IEC 61158-5-12:2019 6.1.1.1
+
+//     if (self.runtime_info.general) |general|
+
+// }
 
 /// The maindevice should perform these tasks before commanding the IP transition in the subdevice.
 ///
@@ -201,32 +196,11 @@ pub fn setALState(
 pub fn transitionIP(
     self: *SubDevice,
     port: *nic.Port,
-    station_address: u16,
-    autoinc_address: u16,
     retries: u8,
     recv_timeout_us: u32,
     eeprom_timeout_us: u32,
 ) !void {
-    // assign configured station address
-    self.runtime_info.station_address = station_address;
-    self.runtime_info.autoinc_address = autoinc_address;
-
-    var wkc = try commands.apwrPack(
-        port,
-        esc.ConfiguredStationAddressRegister{
-            .configured_station_address = station_address,
-        },
-        telegram.PositionAddress{
-            .autoinc_address = autoinc_address,
-            .offset = @intFromEnum(esc.RegisterMap.station_address),
-        },
-        recv_timeout_us,
-    );
-    if (wkc != 1) {
-        std.log.err("WKCError on station address config: expected wkc 1, got {}.", .{wkc});
-        return error.WKCError;
-    }
-
+    const station_address = self.prior_info.station_address;
     // check subdevice identity
     const info = try sii.readSIIFP_ps(
         port,
@@ -239,9 +213,9 @@ pub fn transitionIP(
     );
     self.runtime_info.info = info;
 
-    if (info.vendor_id != self.prior_info.vendor_id or
-        info.product_code != self.prior_info.product_code or
-        info.revision_number != self.prior_info.revision_number)
+    if (info.vendor_id != self.prior_info.identity.vendor_id or
+        info.product_code != self.prior_info.identity.product_code or
+        info.revision_number != self.prior_info.identity.revision_number)
     {
         std.log.err(
             "Identified subdevice: vendor id: 0x{x}, product code: 0x{x}, revision: 0x{x}, expected vendor id: 0x{x}, product code: 0x{x}, revision: 0x{x}",
@@ -249,9 +223,9 @@ pub fn transitionIP(
                 info.vendor_id,
                 info.product_code,
                 info.revision_number,
-                self.prior_info.vendor_id,
-                self.prior_info.product_code,
-                self.prior_info.revision_number,
+                self.prior_info.identity.vendor_id,
+                self.prior_info.identity.product_code,
+                self.prior_info.identity.revision_number,
             },
         );
         return error.UnexpectedSubDevice;
@@ -308,7 +282,7 @@ pub fn transitionIP(
 
     // reset FMMUs
     var zero_fmmus = wire.zerosFromPack(esc.FMMURegister);
-    wkc = try commands.fpwr(
+    var wkc = try commands.fpwr(
         port,
         .{
             .station_address = station_address,
@@ -444,7 +418,7 @@ pub fn sdoWrite(
     mbx_timeout_us: u32,
 ) !void {
     const info = self.runtime_info.info orelse return error.InvalidRuntimeInfo;
-    const station_address = self.runtime_info.station_address orelse return error.InvalidRuntimeInfo;
+    const station_address = self.prior_info.station_address;
     const sms = self.runtime_info.sms orelse return error.InvalidRuntimeInfo;
 
     // subdevice supports CoE?
@@ -491,7 +465,7 @@ pub fn sdoRead(
     mbx_timeout_us: u32,
 ) !usize {
     const info = self.runtime_info.info orelse return error.InvalidRuntimeInfo;
-    const station_address = self.runtime_info.station_address orelse return error.InvalidRuntimeInfo;
+    const station_address = self.prior_info.station_address;
     const sms = self.runtime_info.sms orelse return error.InvalidRuntimeInfo;
 
     // subdevice supports CoE?

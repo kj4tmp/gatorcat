@@ -241,6 +241,17 @@ pub fn fpwrPack(
     return wkc;
 }
 
+pub fn fpwrPackWkc(
+    port: *nic.Port,
+    packed_type: anytype,
+    address: telegram.StationAddress,
+    timeout_us: u32,
+    expected_wkc: u16,
+) !void {
+    const wkc = try fpwrPack(port, packed_type, address, timeout_us);
+    if (wkc != expected_wkc) return error.Wkc;
+}
+
 /// Configured address physical read write.
 /// A subdevice writes the data it has read to the EtherCAT datagram and writes
 /// the newly acquired data to the same memory area if its subdevice address matches

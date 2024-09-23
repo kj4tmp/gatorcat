@@ -388,13 +388,19 @@ pub fn escSMsFromSIISMs(sii_sms: [16]?SyncM) esc.SMRegister {
     return res;
 }
 
+// pub fn countPDOs(
+//     port: *nic.Port,
+//     station_address: u16,
+//     recv_timeout_us: u32,
+//     eeprom_timeout_us: u32,
+// ) void {}
+
 pub const SIIString = std.BoundedArray(u8, 255);
 
 pub fn readSIIString(
     port: *nic.Port,
     station_address: u16,
     index: u8,
-    retries: u8,
     recv_timeout_us: u32,
     eeprom_timeout_us: u32,
 ) !?SIIString {
@@ -406,7 +412,6 @@ pub fn readSIIString(
         port,
         station_address,
         CatagoryType.strings,
-        retries,
         recv_timeout_us,
         eeprom_timeout_us,
     );
@@ -416,7 +421,6 @@ pub fn readSIIString(
             port,
             station_address,
             catagory.word_address,
-            retries,
             recv_timeout_us,
             eeprom_timeout_us,
         );
@@ -454,7 +458,6 @@ pub const FindCatagoryResult = struct {
 pub fn readFMMUCatagory(
     port: *nic.Port,
     station_address: u16,
-    retries: u8,
     recv_timeout_us: u32,
     eeprom_timeout_us: u32,
 ) !?[16]?FMMUFunction {
@@ -462,7 +465,6 @@ pub fn readFMMUCatagory(
         port,
         station_address,
         .FMMU,
-        retries,
         recv_timeout_us,
         eeprom_timeout_us,
     );
@@ -477,7 +479,6 @@ pub fn readFMMUCatagory(
             port,
             station_address,
             catagory.word_address,
-            retries,
             recv_timeout_us,
             eeprom_timeout_us,
         );
@@ -496,7 +497,6 @@ pub fn readFMMUCatagory(
 pub fn readSMCatagory(
     port: *nic.Port,
     station_address: u16,
-    retries: u8,
     recv_timeout_us: u32,
     eeprom_timeout_us: u32,
 ) !?[16]?SyncM {
@@ -504,7 +504,6 @@ pub fn readSMCatagory(
         port,
         station_address,
         .sync_manager,
-        retries,
         recv_timeout_us,
         eeprom_timeout_us,
     );
@@ -520,7 +519,6 @@ pub fn readSMCatagory(
             port,
             station_address,
             catagory.word_address,
-            retries,
             recv_timeout_us,
             eeprom_timeout_us,
         );
@@ -537,12 +535,11 @@ pub fn readSMCatagory(
     unreachable;
 }
 
-pub fn readGeneralCatagory(port: *nic.Port, station_address: u16, retries: u8, recv_timeout_us: u32, eeprom_timeout_us: u32) !?CatagoryGeneral {
+pub fn readGeneralCatagory(port: *nic.Port, station_address: u16, recv_timeout_us: u32, eeprom_timeout_us: u32) !?CatagoryGeneral {
     const gen_catagory = try findCatagoryFP(
         port,
         station_address,
         .general,
-        3,
         recv_timeout_us,
         eeprom_timeout_us,
     );
@@ -561,7 +558,6 @@ pub fn readGeneralCatagory(port: *nic.Port, station_address: u16, retries: u8, r
             CatagoryGeneral,
             station_address,
             catagory.word_address,
-            retries,
             recv_timeout_us,
             eeprom_timeout_us,
         );
@@ -575,7 +571,7 @@ pub fn readGeneralCatagory(port: *nic.Port, station_address: u16, retries: u8, r
 /// find the word address of a catagory in the eeprom, uses station addressing.
 ///
 /// Returns null if catagory is not found.
-pub fn findCatagoryFP(port: *nic.Port, station_address: u16, catagory: CatagoryType, retries: u8, recv_timeout_us: u32, eeprom_timeout_us: u32) !?FindCatagoryResult {
+pub fn findCatagoryFP(port: *nic.Port, station_address: u16, catagory: CatagoryType, recv_timeout_us: u32, eeprom_timeout_us: u32) !?FindCatagoryResult {
 
     // there shouldn't be more than 1000 catagories..right??
     const word_address: u16 = @intFromEnum(ParameterMap.first_catagory_header);
@@ -583,7 +579,6 @@ pub fn findCatagoryFP(port: *nic.Port, station_address: u16, catagory: CatagoryT
         port,
         station_address,
         word_address,
-        retries,
         recv_timeout_us,
         eeprom_timeout_us,
     );
@@ -615,7 +610,6 @@ pub fn readSIIFP_ps(
     comptime T: type,
     station_address: u16,
     eeprom_address: u16,
-    retries: u8,
     recv_timeout_us: u32,
     eeprom_timeout_us: u32,
 ) !T {
@@ -624,7 +618,6 @@ pub fn readSIIFP_ps(
         port,
         station_address,
         eeprom_address,
-        retries,
         recv_timeout_us,
         eeprom_timeout_us,
     );
@@ -709,7 +702,6 @@ pub fn readSIIFP_ps(
 pub const SIIStream = struct {
     port: *nic.Port,
     station_address: u16,
-    retries: u8,
     recv_timeout_us: u32,
     eeprom_timeout_us: u32,
     eeprom_address: u16, // WORD (2-byte) address
@@ -721,7 +713,6 @@ pub const SIIStream = struct {
         port: *nic.Port,
         station_address: u16,
         eeprom_address: u16,
-        retries: u8,
         recv_timeout_us: u32,
         eeprom_timeout_us: u32,
     ) SIIStream {
@@ -729,7 +720,6 @@ pub const SIIStream = struct {
             .port = port,
             .station_address = station_address,
             .eeprom_address = eeprom_address,
-            .retries = retries,
             .recv_timeout_us = recv_timeout_us,
             .eeprom_timeout_us = eeprom_timeout_us,
         };
@@ -754,7 +744,6 @@ pub const SIIStream = struct {
                 self.port,
                 self.station_address,
                 self.eeprom_address, // eeprom address is WORD address
-                self.retries,
                 self.recv_timeout_us,
                 self.eeprom_timeout_us,
             );
@@ -799,106 +788,86 @@ pub fn readSII4ByteFP(
     port: *nic.Port,
     station_address: u16,
     eeprom_address: u16,
-    retries: u8,
     recv_timeout_us: u32,
     eeprom_timeout_us: u32,
 ) ReadSIIError![4]u8 {
 
     // set eeprom access to main device
-    for (0..retries) |_| {
-        const wkc = commands.fpwrPack(
-            port,
-            esc.SIIAccessRegisterCompact{
-                .owner = .ethercat_DL,
-                .lock = false,
-            },
-            .{
-                .station_address = station_address,
-                .offset = @intFromEnum(esc.RegisterMap.SII_access),
-            },
-            recv_timeout_us,
-        ) catch |err| switch (err) {
-            error.LinkError => return error.LinkError,
-            error.TransactionContention => continue,
-            // error.FrameSerializationFailure => unreachable,
-            error.CurruptedFrame => continue,
-            error.RecvTimeout => continue,
-        };
-        if (wkc == 1) {
-            break;
-        }
-    } else {
-        return error.Timeout;
-    }
+    commands.fpwrPackWkc(
+        port,
+        esc.SIIAccessRegisterCompact{
+            .owner = .ethercat_DL,
+            .lock = false,
+        },
+        .{
+            .station_address = station_address,
+            .offset = @intFromEnum(esc.RegisterMap.SII_access),
+        },
+        recv_timeout_us,
+        1,
+    ) catch |err| switch (err) {
+        error.TransactionContention => return error.Timeout,
+        error.RecvTimeout => return error.Timeout,
+        error.CurruptedFrame => return error.Timeout,
+        error.Wkc => return error.Timeout,
+        error.LinkError => return error.LinkError,
+    };
 
     // ensure there is a rising edge in the read command by first sending zeros
-    for (0..retries) |_| {
-        var data = wire.zerosFromPack(esc.SIIControlStatusRegister);
-        const wkc = commands.fpwr(
-            port,
-            .{
-                .station_address = station_address,
-                .offset = @intFromEnum(esc.RegisterMap.SII_control_status),
-            },
-            &data,
-            recv_timeout_us,
-        ) catch |err| switch (err) {
-            error.LinkError => return error.LinkError,
-            error.TransactionContention => continue,
-            // error.FrameSerializationFailure => unreachable,
-            error.CurruptedFrame => continue,
-            error.RecvTimeout => continue,
-        };
-        if (wkc == 1) {
-            break;
-        }
-    } else {
-        return error.Timeout;
-    }
-
+    commands.fpwrPackWkc(
+        port,
+        @as(u16, @bitCast(wire.zerosFromPack(esc.SIIControlStatusRegister))),
+        .{
+            .station_address = station_address,
+            .offset = @intFromEnum(esc.RegisterMap.SII_control_status),
+        },
+        recv_timeout_us,
+        1,
+    ) catch |err| switch (err) {
+        error.LinkError => return error.LinkError,
+        error.TransactionContention => return error.Timeout,
+        error.CurruptedFrame => return error.Timeout,
+        error.RecvTimeout => return error.Timeout,
+        error.Wkc => return error.Timeout,
+    };
     // send read command
-    for (0..retries) |_| {
-        const wkc = commands.fpwrPack(
-            port,
-            esc.SIIControlStatusAddressRegister{
-                .write_access = false,
-                .EEPROM_emulation = false,
-                .read_size = .four_bytes,
-                .address_algorithm = .one_byte_address,
-                .read_operation = true, // <-- cmd
-                .write_operation = false,
-                .reload_operation = false,
-                .checksum_error = false,
-                .device_info_error = false,
-                .command_error = false,
-                .write_error = false,
-                .busy = false,
-                .sii_address = eeprom_address,
-            },
-            .{
-                .station_address = station_address,
-                .offset = @intFromEnum(esc.RegisterMap.SII_control_status),
-            },
-            recv_timeout_us,
-        ) catch |err| switch (err) {
-            error.LinkError => return error.LinkError,
-            error.TransactionContention => continue,
-            // error.FrameSerializationFailure => unreachable,
-            error.CurruptedFrame => continue,
-            error.RecvTimeout => continue,
-        };
-        if (wkc == 1) {
-            break;
-        }
-    } else {
-        return error.Timeout;
-    }
+    commands.fpwrPackWkc(
+        port,
+        esc.SIIControlStatusAddressRegister{
+            .write_access = false,
+            .EEPROM_emulation = false,
+            .read_size = .four_bytes,
+            .address_algorithm = .one_byte_address,
+            .read_operation = true, // <-- cmd
+            .write_operation = false,
+            .reload_operation = false,
+            .checksum_error = false,
+            .device_info_error = false,
+            .command_error = false,
+            .write_error = false,
+            .busy = false,
+            .sii_address = eeprom_address,
+        },
+        .{
+            .station_address = station_address,
+            .offset = @intFromEnum(esc.RegisterMap.SII_control_status),
+        },
+        recv_timeout_us,
+        1,
+    ) catch |err| switch (err) {
+        error.LinkError => return error.LinkError,
+        error.TransactionContention => return error.Timeout,
+        error.CurruptedFrame => return error.Timeout,
+        error.RecvTimeout => return error.Timeout,
+        error.Wkc => return error.Timeout,
+    };
 
-    // TODO: timer interface
-    var timer = Timer.start() catch @panic("timer unsupported");
+    var timer = Timer.start() catch |err| switch (err) {
+        error.TimerUnsupported => unreachable,
+    };
     // wait for eeprom to be not busy
     while (timer.read() < eeprom_timeout_us * ns_per_us) {
-        const sii_status = commands.fprdPack(
+        const sii_status = commands.fprdPackWkc(
             port,
             esc.SIIControlStatusRegister,
             .{
@@ -908,22 +877,20 @@ pub fn readSII4ByteFP(
                 ),
             },
             recv_timeout_us,
+            1,
         ) catch |err| switch (err) {
             error.LinkError => return error.LinkError,
-            error.TransactionContention => continue,
-            // error.FrameSerializationFailure => unreachable,
-            error.CurruptedFrame => continue,
-            error.RecvTimeout => continue,
+            error.TransactionContention => return error.Timeout,
+            error.CurruptedFrame => return error.Timeout,
+            error.RecvTimeout => return error.Timeout,
+            error.Wkc => return error.Timeout,
         };
 
-        if (sii_status.wkc != 1) {
-            continue;
-        }
-        if (sii_status.ps.busy) {
+        if (sii_status.busy) {
             continue;
         } else {
             // check for eeprom nack
-            if (sii_status.ps.command_error) {
+            if (sii_status.command_error) {
                 // TODO: this should never happen?
                 continue;
             }
@@ -934,29 +901,25 @@ pub fn readSII4ByteFP(
     }
 
     // attempt read 3 times
-    for (0..retries) |_| {
-        var data = [4]u8{ 0, 0, 0, 0 };
-        const wkc = commands.fprd(
-            port,
-            .{
-                .station_address = station_address,
-                .offset = @intFromEnum(
-                    esc.RegisterMap.SII_data,
-                ),
-            },
-            &data,
-            recv_timeout_us,
-        ) catch |err| switch (err) {
-            error.LinkError => return error.LinkError,
-            error.TransactionContention => continue,
-            // error.FrameSerializationFailure => unreachable,
-            error.CurruptedFrame => continue,
-            error.RecvTimeout => continue,
-        };
-        if (wkc == 1) {
-            return data;
-        }
-    } else {
-        return error.Timeout;
-    }
+    var data = [4]u8{ 0, 0, 0, 0 };
+    commands.fprdWkc(
+        port,
+        .{
+            .station_address = station_address,
+            .offset = @intFromEnum(
+                esc.RegisterMap.SII_data,
+            ),
+        },
+        &data,
+        recv_timeout_us,
+        1,
+    ) catch |err| switch (err) {
+        error.LinkError => return error.LinkError,
+        error.TransactionContention => return error.Timeout,
+        // error.FrameSerializationFailure => unreachable,
+        error.CurruptedFrame => return error.Timeout,
+        error.RecvTimeout => return error.Timeout,
+        error.Wkc => return error.Timeout,
+    };
+    return data;
 }

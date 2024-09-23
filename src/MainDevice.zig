@@ -20,7 +20,6 @@ process_image: []u8,
 
 pub const Settings = struct {
     recv_timeout_us: u32 = 2000,
-    retries: u8 = 3,
     eeprom_timeout_us: u32 = 10000,
 };
 
@@ -243,7 +242,6 @@ pub fn busPREOP(self: *MainDevice) !void {
         try self.assignStationAddress(subdevice_config.station_address, subdevice_config.ring_position);
         try subdevice.transitionIP(
             self.port,
-            self.settings.retries,
             self.settings.recv_timeout_us,
             self.settings.eeprom_timeout_us,
         );

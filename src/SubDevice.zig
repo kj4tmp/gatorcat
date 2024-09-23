@@ -103,7 +103,7 @@ pub fn setALState(
     }
 
     var timer = Timer.start() catch |err| switch (err) {
-        error.TimerUnsupported => @panic("timer unsupported"),
+        error.TimerUnsupported => unreachable,
     };
 
     while (timer.read() < change_timeout_us * ns_per_us) {
@@ -162,7 +162,6 @@ pub fn setALState(
 pub fn transitionIP(
     self: *SubDevice,
     port: *nic.Port,
-    retries: u8,
     recv_timeout_us: u32,
     eeprom_timeout_us: u32,
 ) !void {
@@ -173,7 +172,6 @@ pub fn transitionIP(
         sii.SubDeviceInfoCompact,
         station_address,
         @intFromEnum(sii.ParameterMap.PDI_control),
-        retries,
         recv_timeout_us,
         eeprom_timeout_us,
     );
@@ -214,7 +212,6 @@ pub fn transitionIP(
     self.runtime_info.general = try sii.readGeneralCatagory(
         port,
         station_address,
-        retries,
         recv_timeout_us,
         eeprom_timeout_us,
     );
@@ -224,7 +221,6 @@ pub fn transitionIP(
             port,
             station_address,
             general.order_idx,
-            retries,
             recv_timeout_us,
             eeprom_timeout_us,
         );
@@ -233,7 +229,6 @@ pub fn transitionIP(
             port,
             station_address,
             general.name_idx,
-            retries,
             recv_timeout_us,
             eeprom_timeout_us,
         );
@@ -301,7 +296,6 @@ pub fn transitionIP(
     const sii_sms = try sii.readSMCatagory(
         port,
         station_address,
-        retries,
         recv_timeout_us,
         eeprom_timeout_us,
     );
@@ -327,7 +321,6 @@ pub fn transitionIP(
     self.runtime_info.fmmus = try sii.readFMMUCatagory(
         port,
         station_address,
-        retries,
         recv_timeout_us,
         eeprom_timeout_us,
     );
@@ -403,6 +396,7 @@ pub fn transitionPS(
     // if CoE is supported, the subdevice PDOs can be mapped using information
     // from CoE. otherwise it can be obtained from the SII.
     // Ref: IEC 61158-5-12:2019 6.1.1.1
+    // TODO: does it say somewhere that if CoE supported the PDOs MUST be in the CoE?
 
     try self.doStartupParameters(port, .PS, recv_timeout_us);
 

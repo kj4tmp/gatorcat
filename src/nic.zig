@@ -283,7 +283,7 @@ pub const Port = struct {
         assert(send_datagrams.len <= 15); // too many datagrams
 
         var timer = Timer.start() catch |err| switch (err) {
-            error.TimerUnsupported => @panic("timer unsupported"),
+            error.TimerUnsupported => unreachable,
         };
         var idx: u8 = undefined;
         while (timer.read() < timeout_us * ns_per_us) {

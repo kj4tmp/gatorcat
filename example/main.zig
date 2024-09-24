@@ -92,4 +92,19 @@ pub fn main() !void {
     var fbs = std.io.fixedBufferStream(&bytes);
     const reader = fbs.reader();
     std.log.warn("got {}", .{try ecm.wire.packFromECatReader(i16, reader)});
+
+    const res = try ecm.sii.readTxPDOs(&port, 0x1003, 3000, 10_000) orelse return error.NoPDOs;
+    for (res.slice()) |pdo| {
+        if (try ecm.sii.readSIIString(&port, 0x1003, pdo.header.name_idx, 3000, 10_000)) |name| {
+            std.log.warn("pdo name: {s}", .{name.slice()});
+        }
+        std.log.warn("pdo index: 0x{x}, full: {}", .{ pdo.header.index, pdo.header });
+        for (pdo.entries.slice()) |entry| {
+            if (try ecm.sii.readSIIString(&port, 0x1003, entry.name_idx, 3000, 10_000)) |name| {
+                std.log.warn("    name: {s}", .{name.slice()});
+            }
+            std.log.warn("    index: 0x{x}, subindex: 0x{x}, data type: {}, full: {}", .{ entry.index, entry.subindex, entry.data_type, entry });
+        }
+    }
+    std.log.warn("res size: {any}", .{@sizeOf(@TypeOf(res))});
 }

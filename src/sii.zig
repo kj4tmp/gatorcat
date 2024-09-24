@@ -279,44 +279,6 @@ pub const SyncM = packed struct(u64) {
     syncM_type: SyncMType,
 };
 
-/// PDO Entry
-///
-/// Ref: IEC 61158-6-12:2019 5.4 Table 26
-pub const PDOEntry = packed struct {
-    /// index of the entry
-    index: u16,
-    subindex: u8,
-    /// name of the entry, index to STRINGS
-    name_idx: u8,
-    /// data type of the entry, index in CoE object dictionary
-    data_type: u8,
-    /// bit length of the entry
-    bit_len: u8,
-    /// reserved
-    flags: u16 = 0,
-};
-
-/// Catagory PDO
-///
-/// Applies to both TXPDO and RXPDO SII catagories.
-///
-/// Ref: IEC 61158-6-12:2019 5.4 Table 25
-pub const CatagoryPDO = packed struct {
-    /// for RxPDO: 0x1600 to 0x17ff
-    /// for TxPDO: 0x1A00 to 0x1bff
-    index: u16,
-    n_entries: u8,
-    /// reference to sync manager
-    syncM: u8,
-    /// referece to DC synch
-    synchronization: u8,
-    /// name of object, index to STRINGS
-    name_idx: u8,
-    /// reserved
-    flags: u16 = 0,
-    // entries sequentially after this
-};
-
 pub fn escSMFromSIISM(sii_sm: SyncM) esc.SyncManagerAttributes {
     return esc.SyncManagerAttributes{
         .physical_start_address = sii_sm.physical_start_address,
@@ -448,13 +410,6 @@ pub fn readSIIString(
     }
 }
 
-pub const FindCatagoryResult = struct {
-    /// word address of the data portion (not including header)
-    word_address: u16,
-    /// length of the data portion in bytes
-    byte_length: u17,
-};
-
 pub fn readFMMUCatagory(
     port: *nic.Port,
     station_address: u16,
@@ -568,10 +523,153 @@ pub fn readGeneralCatagory(port: *nic.Port, station_address: u16, recv_timeout_u
     unreachable;
 }
 
+pub const PDO = struct {
+    header: Header,
+    entries: std.BoundedArray(
+        Entry,
+        max_entries,
+    ),
+
+    /// PDO Header
+    ///
+    /// Applies to both TXPDO and RXPDO SII catagories.
+    ///
+    /// Ref: IEC 61158-6-12:2019 5.4 Table 25
+    pub const Header = packed struct(u64) {
+        /// for RxPDO: 0x1600 to 0x17ff
+        /// for TxPDO: 0x1A00 to 0x1bff
+        index: u16,
+        n_entries: u8,
+        /// reference to sync manager
+        syncM: u8,
+        /// referece to DC synch
+        synchronization: u8,
+        /// name of object, index to STRINGS
+        name_idx: u8,
+        /// reserved
+        flags: u16 = 0,
+        // entries sequentially after this
+
+    };
+
+    /// PDO Entry
+    ///
+    /// Ref: IEC 61158-6-12:2019 5.4 Table 26
+    pub const Entry = packed struct(u64) {
+        /// index of the entry
+        index: u16,
+        subindex: u8,
+        /// name of the entry, index to STRINGS
+        name_idx: u8,
+        /// data type of the entry, index in CoE object dictionary
+        data_type: u8,
+        /// bit length of the entry
+        bit_len: u8,
+        /// reserved
+        flags: u16 = 0,
+    };
+
+    /// The maximum number of PDO entries in a single PDOs
+    /// TODO: conflicting information online for this. Mayber 230 or 240?
+    pub const max_entries = 255;
+    comptime {
+        assert(max_entries == std.math.maxInt(u8));
+    }
+};
+
+/// Each TxPDO is identified by an index from 0x1600 to 17FF. Therefore,
+/// there is a maxiumum of 512 tx pdos.
+///
+/// Ref: IEC 61158-6-12:2019 5.4 table 25
+pub const max_txpdos = 512;
+pub const max_rxpdos = 512;
+comptime {
+    assert(max_txpdos == 0x17FF - 0x1600 + 1);
+    assert(max_rxpdos == 0x1BFF - 0x1A00 + 1);
+}
+
+pub const TxPDOs = std.BoundedArray(PDO, max_txpdos);
+
+pub fn readTxPDOs(
+    port: *nic.Port,
+    station_address: u16,
+    recv_timeout_us: u32,
+    eeprom_timeout_us: u32,
+) !?TxPDOs {
+    const catagory = try findCatagoryFP(
+        port,
+        station_address,
+        .TXPDO,
+        recv_timeout_us,
+        eeprom_timeout_us,
+    ) orelse return null;
+
+    // entries are 8 bytes, pdo header is 8 bytes, so
+    // this should be a multiple of eight.
+    if (catagory.byte_length % 8 != 0) return error.InvalidEEPROM;
+
+    var stream = SIIStream.init(
+        port,
+        station_address,
+        catagory.word_address,
+        recv_timeout_us,
+        eeprom_timeout_us,
+    );
+    var limited_reader = std.io.limitedReader(stream.reader(), catagory.byte_length);
+    const reader = limited_reader.reader();
+
+    var pdos = std.BoundedArray(PDO, max_txpdos).init(0) catch unreachable;
+
+    const State = enum {
+        entries,
+        pdo_header,
+        emit_pdo,
+    };
+    var entries = std.BoundedArray(PDO.Entry, PDO.max_entries).init(0) catch unreachable;
+    var pdo_header: PDO.Header = undefined;
+    var entries_remaining: u8 = 0;
+    state: switch (State.pdo_header) {
+        .pdo_header => {
+            entries.clear();
+            pdo_header = wire.packFromECatReader(PDO.Header, reader) catch |err| switch (err) {
+                error.EndOfStream => return pdos,
+                error.LinkError => return error.LinkError,
+                error.Timeout => return error.Timeout,
+            };
+            entries_remaining = pdo_header.n_entries;
+            continue :state .entries;
+        },
+        .entries => {
+            if (entries_remaining == 0) continue :state .emit_pdo;
+            const entry = try wire.packFromECatReader(PDO.Entry, reader);
+            try entries.append(entry);
+            entries_remaining -= 1;
+            continue :state .entries;
+        },
+        .emit_pdo => {
+            try pdos.append(.{ .header = pdo_header, .entries = entries });
+            continue :state .pdo_header;
+        },
+    }
+}
+
+pub const FindCatagoryResult = struct {
+    /// word address of the data portion (not including header)
+    word_address: u16,
+    /// length of the data portion in bytes
+    byte_length: u17,
+};
+
 /// find the word address of a catagory in the eeprom, uses station addressing.
 ///
 /// Returns null if catagory is not found.
-pub fn findCatagoryFP(port: *nic.Port, station_address: u16, catagory: CatagoryType, recv_timeout_us: u32, eeprom_timeout_us: u32) !?FindCatagoryResult {
+pub fn findCatagoryFP(
+    port: *nic.Port,
+    station_address: u16,
+    catagory: CatagoryType,
+    recv_timeout_us: u32,
+    eeprom_timeout_us: u32,
+) !?FindCatagoryResult {
 
     // there shouldn't be more than 1000 catagories..right??
     const word_address: u16 = @intFromEnum(ParameterMap.first_catagory_header);

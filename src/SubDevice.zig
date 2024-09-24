@@ -107,7 +107,7 @@ pub fn setALState(
     };
 
     while (timer.read() < change_timeout_us * ns_per_us) {
-        const res = try commands.fprdPack(
+        const status = try commands.fprdPackWkc(
             port,
             esc.ALStatusRegister,
             .{
@@ -115,8 +115,8 @@ pub fn setALState(
                 .offset = @intFromEnum(esc.RegisterMap.AL_status),
             },
             recv_timeout_us,
+            1,
         );
-        if (res.wkc != 1) return error.Wkc;
 
         // we check if the actual state matches the requested
         // state before checking the error bit becuase simple subdevices
@@ -125,13 +125,18 @@ pub fn setALState(
         // Ref: IEC 61158-6-12:2019 6.4.1.1
 
         const requested_int: u4 = @intFromEnum(state);
-        const actual_int: u4 = @intFromEnum(res.ps.state);
-        if (actual_int == requested_int) return;
-
-        if (res.ps.err) {
+        const actual_int: u4 = @intFromEnum(status.state);
+        if (actual_int == requested_int) {
+            std.log.info(
+                "station addr: 0x{x}, successful state change to {}, Status Code: {}.",
+                .{ station_address, status.state, status.status_code },
+            );
+            return;
+        }
+        if (status.err) {
             std.log.err(
                 "station addr: 0x{x}, refused state change to {}. Actual state: {}, Status Code: {}.",
-                .{ station_address, state, res.ps.state, res.ps.status_code },
+                .{ station_address, state, status.state, status.status_code },
             );
             return error.StateChangeRefused;
         }
@@ -363,6 +368,9 @@ pub fn transitionIP(
         },
     );
     std.log.info("    DCSupported: {}", .{self.runtime_info.dl_info.?.DCSupported});
+
+    // cant do startup parameters until mailbox is initialized
+    try self.doStartupParameters(port, .IP, recv_timeout_us);
 }
 
 /// The maindevice should perform these tasks before commanding the PS transision.
@@ -400,7 +408,10 @@ pub fn transitionPS(
 
     try self.doStartupParameters(port, .PS, recv_timeout_us);
 
-    // configure PDOs from SII
+    // The PDOs can be read using SII or CoE.
+    // We first read the configuration from SII and use that. If CoE is supported,
+    // we read that and it overwrites whatever we got from SII.
+    // read PDOs from SII
 
     // configure PDOs from CoE
 

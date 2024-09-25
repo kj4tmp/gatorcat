@@ -588,7 +588,7 @@ comptime {
     assert(max_rxpdos == 0x1BFF - 0x1A00 + 1);
 }
 
-pub const TxPDOs = std.BoundedArray(PDO, max_txpdos);
+pub const PDOs = std.BoundedArray(PDO, max_txpdos);
 
 pub const PDODirection = enum {
     /// TXPDO = input = transmitted by subdevice
@@ -603,7 +603,7 @@ pub fn readPDOs(
     direction: PDODirection,
     recv_timeout_us: u32,
     eeprom_timeout_us: u32,
-) !?TxPDOs {
+) !?PDOs {
     const catagory = try findCatagoryFP(
         port,
         station_address,

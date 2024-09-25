@@ -93,7 +93,7 @@ pub fn main() !void {
     const reader = fbs.reader();
     std.log.warn("got {}", .{try ecm.wire.packFromECatReader(i16, reader)});
 
-    const res = try ecm.sii.readTxPDOs(&port, 0x1003, 3000, 10_000) orelse return error.NoPDOs;
+    const res = try ecm.sii.readPDOs(&port, 0x1003, .rx, 3000, 10_000) orelse return error.NoPDOs;
     for (res.slice()) |pdo| {
         if (try ecm.sii.readSIIString(&port, 0x1003, pdo.header.name_idx, 3000, 10_000)) |name| {
             std.log.warn("pdo name: {s}", .{name.slice()});

@@ -590,16 +590,27 @@ comptime {
 
 pub const TxPDOs = std.BoundedArray(PDO, max_txpdos);
 
-pub fn readTxPDOs(
+pub const PDODirection = enum {
+    /// TXPDO = input = transmitted by subdevice
+    tx,
+    /// RXPDO = output = transmitted by maindevice
+    rx,
+};
+
+pub fn readPDOs(
     port: *nic.Port,
     station_address: u16,
+    direction: PDODirection,
     recv_timeout_us: u32,
     eeprom_timeout_us: u32,
 ) !?TxPDOs {
     const catagory = try findCatagoryFP(
         port,
         station_address,
-        .TXPDO,
+        switch (direction) {
+            .tx => .TXPDO,
+            .rx => .RXPDO,
+        },
         recv_timeout_us,
         eeprom_timeout_us,
     ) orelse return null;

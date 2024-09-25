@@ -9,6 +9,7 @@ pub fn packedSize(comptime T: type) comptime_int {
     return @divExact(@bitSizeOf(T), 8);
 }
 
+// TODO: check recursively for struct fields
 pub fn isECatPackable(comptime T: type) bool {
     if (@bitSizeOf(T) % 8 != 0) return false;
     return switch (@typeInfo(T)) {
@@ -20,6 +21,13 @@ pub fn isECatPackable(comptime T: type) bool {
         .@"union" => |_union| blk: {
             // must be a packed union
             break :blk (_union.layout == .@"packed");
+        },
+        .@"enum" => |_enum| blk: {
+            // TODO: check enum cannot contain invalid values after bitcast
+            // i.e. must be non-exhaustive or represent all values of
+            // backing integer.
+            _ = _enum;
+            break :blk true;
         },
         else => false,
     };
@@ -133,6 +141,7 @@ test packFromECatReader {
     try std.testing.expectEqualDeep(expected_pack, actual_pack);
 }
 
+// TODO: handle enums
 pub fn packFromECat(comptime T: type, ecat_bytes: [@divExact(@bitSizeOf(T), 8)]u8) T {
     comptime assert(isECatPackable(T));
     switch (native_endian) {

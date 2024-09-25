@@ -40,7 +40,7 @@ pub const RuntimeInfo = struct {
     sms: ?esc.SMRegister = null,
 
     /// FMMU configurations
-    fmmus: ?[16]?sii.FMMUFunction = null,
+    fmmus: ?sii.FMMUCatagory = null,
 
     /// name string from the SII
     name: ?sii.SIIString = null,
@@ -305,7 +305,7 @@ pub fn transitionIP(
         eeprom_timeout_us,
     );
     if (sii_sms) |sms| {
-        self.runtime_info.sms = sii.escSMsFromSIISMs(sms);
+        self.runtime_info.sms = sii.escSMsFromSIISMs(sms.slice());
     }
 
     // write SM configuration to subdevice

@@ -296,56 +296,57 @@ pub fn escSMFromSIISM(sii_sm: SyncM) esc.SyncManagerAttributes {
     };
 }
 
-pub fn escSMsFromSIISMs(sii_sms: [16]?SyncM) esc.SMRegister {
+// please don't make fun of me for this, packed structs cannot currently contain arrays.
+pub fn escSMsFromSIISMs(sii_sms: []const SyncM) esc.SMRegister {
     var res = std.mem.zeroes(esc.SMRegister);
 
-    if (sii_sms[0]) |SM0| {
-        res.SM0 = escSMFromSIISM(SM0);
+    if (sii_sms.len > 0) {
+        res.SM0 = escSMFromSIISM(sii_sms[0]);
     }
-    if (sii_sms[1]) |SM1| {
-        res.SM1 = escSMFromSIISM(SM1);
+    if (sii_sms.len > 1) {
+        res.SM1 = escSMFromSIISM(sii_sms[1]);
     }
-    if (sii_sms[2]) |SM2| {
-        res.SM2 = escSMFromSIISM(SM2);
+    if (sii_sms.len > 2) {
+        res.SM2 = escSMFromSIISM(sii_sms[2]);
     }
-    if (sii_sms[3]) |SM3| {
-        res.SM3 = escSMFromSIISM(SM3);
+    if (sii_sms.len > 3) {
+        res.SM3 = escSMFromSIISM(sii_sms[3]);
     }
-    if (sii_sms[4]) |SM4| {
-        res.SM4 = escSMFromSIISM(SM4);
+    if (sii_sms.len > 4) {
+        res.SM4 = escSMFromSIISM(sii_sms[4]);
     }
-    if (sii_sms[5]) |SM5| {
-        res.SM5 = escSMFromSIISM(SM5);
+    if (sii_sms.len > 5) {
+        res.SM5 = escSMFromSIISM(sii_sms[5]);
     }
-    if (sii_sms[6]) |SM6| {
-        res.SM6 = escSMFromSIISM(SM6);
+    if (sii_sms.len > 6) {
+        res.SM6 = escSMFromSIISM(sii_sms[6]);
     }
-    if (sii_sms[7]) |SM7| {
-        res.SM7 = escSMFromSIISM(SM7);
+    if (sii_sms.len > 7) {
+        res.SM7 = escSMFromSIISM(sii_sms[7]);
     }
-    if (sii_sms[8]) |SM8| {
-        res.SM8 = escSMFromSIISM(SM8);
+    if (sii_sms.len > 8) {
+        res.SM8 = escSMFromSIISM(sii_sms[8]);
     }
-    if (sii_sms[9]) |SM9| {
-        res.SM9 = escSMFromSIISM(SM9);
+    if (sii_sms.len > 9) {
+        res.SM9 = escSMFromSIISM(sii_sms[9]);
     }
-    if (sii_sms[10]) |SM10| {
-        res.SM10 = escSMFromSIISM(SM10);
+    if (sii_sms.len > 10) {
+        res.SM10 = escSMFromSIISM(sii_sms[10]);
     }
-    if (sii_sms[11]) |SM11| {
-        res.SM11 = escSMFromSIISM(SM11);
+    if (sii_sms.len > 11) {
+        res.SM11 = escSMFromSIISM(sii_sms[11]);
     }
-    if (sii_sms[12]) |SM12| {
-        res.SM12 = escSMFromSIISM(SM12);
+    if (sii_sms.len > 12) {
+        res.SM12 = escSMFromSIISM(sii_sms[12]);
     }
-    if (sii_sms[13]) |SM13| {
-        res.SM13 = escSMFromSIISM(SM13);
+    if (sii_sms.len > 13) {
+        res.SM13 = escSMFromSIISM(sii_sms[13]);
     }
-    if (sii_sms[14]) |SM14| {
-        res.SM14 = escSMFromSIISM(SM14);
+    if (sii_sms.len > 14) {
+        res.SM14 = escSMFromSIISM(sii_sms[14]);
     }
-    if (sii_sms[15]) |SM15| {
-        res.SM15 = escSMFromSIISM(SM15);
+    if (sii_sms.len > 15) {
+        res.SM15 = escSMFromSIISM(sii_sms[15]);
     }
     return res;
 }
@@ -410,117 +411,127 @@ pub fn readSIIString(
     }
 }
 
+/// There can only be a maxiumum of 16 FMMUs.
+///
+/// Ref: IEC 61158-4-12:2019 6.6.1
+pub const max_fmmu = 16;
+pub const FMMUCatagory = std.BoundedArray(FMMUFunction, max_fmmu);
+
 pub fn readFMMUCatagory(
     port: *nic.Port,
     station_address: u16,
     recv_timeout_us: u32,
     eeprom_timeout_us: u32,
-) !?[16]?FMMUFunction {
-    const fmmu_catagory = try findCatagoryFP(
+) !?FMMUCatagory {
+    const catagory = try findCatagoryFP(
         port,
         station_address,
         .FMMU,
         recv_timeout_us,
         eeprom_timeout_us,
-    );
-    if (fmmu_catagory) |catagory| {
-        const n_fmmu: u17 = std.math.divExact(u17, catagory.byte_length, @divExact(@bitSizeOf(FMMUFunction), 8)) catch return error.InvalidSII;
-        if (n_fmmu == 0) {
-            return null;
-        } else if (n_fmmu > 16) {
-            return error.InvalidSII;
-        }
-        var stream = SIIStream.init(
-            port,
-            station_address,
-            catagory.word_address,
-            recv_timeout_us,
-            eeprom_timeout_us,
-        );
-        var reader = stream.reader();
-        var res: [16]?FMMUFunction = [_]?FMMUFunction{null} ** 16;
-        for (res[0..n_fmmu]) |*fmmu| {
-            fmmu.* = @enumFromInt(try reader.readByte());
-        }
-        return res;
-    } else {
+    ) orelse return null;
+
+    const n_fmmu: u17 = std.math.divExact(
+        u17,
+        catagory.byte_length,
+        @divExact(@bitSizeOf(FMMUFunction), 8),
+    ) catch return error.InvalidSII;
+    if (n_fmmu == 0) {
         return null;
     }
-    unreachable;
+    if (n_fmmu > max_fmmu) {
+        return error.InvalidSII;
+    }
+    var stream = SIIStream.init(
+        port,
+        station_address,
+        catagory.word_address,
+        recv_timeout_us,
+        eeprom_timeout_us,
+    );
+    var limited_reader = std.io.limitedReader(stream.reader(), catagory.byte_length);
+    const reader = limited_reader.reader();
+
+    var res = FMMUCatagory.init(0) catch unreachable;
+    for (0..n_fmmu) |_| {
+        // TODO: better enum reader
+        res.append(try reader.readEnum(FMMUFunction, std.builtin.Endian.little)) catch |err| switch (err) {
+            error.Overflow => return error.InvalidSII,
+        };
+    }
+    return res;
 }
+
+/// There can only be a maximum of 16 sync managers.
+///
+/// Ref: IEC 61158-6-12:2019 6.7.2
+pub const max_sm = 16;
+pub const SMCatagory = std.BoundedArray(SyncM, max_sm);
 
 pub fn readSMCatagory(
     port: *nic.Port,
     station_address: u16,
     recv_timeout_us: u32,
     eeprom_timeout_us: u32,
-) !?[16]?SyncM {
-    const sm_catagory = try findCatagoryFP(
+) !?SMCatagory {
+    const catagory = try findCatagoryFP(
         port,
         station_address,
         .sync_manager,
         recv_timeout_us,
         eeprom_timeout_us,
-    );
-
-    if (sm_catagory) |catagory| {
-        const n_sm: u17 = std.math.divExact(u17, catagory.byte_length, @divExact(@bitSizeOf(SyncM), 8)) catch return error.InvalidSII;
-        if (n_sm == 0) {
-            return null;
-        } else if (n_sm > 16) {
-            return error.InvalidSII;
-        }
-        var stream = SIIStream.init(
-            port,
-            station_address,
-            catagory.word_address,
-            recv_timeout_us,
-            eeprom_timeout_us,
-        );
-        var reader = stream.reader();
-
-        var res: [16]?SyncM = [_]?SyncM{null} ** 16;
-        for (res[0..n_sm]) |*sm| {
-            sm.* = try wire.packFromECatReader(SyncM, &reader);
-        }
-        return res;
-    } else {
+    ) orelse return null;
+    const n_sm: u17 = std.math.divExact(u17, catagory.byte_length, @divExact(@bitSizeOf(SyncM), 8)) catch return error.InvalidSII;
+    if (n_sm == 0) {
         return null;
     }
-    unreachable;
+    if (n_sm > max_sm) {
+        return error.InvalidSII;
+    }
+    var stream = SIIStream.init(
+        port,
+        station_address,
+        catagory.word_address,
+        recv_timeout_us,
+        eeprom_timeout_us,
+    );
+    var limited_reader = std.io.limitedReader(stream.reader(), catagory.byte_length);
+    const reader = limited_reader.reader();
+    var res = SMCatagory.init(0) catch unreachable;
+    for (0..n_sm) |_| {
+        res.append(try wire.packFromECatReader(SyncM, reader)) catch |err| switch (err) {
+            error.Overflow => return error.InvalidSII,
+        };
+    }
+    return res;
 }
 
 pub fn readGeneralCatagory(port: *nic.Port, station_address: u16, recv_timeout_us: u32, eeprom_timeout_us: u32) !?CatagoryGeneral {
-    const gen_catagory = try findCatagoryFP(
+    const catagory = try findCatagoryFP(
         port,
         station_address,
         .general,
         recv_timeout_us,
         eeprom_timeout_us,
-    );
+    ) orelse return null;
 
-    if (gen_catagory) |catagory| {
-        if (catagory.byte_length < @divExact(@bitSizeOf(CatagoryGeneral), 8)) {
-            std.log.err(
-                "SubDevice station addr: 0x{x} has invalid eeprom sii general length: {}. Expected >= {}",
-                .{ station_address, catagory.byte_length, @divExact(@bitSizeOf(CatagoryGeneral), 8) },
-            );
-            return error.InvalidSubDeviceEEPROM;
-        }
-
-        const general = try readSIIFP_ps(
-            port,
-            CatagoryGeneral,
-            station_address,
-            catagory.word_address,
-            recv_timeout_us,
-            eeprom_timeout_us,
+    if (catagory.byte_length < @divExact(@bitSizeOf(CatagoryGeneral), 8)) {
+        std.log.err(
+            "SubDevice station addr: 0x{x} has invalid eeprom sii general length: {}. Expected >= {}",
+            .{ station_address, catagory.byte_length, @divExact(@bitSizeOf(CatagoryGeneral), 8) },
         );
-        return general;
-    } else {
-        return null;
+        return error.InvalidSubDeviceEEPROM;
     }
-    unreachable;
+
+    const general = try readSIIFP_ps(
+        port,
+        CatagoryGeneral,
+        station_address,
+        catagory.word_address,
+        recv_timeout_us,
+        eeprom_timeout_us,
+    );
+    return general;
 }
 
 pub const PDO = struct {

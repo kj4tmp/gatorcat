@@ -546,3 +546,142 @@ pub const ObjectAccess = packed struct(u16) {
     setting: bool,
     reserved: u6 = 0,
 };
+
+/// Map of indexes in the CoE Communication Area
+///
+/// Ref: IEC 61158-6-12:2019 5.6.7.4
+pub const CommunicationAreaMap = enum(u16) {
+    device_type = 0x1000,
+    error_register = 0x1001,
+
+    manufacturer_device_name = 0x1008,
+    manufacturer_hardware_version = 0x1009,
+    manufacturer_software_version = 0x100A,
+    identity_object = 0x1018,
+    sync_manager_communication_type = 0x1c00,
+
+    pub fn sync_manager_pdo_assignment(sm: u5) u16 {
+        return 0x1c10 + sm;
+    }
+    pub fn sync_manager_synchronization(sm: u5) u16 {
+        return 0x1c30 + sm;
+    }
+};
+
+/// Device Type
+///
+/// Ref: IEC 61158-6-12:2019 5.6.7.4.1
+pub const DeviceType = packed struct(u32) {
+    device_profile: u16,
+    profile_info: u16,
+};
+
+/// Error Register
+///
+/// Ref: IEC 61158-6-12:2019 5.6.7.4.2
+pub const ErrorRegister = packed struct(u8) {
+    generic: bool,
+    current: bool,
+    voltage: bool,
+    temperature: bool,
+    communication: bool,
+    device_profile_specific: bool,
+    reserved: bool,
+    manufacturer_specific: bool,
+};
+
+/// Manufacturer Device Name
+///
+/// Ref: IEC 61158-6-12:2019 5.6.7.4.3
+pub const ManufacturerDeviceName = []const u8;
+
+/// Manufacturer Hardware Version
+///
+/// Ref: IEC 61158-6-12:2019 5.6.7.4.4
+pub const ManufacturerHardwareVersion = []const u8;
+
+/// Manufacturer Software Version
+///
+/// Ref: IEC 61158-6-12:2019 5.6.7.4.6
+pub const ManufacturerSoftwareVersion = []const u8;
+
+/// Identity Object
+///
+/// Ref: IEC 61158-6-12:2019 5.6.7.4.6
+pub const IdentityObject = struct {
+    /// subindex 1
+    vendor_id: u32,
+    /// subindex 2
+    product_code: u32,
+    /// subindex 3
+    revision_number: u32,
+    /// subindex 4
+    serial_number: u32,
+};
+
+/// PDO Mapping Entry
+///
+/// The PDO mapping index contains multiple subindices.
+/// Each subindex
+///
+/// Ref: IEC 61158-6-12:2019 5.6.7.4.7
+pub const PDOMappingEntry = packed struct(u32) {
+    bit_length: u8,
+    /// shall be zero if gap in PDO
+    subindex: u8,
+    /// shall be zero if gap in PDO
+    index: u16,
+};
+
+pub const PDOMapping = std.BoundedArray(PDOMappingEntry, 254);
+
+/// SM Communication Type Entry
+///
+/// Ref: IEC 61158-6-12:2019 5.6.7.4.9
+pub const SMCommunicationTypeEntry = enum(u8) {
+    unused = 0,
+    mailbox_out = 1,
+    mailbox_in = 2,
+    output = 3,
+    input = 4,
+    _,
+};
+/// Spec says this can be 4-32 in length.
+pub const SMCommunicationTypes = std.BoundedArray(SMCommunicationTypeEntry, 32);
+
+/// Sync Manager Channel
+///
+/// There are up to 32 sync manager channels.
+///
+/// Each channel can be assigned up to 254 PDOs.
+///
+/// The u16 in this array is the PDO index.
+///
+/// TODO: Unclear what the difference between a sync manager channel
+/// and a PDO assignment is.
+///
+/// Ref: IEC 61158-6-12:2019 5.6.7.4.10.1
+pub const SMChannel = std.BoundedArray(u16, 254);
+
+pub const SMSynchronizationType = enum(u16) {
+    not_synchronized = 0,
+    /// Synchronized iwth AL event on this SM
+    synchron = 1,
+    /// Synchronized with AL event Sync0
+    dc_sync0 = 2,
+    /// Synchronized with AL event Sync1
+    dc_sync1 = 3,
+    _,
+
+    pub fn sync_sm(sm: u5) u16 {
+        return 32 + sm;
+    }
+};
+
+/// Sync Manager Synchronization
+pub const SyncManagerSynchronization = struct {
+    // subindex 0 can be 1-3
+    synchronization_type: SMSynchronizationType,
+    cycle_time_ns: u32,
+    shift_time_ns: u32,
+};

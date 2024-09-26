@@ -10,6 +10,7 @@ const beckhoff_EK1100 = ecm.sii.SubDeviceIdentity{ .vendor_id = 0x2, .product_co
 const beckhoff_EL3314 = ecm.sii.SubDeviceIdentity{ .vendor_id = 0x2, .product_code = 0xcf23052, .revision_number = 0x120000 };
 const beckhoff_EL3048 = ecm.sii.SubDeviceIdentity{ .vendor_id = 0x2, .product_code = 0xbe83052, .revision_number = 0x130000 };
 const beckhoff_EL7041_1000 = ecm.sii.SubDeviceIdentity{ .vendor_id = 0x2, .product_code = 0x1b813052, .revision_number = 0x1503e8 };
+const beckhoff_EL2008 = ecm.sii.SubDeviceIdentity{ .vendor_id = 0x2, .product_code = 0x7d83052, .revision_number = 0x100000 };
 
 var subdevices: [255]ecm.SubDevice = undefined;
 var process_image = std.mem.zeroes([255]u8);
@@ -46,6 +47,11 @@ const eni = ecm.ENI{
             .identity = beckhoff_EL7041_1000,
             .station_address = 0x1003,
             .ring_position = 3,
+        },
+        .{
+            .identity = beckhoff_EL2008,
+            .station_address = 0x1004,
+            .ring_position = 4,
         },
     },
 };
@@ -93,18 +99,20 @@ pub fn main() !void {
     const reader = fbs.reader();
     std.log.warn("got {}", .{try ecm.wire.packFromECatReader(i16, reader)});
 
-    const res = try ecm.sii.readPDOs(&port, 0x1003, .rx, 3000, 10_000) orelse return error.NoPDOs;
+    const res = try ecm.sii.readPDOs(&port, 0x1004, .rx, 3000, 10_000) orelse return error.NoPDOs;
     for (res.slice()) |pdo| {
-        if (try ecm.sii.readSIIString(&port, 0x1003, pdo.header.name_idx, 3000, 10_000)) |name| {
+        if (try ecm.sii.readSIIString(&port, 0x1004, pdo.header.name_idx, 3000, 10_000)) |name| {
             std.log.warn("pdo name: {s}", .{name.slice()});
         }
         std.log.warn("pdo index: 0x{x}, full: {}", .{ pdo.header.index, pdo.header });
         for (pdo.entries.slice()) |entry| {
-            if (try ecm.sii.readSIIString(&port, 0x1003, entry.name_idx, 3000, 10_000)) |name| {
+            if (try ecm.sii.readSIIString(&port, 0x1004, entry.name_idx, 3000, 10_000)) |name| {
                 std.log.warn("    name: {s}", .{name.slice()});
             }
             std.log.warn("    index: 0x{x}, subindex: 0x{x}, data type: {}, full: {}", .{ entry.index, entry.subindex, entry.data_type, entry });
         }
     }
     std.log.warn("res size: {any}", .{@sizeOf(@TypeOf(res))});
+
+    std.log.warn("pdo bit len: {}", .{ecm.sii.pdoBitLength(res.slice())});
 }

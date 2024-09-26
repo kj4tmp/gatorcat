@@ -601,6 +601,26 @@ comptime {
 
 pub const PDOs = std.BoundedArray(PDO, max_txpdos);
 
+/// Calculate the bit length of a given set of PDOs
+/// ignoring un-used PDOs.
+pub fn pdoBitLength(pdos: []const PDO) u32 {
+    var res: u32 = 0;
+    for (pdos) |pdo| {
+        // in the SII, unused PDOs are typically marked by specifiying
+        // the assigned syncmanager as 0xFF. There doesn't seem to be
+        // any thing in the specs about this. There can only be a maximum of
+        // 16 sync managers, so we will just check if the assigned
+        // sync manager is even possible.
+        // Use < and not <= since sycnM index starts at zero.
+        if (pdo.header.syncM < max_sm) {
+            for (pdo.entries.slice()) |entry| {
+                res += entry.bit_len;
+            }
+        }
+    }
+    return res;
+}
+
 pub const PDODirection = enum {
     /// TXPDO = input = transmitted by subdevice
     tx,

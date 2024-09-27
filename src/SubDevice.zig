@@ -46,27 +46,7 @@ pub const RuntimeInfo = struct {
     name: ?sii.SIIString = null,
     /// order id from the SII, ex: EK1100
     order_id: ?sii.SIIString = null,
-
-    // cnt session id for CoE
-    // 0 reserved, next after 7 is 1
-    cnt: u3 = 1,
-
-    // TODO: atomics / thread safety
-    pub fn nextCnt(self: *RuntimeInfo) u3 {
-        const next_cnt: u3 = switch (self.cnt) {
-            0 => unreachable,
-            1 => 2,
-            2 => 3,
-            3 => 4,
-            4 => 5,
-            5 => 6,
-            6 => 7,
-            7 => 1,
-        };
-        assert(next_cnt != 0);
-        self.cnt = next_cnt;
-        return next_cnt;
-    }
+    cnt: coe.Cnt = coe.Cnt{},
 };
 
 const SubDevice = @This();
@@ -481,7 +461,7 @@ pub fn sdoWrite(
         buf,
         recv_timeout_us,
         mbx_timeout_us,
-        self.runtime_info.nextCnt(), // SM1 is mailbox in
+        self.runtime_info.cnt.nextCnt(), // SM1 is mailbox in
         sms.SM1.physical_start_address,
         sms.SM1.length,
         // SM0 is mailbox out
@@ -528,7 +508,7 @@ pub fn sdoRead(
         out,
         recv_timeout_us,
         mbx_timeout_us,
-        self.runtime_info.nextCnt(),
+        self.runtime_info.cnt.nextCnt(),
         // SM1 is mailbox in
         sms.SM1.physical_start_address,
         sms.SM1.length,

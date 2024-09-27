@@ -181,6 +181,46 @@ pub fn sdoWrite(
     }
 }
 
+// TODO: diag mailbox content?
+/// Read a packed type from an SDO.
+pub fn sdoReadPack(
+    port: *nic.Port,
+    station_address: u16,
+    index: u16,
+    subindex: u8,
+    complete_access: bool,
+    comptime packed_type: type,
+    recv_timeout_us: u32,
+    mbx_timeout_us: u32,
+    cnt: u3,
+    mbx_in_start_addr: u16,
+    mbx_in_length: u16,
+    mbx_out_start_addr: u16,
+    mbx_out_length: u16,
+) !packed_type {
+    var bytes = wire.zerosFromPack(packed_type);
+    const n_bytes_read = try sdoRead(
+        port,
+        station_address,
+        index,
+        subindex,
+        complete_access,
+        &bytes,
+        recv_timeout_us,
+        mbx_timeout_us,
+        cnt,
+        mbx_in_start_addr,
+        mbx_in_length,
+        mbx_out_start_addr,
+        mbx_out_length,
+        null,
+    );
+    if (n_bytes_read != bytes.len) {
+        return error.WrongPackSize;
+    }
+    return wire.packFromECat(packed_type, bytes);
+}
+
 // TODO: support segmented reads
 /// Read the SDO from the subdevice into a buffer.
 ///
@@ -685,3 +725,65 @@ pub const SyncManagerSynchronization = struct {
     cycle_time_ns: u32,
     shift_time_ns: u32,
 };
+
+/// Cnt session id for CoE
+///
+/// Ref: IEC 61158-6-12:2019 5.6.1
+pub const Cnt = struct {
+    // 0 reserved, next after 7 is 1
+    cnt: u3 = 1,
+
+    // TODO: atomics / thread safety
+    pub fn nextCnt(self: *Cnt) u3 {
+        const next_cnt: u3 = switch (self.cnt) {
+            0 => unreachable,
+            1 => 2,
+            2 => 3,
+            3 => 4,
+            4 => 5,
+            5 => 6,
+            6 => 7,
+            7 => 1,
+        };
+        assert(next_cnt != 0);
+        self.cnt = next_cnt;
+        return next_cnt;
+    }
+};
+
+// TODO: use complete access when avaiable
+// TODO: add diag mailbox content?
+/// Read the PDOs from the subdevice.
+///
+/// The cnt is a synchronization primitive used in CoE.
+pub fn readPDOs(
+    port: *nic.Port,
+    station_address: u16,
+    recv_timeout_us: u32,
+    mbx_timeout_us: u32,
+    cnt: *Cnt,
+    mbx_in_start_addr: u16,
+    mbx_in_length: u16,
+    mbx_out_start_addr: u16,
+    mbx_out_length: u16,
+) !void {
+    // the sync manager communication type index is an array of sync manager
+    // communication types. subindex 0 is the number of entries.
+    const n_sm = try sdoReadPack(
+        port,
+        station_address,
+        @intFromEnum(CommunicationAreaMap.sync_manager_communication_type),
+        0,
+        false,
+        u8,
+        recv_timeout_us,
+        mbx_timeout_us,
+        cnt.nextCnt(),
+        mbx_in_start_addr,
+        mbx_in_length,
+        mbx_out_start_addr,
+        mbx_out_length,
+    );
+    if (n_sm)
+        std.log.warn("n_sm: {}", .{n_sm});
+}

@@ -327,7 +327,7 @@ test "calc_autoinc_addr" {
 /// for commands which use station addressing.
 ///
 /// The position parameter is the subdevice's position
-/// inthe ethercat bus. 0 is the first subdevice.
+/// in the ethercat bus. 0 is the first subdevice.
 pub fn calc_station_addr(position: u16) u16 {
     return 0x1000 +% position;
 }

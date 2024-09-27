@@ -832,7 +832,10 @@ pub const SyncManagerAttributes = packed struct(u64) {
 /// SM1: process data read
 ///
 /// Ref: 61158-4-12:2019 6.7.2
-pub const SMRegister = packed struct {
+/// The specification only mentions the first 16 sync managers.
+/// But the CoE specification shows up to 32.
+/// TODO: how many sync managers are there???
+pub const SMRegister = packed struct(u2048) {
     SM0: SyncManagerAttributes,
     SM1: SyncManagerAttributes,
     SM2: SyncManagerAttributes,

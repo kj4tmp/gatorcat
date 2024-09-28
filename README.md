@@ -1,6 +1,6 @@
 # Zig EtherCAT MainDevice
 
-An EtherCAT MainDevice written in pure Zig.
+GatorCAT is an EtherCAT maindevice written in the zig programming language.
 
 This library is in extremely early development.
 

@@ -361,10 +361,7 @@ pub const Segment = struct {
             },
             // the serialize and deserialize methods will handle
             // the required seven padding bytes
-            .data = std.BoundedArray(
-                u8,
-                data_max_size,
-            ).init(0) catch unreachable,
+            .data = std.BoundedArray(u8, data_max_size){},
         };
     }
 

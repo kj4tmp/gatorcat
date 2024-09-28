@@ -116,5 +116,5 @@ pub fn main() !void {
 
     std.log.warn("pdo bit len: {}", .{ecm.sii.pdoBitLength(res.slice())});
 
-    try ecm.mailbox.coe.readPDOs(&port, 0x1001, 3000, 10_000, &subdevices[1].runtime_info.cnt, 0x1080, 128, 0x1000, 128);
+    try ecm.mailbox.coe.readPDOAssignment(&port, 0x1001, 3000, 10_000, &subdevices[1].runtime_info.cnt, 0x1080, 128, 0x1000, 128);
 }

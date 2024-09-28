@@ -9,7 +9,7 @@ pub fn packedSize(comptime T: type) comptime_int {
     return @divExact(@bitSizeOf(T), 8);
 }
 
-// TODO: check recursively for struct fields
+// TODO: check recursively for struct fields that are enums?
 pub fn isECatPackable(comptime T: type) bool {
     if (@bitSizeOf(T) % 8 != 0) return false;
     return switch (@typeInfo(T)) {
@@ -26,8 +26,7 @@ pub fn isECatPackable(comptime T: type) bool {
             // TODO: check enum cannot contain invalid values after bitcast
             // i.e. must be non-exhaustive or represent all values of
             // backing integer.
-            _ = _enum;
-            break :blk true;
+            break :blk !_enum.is_exhaustive;
         },
         else => false,
     };
@@ -141,16 +140,25 @@ test packFromECatReader {
     try std.testing.expectEqualDeep(expected_pack, actual_pack);
 }
 
-// TODO: handle enums
+/// Convert little endian packed bytes from EtherCAT to host representation.
+///
+/// Supports enums, packed structs, and most primitive types. All most have
+/// bitlength divisible by 8.
 pub fn packFromECat(comptime T: type, ecat_bytes: [@divExact(@bitSizeOf(T), 8)]u8) T {
     comptime assert(isECatPackable(T));
     switch (native_endian) {
         .little => {
+            if (@typeInfo(T) == .@"enum") {
+                return @enumFromInt(@as(@typeInfo(T).@"enum".tag_type, @bitCast(ecat_bytes)));
+            }
             return @bitCast(ecat_bytes);
         },
         .big => {
             var bytes_copy = ecat_bytes;
             std.mem.reverse(u8, &bytes_copy);
+            if (@typeInfo(T) == .@"enum") {
+                return @enumFromInt(@as(@typeInfo(T).@"enum".tag_type, @bitCast(ecat_bytes)));
+            }
             return @bitCast(bytes_copy);
         },
     }

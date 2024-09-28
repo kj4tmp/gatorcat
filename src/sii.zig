@@ -3,6 +3,7 @@
 //! Address is word (two-byte) address.
 
 // TODO: refactor for less repetition
+// TODO: Reduce memory usage of the bounded arrays in this module.
 
 const std = @import("std");
 const Timer = std.time.Timer;
@@ -349,52 +350,52 @@ pub fn escSMsFromSIISMs(sii_sms: []const SyncM) esc.SMRegister {
         res.SM15 = escSMFromSIISM(sii_sms[15]);
     }
     if (sii_sms.len > 16) {
-        res.SM15 = escSMFromSIISM(sii_sms[16]);
+        res.SM16 = escSMFromSIISM(sii_sms[16]);
     }
     if (sii_sms.len > 17) {
-        res.SM15 = escSMFromSIISM(sii_sms[17]);
+        res.SM17 = escSMFromSIISM(sii_sms[17]);
     }
     if (sii_sms.len > 18) {
-        res.SM15 = escSMFromSIISM(sii_sms[18]);
+        res.SM18 = escSMFromSIISM(sii_sms[18]);
     }
     if (sii_sms.len > 19) {
-        res.SM15 = escSMFromSIISM(sii_sms[19]);
+        res.SM19 = escSMFromSIISM(sii_sms[19]);
     }
     if (sii_sms.len > 20) {
-        res.SM15 = escSMFromSIISM(sii_sms[20]);
+        res.SM20 = escSMFromSIISM(sii_sms[20]);
     }
     if (sii_sms.len > 21) {
-        res.SM15 = escSMFromSIISM(sii_sms[21]);
+        res.SM21 = escSMFromSIISM(sii_sms[21]);
     }
     if (sii_sms.len > 22) {
-        res.SM15 = escSMFromSIISM(sii_sms[22]);
+        res.SM22 = escSMFromSIISM(sii_sms[22]);
     }
     if (sii_sms.len > 23) {
-        res.SM15 = escSMFromSIISM(sii_sms[23]);
+        res.SM23 = escSMFromSIISM(sii_sms[23]);
     }
     if (sii_sms.len > 24) {
-        res.SM15 = escSMFromSIISM(sii_sms[24]);
+        res.SM24 = escSMFromSIISM(sii_sms[24]);
     }
     if (sii_sms.len > 25) {
-        res.SM15 = escSMFromSIISM(sii_sms[25]);
+        res.SM25 = escSMFromSIISM(sii_sms[25]);
     }
     if (sii_sms.len > 26) {
-        res.SM15 = escSMFromSIISM(sii_sms[26]);
+        res.SM26 = escSMFromSIISM(sii_sms[26]);
     }
     if (sii_sms.len > 27) {
-        res.SM15 = escSMFromSIISM(sii_sms[27]);
+        res.SM27 = escSMFromSIISM(sii_sms[27]);
     }
     if (sii_sms.len > 28) {
-        res.SM15 = escSMFromSIISM(sii_sms[28]);
+        res.SM28 = escSMFromSIISM(sii_sms[28]);
     }
     if (sii_sms.len > 29) {
-        res.SM15 = escSMFromSIISM(sii_sms[29]);
+        res.SM29 = escSMFromSIISM(sii_sms[29]);
     }
     if (sii_sms.len > 30) {
-        res.SM15 = escSMFromSIISM(sii_sms[30]);
+        res.SM30 = escSMFromSIISM(sii_sms[30]);
     }
     if (sii_sms.len > 31) {
-        res.SM15 = escSMFromSIISM(sii_sms[31]);
+        res.SM31 = escSMFromSIISM(sii_sms[31]);
     }
 
     return res;
@@ -450,7 +451,7 @@ pub fn readSIIString(
             str_len = try reader.readByte();
             try reader.readNoEof(string_buf[0..str_len]);
         } else {
-            var arr = try SIIString.init(0);
+            var arr = SIIString{};
             try arr.appendSlice(string_buf[0..str_len]);
             return arr;
         }
@@ -501,7 +502,7 @@ pub fn readFMMUCatagory(
     var limited_reader = std.io.limitedReader(stream.reader(), catagory.byte_length);
     const reader = limited_reader.reader();
 
-    var res = FMMUCatagory.init(0) catch unreachable;
+    var res = FMMUCatagory{};
     for (0..n_fmmu) |_| {
         // TODO: better enum reader
         res.append(try reader.readEnum(FMMUFunction, std.builtin.Endian.little)) catch |err| switch (err) {
@@ -546,7 +547,7 @@ pub fn readSMCatagory(
     );
     var limited_reader = std.io.limitedReader(stream.reader(), catagory.byte_length);
     const reader = limited_reader.reader();
-    var res = SMCatagory.init(0) catch unreachable;
+    var res = SMCatagory{};
     for (0..n_sm) |_| {
         res.append(try wire.packFromECatReader(SyncM, reader)) catch |err| switch (err) {
             error.Overflow => return error.InvalidSII,
@@ -709,14 +710,14 @@ pub fn readPDOs(
     var limited_reader = std.io.limitedReader(stream.reader(), catagory.byte_length);
     const reader = limited_reader.reader();
 
-    var pdos = std.BoundedArray(PDO, max_txpdos).init(0) catch unreachable;
+    var pdos = std.BoundedArray(PDO, max_txpdos){};
 
     const State = enum {
         entries,
         pdo_header,
         emit_pdo,
     };
-    var entries = std.BoundedArray(PDO.Entry, PDO.max_entries).init(0) catch unreachable;
+    var entries = std.BoundedArray(PDO.Entry, PDO.max_entries){};
     var pdo_header: PDO.Header = undefined;
     var entries_remaining: u8 = 0;
     state: switch (State.pdo_header) {

@@ -154,3 +154,4 @@ This library is in extremely early development.
 
 - [ ] align enums to style guide: <https://github.com/ziglang/zig/issues/2101>
 - [ ] adjust order of declatations in files
+- [ ] audit std.log statements

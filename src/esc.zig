@@ -750,7 +750,7 @@ pub const SyncManagerAttributes = packed struct(u64) {
     activate: SyncManagerActivateRegister,
     channel_enable_PDI: bool,
     repeat_ack: bool,
-    reserved4: u6 = 0,
+    reserved: u6 = 0,
 
     /// SM0 should be used for mailbox out.
     ///

@@ -1,3 +1,5 @@
+// TODO: Reduce memory usage of the bounded arrays in this module.
+
 const std = @import("std");
 const Timer = std.time.Timer;
 const ns_per_us = std.time.ns_per_us;
@@ -216,6 +218,7 @@ pub fn sdoReadPack(
         null,
     );
     if (n_bytes_read != bytes.len) {
+        std.log.err("expected pack size: {}, got {}", .{ bytes.len, n_bytes_read });
         return error.WrongPackSize;
     }
     return wire.packFromECat(packed_type, bytes);
@@ -600,10 +603,10 @@ pub const CommunicationAreaMap = enum(u16) {
     identity_object = 0x1018,
     sync_manager_communication_type = 0x1c00,
 
-    pub fn sync_manager_pdo_assignment(sm: u5) u16 {
-        return 0x1c10 + sm;
+    pub fn sm_pdo_assignment(sm: u5) u16 {
+        return 0x1c10 + @as(u16, sm);
     }
-    pub fn sync_manager_synchronization(sm: u5) u16 {
+    pub fn sm_sync(sm: u5) u16 {
         return 0x1c30 + sm;
     }
 };
@@ -658,36 +661,6 @@ pub const IdentityObject = struct {
     /// subindex 4
     serial_number: u32,
 };
-
-/// PDO Mapping Entry
-///
-/// The PDO mapping index contains multiple subindices.
-/// Each subindex
-///
-/// Ref: IEC 61158-6-12:2019 5.6.7.4.7
-pub const PDOMappingEntry = packed struct(u32) {
-    bit_length: u8,
-    /// shall be zero if gap in PDO
-    subindex: u8,
-    /// shall be zero if gap in PDO
-    index: u16,
-};
-
-pub const PDOMapping = std.BoundedArray(PDOMappingEntry, 254);
-
-/// SM Communication Type Entry
-///
-/// Ref: IEC 61158-6-12:2019 5.6.7.4.9
-pub const SMCommunicationTypeEntry = enum(u8) {
-    unused = 0,
-    mailbox_out = 1,
-    mailbox_in = 2,
-    output = 3,
-    input = 4,
-    _,
-};
-/// Spec says this can be 4-32 in length.
-pub const SMCommunicationTypes = std.BoundedArray(SMCommunicationTypeEntry, 32);
 
 /// Sync Manager Channel
 ///
@@ -751,12 +724,60 @@ pub const Cnt = struct {
     }
 };
 
+/// The maximum number of sync managers is limited to 32.
+///
+/// Ref:
+pub const max_sm = 32;
+
+pub const PDODirection = enum {
+    /// TXPDO = input = transmitted by subdevice
+    tx,
+    /// RXPDO = output = transmitted by maindevice
+    rx,
+};
+
+pub const PDOAssignment = std.BoundedArray(PDOMapping, max_sm);
+
+pub const PDOMapping = struct {
+    entries: Entries,
+    communication_type: SMCommunicationType,
+    pub const Entries = std.BoundedArray(PDOMappingEntry, 254);
+};
+
+/// PDO Mapping Entry
+///
+/// The PDO mapping index contains multiple subindices.
+///
+/// Ref: IEC 61158-6-12:2019 5.6.7.4.7
+pub const PDOMappingEntry = packed struct(u32) {
+    bit_length: u8,
+    /// shall be zero if gap in PDO
+    subindex: u8,
+    /// shall be zero if gap in PDO
+    index: u16,
+};
+
+/// SM Communication Type Entry
+///
+/// Ref: IEC 61158-6-12:2019 5.6.7.4.9
+pub const SMCommunicationType = enum(u8) {
+    unused = 0,
+    mailbox_out = 1,
+    mailbox_in = 2,
+    output = 3,
+    input = 4,
+    _,
+};
+
+/// Spec says this can be 4-32 in length.
+pub const SMCommunicationTypes = std.BoundedArray(SMCommunicationType, max_sm);
+
 // TODO: use complete access when avaiable
 // TODO: add diag mailbox content?
-/// Read the PDOs from the subdevice.
+/// Read the PDO Assignment from the subdevice.
 ///
 /// The cnt is a synchronization primitive used in CoE.
-pub fn readPDOs(
+pub fn readPDOAssignment(
     port: *nic.Port,
     station_address: u16,
     recv_timeout_us: u32,
@@ -785,4 +806,79 @@ pub fn readPDOs(
         mbx_out_length,
     );
     std.log.warn("n_sm: {}", .{n_sm});
+
+    if (n_sm > 32) return error.InvalidCoENumberOfSyncManagers;
+
+    var sm_types = SMCommunicationTypes{};
+
+    for (0..n_sm) |sm_idx| {
+        try sm_types.append(try sdoReadPack(
+            port,
+            station_address,
+            @intFromEnum(CommunicationAreaMap.sync_manager_communication_type),
+            // the subindex of the CoE obeject is 1 + the sm_idx. (subindex 1 contains the data for SM0)
+            @intCast(sm_idx + 1),
+            false,
+            SMCommunicationType,
+            recv_timeout_us,
+            mbx_timeout_us,
+            cnt.nextCnt(),
+            mbx_in_start_addr,
+            mbx_in_length,
+            mbx_out_start_addr,
+            mbx_out_length,
+        ));
+    }
+
+    std.log.err("{any}", .{sm_types.slice()});
+    std.log.err("size pdo mapping {}", .{@sizeOf(PDOMapping)});
+
+    for (sm_types.slice(), 0..) |sm_type, sm_idx| {
+        switch (sm_type) {
+            // unused and mailbox sync managers don't have PDOs
+            .unused => continue,
+            .mailbox_in => continue,
+            .mailbox_out => continue,
+            .input => {},
+            .output => {},
+            _ => return error.InvalidCoESMType,
+        }
+        var entries = PDOMapping.Entries{};
+
+        const n_pdos = try sdoReadPack(
+            port,
+            station_address,
+            CommunicationAreaMap.sm_pdo_assignment(@intCast(sm_idx)),
+            0,
+            false,
+            u8,
+            recv_timeout_us,
+            mbx_timeout_us,
+            cnt.nextCnt(),
+            mbx_in_start_addr,
+            mbx_in_length,
+            mbx_out_start_addr,
+            mbx_out_length,
+        );
+
+        if (n_pdos > entries.capacity()) return error.InvalidCoENumberOfPDOs;
+
+        for (0..n_pdos) |pdo_idx| {
+            try entries.append(try sdoReadPack(
+                port,
+                station_address,
+                CommunicationAreaMap.sm_pdo_assignment(@intCast(sm_idx)),
+                @intCast(pdo_idx + 1),
+                false,
+                PDOMappingEntry,
+                recv_timeout_us,
+                mbx_timeout_us,
+                cnt.nextCnt(),
+                mbx_in_start_addr,
+                mbx_in_length,
+                mbx_out_start_addr,
+                mbx_out_length,
+            ));
+        }
+    }
 }

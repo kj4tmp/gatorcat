@@ -784,6 +784,5 @@ pub fn readPDOs(
         mbx_out_start_addr,
         mbx_out_length,
     );
-    if (n_sm)
-        std.log.warn("n_sm: {}", .{n_sm});
+    std.log.warn("n_sm: {}", .{n_sm});
 }

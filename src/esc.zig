@@ -835,7 +835,7 @@ pub const SyncManagerAttributes = packed struct(u64) {
 /// The specification only mentions the first 16 sync managers.
 /// But the CoE specification shows up to 32.
 /// TODO: how many sync managers are there???
-pub const SMRegister = packed struct(u1024) {
+pub const SMRegister = packed struct(u2048) {
     SM0: SyncManagerAttributes,
     SM1: SyncManagerAttributes,
     SM2: SyncManagerAttributes,
@@ -852,6 +852,22 @@ pub const SMRegister = packed struct(u1024) {
     SM13: SyncManagerAttributes,
     SM14: SyncManagerAttributes,
     SM15: SyncManagerAttributes,
+    SM16: SyncManagerAttributes,
+    SM17: SyncManagerAttributes,
+    SM18: SyncManagerAttributes,
+    SM19: SyncManagerAttributes,
+    SM20: SyncManagerAttributes,
+    SM21: SyncManagerAttributes,
+    SM22: SyncManagerAttributes,
+    SM23: SyncManagerAttributes,
+    SM24: SyncManagerAttributes,
+    SM25: SyncManagerAttributes,
+    SM26: SyncManagerAttributes,
+    SM27: SyncManagerAttributes,
+    SM28: SyncManagerAttributes,
+    SM29: SyncManagerAttributes,
+    SM30: SyncManagerAttributes,
+    SM31: SyncManagerAttributes,
 };
 
 // TODO: verify representation of sys time difference

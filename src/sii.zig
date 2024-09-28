@@ -348,6 +348,55 @@ pub fn escSMsFromSIISMs(sii_sms: []const SyncM) esc.SMRegister {
     if (sii_sms.len > 15) {
         res.SM15 = escSMFromSIISM(sii_sms[15]);
     }
+    if (sii_sms.len > 16) {
+        res.SM15 = escSMFromSIISM(sii_sms[16]);
+    }
+    if (sii_sms.len > 17) {
+        res.SM15 = escSMFromSIISM(sii_sms[17]);
+    }
+    if (sii_sms.len > 18) {
+        res.SM15 = escSMFromSIISM(sii_sms[18]);
+    }
+    if (sii_sms.len > 19) {
+        res.SM15 = escSMFromSIISM(sii_sms[19]);
+    }
+    if (sii_sms.len > 20) {
+        res.SM15 = escSMFromSIISM(sii_sms[20]);
+    }
+    if (sii_sms.len > 21) {
+        res.SM15 = escSMFromSIISM(sii_sms[21]);
+    }
+    if (sii_sms.len > 22) {
+        res.SM15 = escSMFromSIISM(sii_sms[22]);
+    }
+    if (sii_sms.len > 23) {
+        res.SM15 = escSMFromSIISM(sii_sms[23]);
+    }
+    if (sii_sms.len > 24) {
+        res.SM15 = escSMFromSIISM(sii_sms[24]);
+    }
+    if (sii_sms.len > 25) {
+        res.SM15 = escSMFromSIISM(sii_sms[25]);
+    }
+    if (sii_sms.len > 26) {
+        res.SM15 = escSMFromSIISM(sii_sms[26]);
+    }
+    if (sii_sms.len > 27) {
+        res.SM15 = escSMFromSIISM(sii_sms[27]);
+    }
+    if (sii_sms.len > 28) {
+        res.SM15 = escSMFromSIISM(sii_sms[28]);
+    }
+    if (sii_sms.len > 29) {
+        res.SM15 = escSMFromSIISM(sii_sms[29]);
+    }
+    if (sii_sms.len > 30) {
+        res.SM15 = escSMFromSIISM(sii_sms[30]);
+    }
+    if (sii_sms.len > 31) {
+        res.SM15 = escSMFromSIISM(sii_sms[31]);
+    }
+
     return res;
 }
 
@@ -465,7 +514,7 @@ pub fn readFMMUCatagory(
 /// There can only be a maximum of 16 sync managers.
 ///
 /// Ref: IEC 61158-6-12:2019 6.7.2
-pub const max_sm = 16;
+pub const max_sm = 32;
 pub const SMCatagory = std.BoundedArray(SyncM, max_sm);
 
 pub fn readSMCatagory(

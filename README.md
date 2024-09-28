@@ -1,4 +1,4 @@
-# Zig EtherCAT MainDevice
+# GatorCAT
 
 GatorCAT is an EtherCAT maindevice written in the zig programming language.
 

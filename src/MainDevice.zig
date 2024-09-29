@@ -274,7 +274,7 @@ pub fn busSAFEOP(self: *MainDevice) !void {
     // perform PS tasks for each subdevice
     for (self.subdevices[0..self.eni.subdevices.len], self.eni.subdevices) |*subdevice, subdevice_config| {
         _ = subdevice_config;
-        try subdevice.transitionPS(self.port, self.settings.recv_timeout_us);
+        try subdevice.transitionPS(self.port, self.settings.recv_timeout_us, self.settings.eeprom_timeout_us);
         try subdevice.setALState(
             self.port,
             .SAFEOP,

@@ -303,12 +303,7 @@ pub fn transitionIP(
     }
 
     // TODO: FMMUs
-    self.runtime_info.fmmus = try sii.readFMMUCatagory(
-        port,
-        station_address,
-        recv_timeout_us,
-        eeprom_timeout_us,
-    );
+
     // std.log.info("sii fmmus: {any}", .{
     //     std.json.fmt(runtime_info.fmmus, .{
     //         .whitespace = .indent_4,
@@ -380,23 +375,49 @@ pub fn transitionPS(
     self: *SubDevice,
     port: *nic.Port,
     recv_timeout_us: u32,
+    eeprom_timeout_us: u32,
 ) !void {
     // if CoE is supported, the subdevice PDOs can be mapped using information
     // from CoE. otherwise it can be obtained from the SII.
     // Ref: IEC 61158-5-12:2019 6.1.1.1
     // TODO: does it say somewhere that if CoE supported the PDOs MUST be in the CoE?
+    const station_address = self.prior_info.station_address;
 
     try self.doStartupParameters(port, .PS, recv_timeout_us);
 
-    // The PDOs can be read using SII or CoE.
-    // We first read the configuration from SII and use that. If CoE is supported,
-    // we read that and it overwrites whatever we got from SII.
     // read PDOs from SII
+    const inputs_bit_length = try sii.readPDOBitLengths(
+        port,
+        station_address,
+        .tx,
+        recv_timeout_us,
+        eeprom_timeout_us,
+    );
+    std.log.info("station addr: 0x{x}, inputs_bit_length: {}", .{ station_address, inputs_bit_length });
 
-    // configure PDOs from CoE
+    const outputs_bit_length = try sii.readPDOBitLengths(
+        port,
+        station_address,
+        .rx,
+        recv_timeout_us,
+        eeprom_timeout_us,
+    );
+    std.log.info("station addr: 0x{x}, outputs_bit_length: {}", .{ station_address, outputs_bit_length });
 
+    // TODO: configure pdos / sync managers from CoE
     // TODO: configure PDOs from SoE
 
+    // check process data bit lengths
+    if (inputs_bit_length != self.prior_info.inputs_bit_length) return error.InvalidInputsBitLength;
+    if (outputs_bit_length != self.prior_info.outputs_bit_length) return error.InvalidOutputsBitLength;
+
+    // read available FMMUs from SII
+    self.runtime_info.fmmus = try sii.readFMMUCatagory(
+        port,
+        station_address,
+        recv_timeout_us,
+        eeprom_timeout_us,
+    );
 }
 
 pub fn doStartupParameters(

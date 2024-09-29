@@ -611,6 +611,19 @@ pub const PDO = struct {
         flags: u16 = 0,
         // entries sequentially after this
 
+        // Some subdevices support variable PDO assignment.
+        // In this case, the SII only contains one possible
+        // PDO assignment.
+        //
+        // Unused PDOs are typically marked by specifiying
+        // the assigned syncmanager as 0xFF. There doesn't seem to be
+        // any thing in the specs about this. There can only be a maximum of
+        // 32 sync managers, so we will just check if the assigned
+        // sync manager is even possible.
+        // Use < and not <= since sync manager index starts at zero.
+        pub fn isUsed(self: Header) bool {
+            return !(self.syncM > max_sm);
+        }
     };
 
     /// PDO Entry
@@ -625,17 +638,24 @@ pub const PDO = struct {
         /// data type of the entry, index in CoE object dictionary
         data_type: u8,
         /// bit length of the entry
-        bit_len: u8,
+        bit_length: u8,
         /// reserved
         flags: u16 = 0,
     };
 
-    /// The maximum number of PDO entries in a single PDOs
-    /// TODO: conflicting information online for this. Mayber 230 or 240?
-    pub const max_entries = 255;
-    comptime {
-        assert(max_entries == std.math.maxInt(u8));
+    pub fn bitLength(self: PDO) u32 {
+        var res: u32 = 0;
+        for (self.entries.slice()) |entry| {
+            res += entry.bit_length;
+        }
+        return res;
     }
+
+    /// The maximum number of PDO entries in a single PDOs
+    ///
+    /// In the CoE, this must be 254 or fewer. So we will assume that.
+    /// Ref: IEC 61158-6-12:2019 5.6.7.4.7
+    pub const max_entries = 254;
 };
 
 /// Each TxPDO is identified by an index from 0x1600 to 17FF. Therefore,
@@ -651,20 +671,13 @@ comptime {
 
 pub const PDOs = std.BoundedArray(PDO, max_txpdos);
 
-/// Calculate the bit length of a given set of PDOs
-/// ignoring un-used PDOs.
+/// Calculate the bit length of a given set of PDOs ignoring un-used PDOs.
 pub fn pdoBitLength(pdos: []const PDO) u32 {
     var res: u32 = 0;
     for (pdos) |pdo| {
-        // in the SII, unused PDOs are typically marked by specifiying
-        // the assigned syncmanager as 0xFF. There doesn't seem to be
-        // any thing in the specs about this. There can only be a maximum of
-        // 16 sync managers, so we will just check if the assigned
-        // sync manager is even possible.
-        // Use < and not <= since sycnM index starts at zero.
         if (pdo.header.syncM < max_sm) {
             for (pdo.entries.slice()) |entry| {
-                res += entry.bit_len;
+                res += entry.bit_length;
             }
         }
     }
@@ -678,6 +691,81 @@ pub const PDODirection = enum {
     rx,
 };
 
+/// Iterate over all the PDOs defined in the SII and report the
+/// total bitlength of the inputs and the outputs.
+///
+/// Uses much less stack memory than readPDOs.
+pub fn readPDOBitLengths(
+    port: *nic.Port,
+    station_address: u16,
+    direction: PDODirection,
+    recv_timeout_us: u32,
+    eeprom_timeout_us: u32,
+) !u32 {
+    const catagory = try findCatagoryFP(
+        port,
+        station_address,
+        switch (direction) {
+            .tx => .TXPDO,
+            .rx => .RXPDO,
+        },
+        recv_timeout_us,
+        eeprom_timeout_us,
+    ) orelse return 0;
+
+    // entries are 8 bytes, pdo header is 8 bytes, so
+    // this should be a multiple of eight.
+    if (catagory.byte_length % 8 != 0) return error.InvalidEEPROM;
+
+    var stream = SIIStream.init(
+        port,
+        station_address,
+        catagory.word_address,
+        recv_timeout_us,
+        eeprom_timeout_us,
+    );
+    var limited_reader = std.io.limitedReader(stream.reader(), catagory.byte_length);
+    const reader = limited_reader.reader();
+
+    const State = enum {
+        pdo_header,
+        entries,
+        entries_skip,
+    };
+    var pdo_header: PDO.Header = undefined;
+    var entries_remaining: u8 = 0;
+    var total_bit_length: u32 = 0;
+    state: switch (State.pdo_header) {
+        .pdo_header => {
+            assert(entries_remaining == 0);
+            pdo_header = wire.packFromECatReader(PDO.Header, reader) catch |err| switch (err) {
+                error.EndOfStream => return total_bit_length,
+                error.LinkError => return error.LinkError,
+                error.Timeout => return error.Timeout,
+            };
+            if (pdo_header.n_entries > PDO.max_entries) return error.InvalidEEPROM;
+            entries_remaining = pdo_header.n_entries;
+            if (pdo_header.isUsed()) continue :state .entries else continue :state .entries_skip;
+        },
+        .entries => {
+            if (entries_remaining == 0) continue :state .pdo_header;
+            const entry = try wire.packFromECatReader(PDO.Entry, reader);
+            entries_remaining -= 1;
+            total_bit_length += entry.bit_length;
+            continue :state .entries;
+        },
+        .entries_skip => {
+            if (entries_remaining == 0) continue :state .pdo_header;
+            _ = try wire.packFromECatReader(PDO.Entry, reader);
+            entries_remaining -= 1;
+            continue :state .entries_skip;
+        },
+    }
+}
+
+/// Read the full set of PDOs from the eeprom.
+///
+/// Warning: this uses about 1 MB of stack memory.
 pub fn readPDOs(
     port: *nic.Port,
     station_address: u16,
@@ -728,6 +816,7 @@ pub fn readPDOs(
                 error.LinkError => return error.LinkError,
                 error.Timeout => return error.Timeout,
             };
+            if (pdo_header.n_entries > PDO.max_entries) return error.InvalidEEPROM;
             entries_remaining = pdo_header.n_entries;
             continue :state .entries;
         },

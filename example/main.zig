@@ -116,5 +116,6 @@ pub fn main() !void {
 
     std.log.warn("pdo bit len: {}", .{ecm.sii.pdoBitLength(res.slice())});
     const config = ecm.mailbox.Configuration{ .mbx_in = .{ .start_addr = 0x1080, .length = 128 }, .mbx_out = .{ .start_addr = 0x1000, .length = 128 } };
-    try ecm.mailbox.coe.readPDOAssignment(&port, 0x1001, 3000, 10_000, &subdevices[1].runtime_info.cnt, config);
+    const mapping = try ecm.mailbox.coe.readPDOMapping(&port, 0x1001, 3000, 10_000, &subdevices[1].runtime_info.cnt, config, 0x1600);
+    std.log.err("mapping: {any}", .{mapping.entries.slice()});
 }

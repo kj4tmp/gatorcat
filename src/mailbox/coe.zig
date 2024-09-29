@@ -598,10 +598,10 @@ pub const CommunicationAreaMap = enum(u16) {
     identity_object = 0x1018,
     sync_manager_communication_type = 0x1c00,
 
-    pub fn sm_pdo_assignment(sm: u5) u16 {
+    pub fn smChannel(sm: u5) u16 {
         return 0x1c10 + @as(u16, sm);
     }
-    pub fn sm_sync(sm: u5) u16 {
+    pub fn smSync(sm: u5) u16 {
         return 0x1c30 + sm;
     }
 };
@@ -657,40 +657,258 @@ pub const IdentityObject = struct {
     serial_number: u32,
 };
 
+/// SM Communication Type
+///
+/// Ref: IEC 61158-6-12:2019 5.6.7.4.9
+pub const SMComm = enum(u8) {
+    unused = 0,
+    mailbox_out = 1,
+    mailbox_in = 2,
+    output = 3,
+    input = 4,
+    _,
+};
+
+pub const SMComms = std.BoundedArray(SMComm, max_sm);
+
+pub fn readSMComms(
+    port: *nic.Port,
+    station_address: u16,
+    recv_timeout_us: u32,
+    mbx_timeout_us: u32,
+    cnt: *Cnt,
+    config: mailbox.Configuration,
+) !SMComms {
+    const n_sm = try sdoReadPack(
+        port,
+        station_address,
+        @intFromEnum(CommunicationAreaMap.sync_manager_communication_type),
+        0,
+        false,
+        u8,
+        recv_timeout_us,
+        mbx_timeout_us,
+        cnt.nextCnt(),
+        config,
+    );
+
+    if (n_sm > 32) return error.InvalidSMComms;
+
+    var sm_comms = SMComms{};
+    for (0..n_sm) |sm_idx| {
+        sm_comms.append(try sdoReadPack(
+            port,
+            station_address,
+            @intFromEnum(CommunicationAreaMap.sync_manager_communication_type),
+            @intCast(sm_idx + 1),
+            false,
+            SMComm,
+            recv_timeout_us,
+            mbx_timeout_us,
+            cnt.nextCnt(),
+            config,
+        )) catch unreachable; // length already checked
+    }
+    return sm_comms;
+}
+
 /// Sync Manager Channel
 ///
 /// The u16 in this array is the PDO index.
 ///
-/// TODO: Unclear what the difference between a sync manager channel
-/// and a PDO assignment is.
-///
 /// Ref: IEC 61158-6-12:2019 5.6.7.4.10.1
+/// Note: the spec uses both the terms "channel" and "PDO assignment"
+/// to refer to this structure. Its purpose is to assign PDOs to this
+/// sync manager.
 pub const SMChannel = std.BoundedArray(u16, 254);
 
-pub fn readSMChannel() !SMChannel {}
+pub fn readSMChannel(
+    port: *nic.Port,
+    station_address: u16,
+    recv_timeout_us: u32,
+    mbx_timeout_us: u32,
+    cnt: *Cnt,
+    config: mailbox.Configuration,
+    sm_idx: u5,
+) !SMChannel {
+    const index = CommunicationAreaMap.smChannel(sm_idx);
 
-pub const SMSynchronizationType = enum(u16) {
+    const n_pdo = try sdoReadPack(
+        port,
+        station_address,
+        index,
+        0,
+        false,
+        u8,
+        recv_timeout_us,
+        mbx_timeout_us,
+        cnt.nextCnt(),
+        config,
+    );
+
+    if (n_pdo > 254) return error.InvalidSMChannel;
+
+    var channel = SMChannel{};
+    for (0..n_pdo) |i| {
+        channel.append(try sdoReadPack(
+            port,
+            station_address,
+            index,
+            @intCast(i + 1),
+            false,
+            u16,
+            recv_timeout_us,
+            mbx_timeout_us,
+            cnt.nextCnt(),
+            config,
+        )) catch unreachable; // length already checked
+    }
+    return channel;
+}
+
+/// Sync Manager Synchronization Type
+///
+/// Ref: IEC 61158-6-12:2019 5.6.7.4.11
+pub const SMSyncType = enum(u16) {
     not_synchronized = 0,
     /// Synchronized iwth AL event on this SM
-    synchron = 1,
+    sm_synchron = 1,
     /// Synchronized with AL event Sync0
     dc_sync0 = 2,
     /// Synchronized with AL event Sync1
     dc_sync1 = 3,
     _,
-
-    pub fn sync_sm(sm: u5) u16 {
-        return 32 + sm;
+    /// synchronized with AL event of SMxx
+    pub fn syncSM(sm: u5) u16 {
+        return 32 + @as(u16, sm);
     }
 };
 
 /// Sync Manager Synchronization
-pub const SyncManagerSynchronization = struct {
+///
+/// Ref: IEC 61158-6-12:2019 5.6.7.4.11
+pub const SMSynchronization = struct {
     // subindex 0 can be 1-3
-    synchronization_type: SMSynchronizationType,
-    cycle_time_ns: u32,
-    shift_time_ns: u32,
+    sync_type: SMSyncType,
+    cycle_time_ns: ?u32,
+    shift_time_ns: ?u32,
 };
+
+pub fn readSMSync(
+    port: *nic.Port,
+    station_address: u16,
+    recv_timeout_us: u32,
+    mbx_timeout_us: u32,
+    cnt: *Cnt,
+    config: mailbox.Configuration,
+    sm_idx: u5,
+) !SMSynchronization {
+    const index = CommunicationAreaMap.smChannel(sm_idx);
+
+    const n_params = try sdoReadPack(
+        port,
+        station_address,
+        index,
+        0,
+        false,
+        u8,
+        recv_timeout_us,
+        mbx_timeout_us,
+        cnt.nextCnt(),
+        config,
+    );
+
+    if (n_params > 3 or n_params == 0) return error.InvalidSMSync;
+
+    const sync_type = try sdoReadPack(
+        port,
+        station_address,
+        index,
+        1,
+        false,
+        SMSyncType,
+        recv_timeout_us,
+        mbx_timeout_us,
+        cnt.nextCnt(),
+        config,
+    );
+
+    const cycle_time: ?u32 = blk: {
+        if (n_params < 2) break :blk null;
+
+        break :blk try sdoReadPack(
+            port,
+            station_address,
+            index,
+            2,
+            false,
+            u32,
+            recv_timeout_us,
+            mbx_timeout_us,
+            cnt.nextCnt(),
+            config,
+        );
+    };
+
+    const shift_time: ?u32 = blk: {
+        if (n_params < 3) break :blk null;
+
+        break :blk try sdoReadPack(
+            port,
+            station_address,
+            index,
+            3,
+            false,
+            u32,
+            recv_timeout_us,
+            mbx_timeout_us,
+            cnt.nextCnt(),
+            config,
+        );
+    };
+
+    return SMSynchronization{
+        .sync_type = sync_type,
+        .cycle_time_ns = cycle_time,
+        .shift_time_ns = shift_time,
+    };
+}
+
+/// Sync Manager PDO Assignment
+///
+/// The sync manager pdo assignment consists of a "channel"
+/// and a synchronization scheme. The "channel" is a list of PDO indices
+/// that are all inputs or all outputs.
+///
+/// The synchronization sheme defines how the data is synchronized with
+/// events (distributed clocks or frames etc.)
+///
+/// Ref: IEC 61158-6-12:2019 5.6.7.4.10
+pub fn readSMPDOAssignment(
+    port: *nic.Port,
+    station_address: u16,
+    recv_timeout_us: u32,
+    mbx_timeout_us: u32,
+    cnt: *Cnt,
+    config: mailbox.Configuration,
+    sm_idx: u5,
+) !SMPDOAssignment {
+    var channel = SMPDOAssignment.Channel{};
+    const n_pdo = try sdoReadPack(
+        port,
+        station_address,
+        @intFromEnum(CommunicationAreaMap.smChannel(sm_idx)),
+        0,
+        false,
+        u8,
+        recv_timeout_us,
+        mbx_timeout_us,
+        cnt.nextCnt(),
+        config,
+    );
+
+    if (n_pdo == 0) return std.log.warn("n_sm: {}", .{n_pdo});
+}
 
 /// The maximum number of sync managers is limited to 32.
 ///
@@ -723,18 +941,6 @@ pub const PDOMappingEntry = packed struct(u32) {
     subindex: u8,
     /// shall be zero if gap in PDO
     index: u16,
-};
-
-/// SM Communication Type Entry
-///
-/// Ref: IEC 61158-6-12:2019 5.6.7.4.9
-pub const SMCommunicationType = enum(u8) {
-    unused = 0,
-    mailbox_out = 1,
-    mailbox_in = 2,
-    output = 3,
-    input = 4,
-    _,
 };
 
 /// Spec says this can be 4-32 in length.

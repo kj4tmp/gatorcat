@@ -22,10 +22,7 @@ pub fn sdoWrite(
     recv_timeout_us: u32,
     mbx_timeout_us: u32,
     cnt: u3,
-    mbx_in_start_addr: u16,
-    mbx_in_length: u16,
-    mbx_out_start_addr: u16,
-    mbx_out_length: u16,
+    config: mailbox.Configuration,
     diag: ?*mailbox.InContent,
 ) !void {
     assert(cnt != 0);
@@ -34,15 +31,7 @@ pub fn sdoWrite(
     }
     assert(buf.len > 0);
     assert(buf.len <= std.math.maxInt(u32));
-    // Valid mailbox configuration?
-    assert(mbx_in_start_addr != 0);
-    assert(mbx_in_length <= mailbox.max_size);
-    assert(mbx_in_length >= mailbox.min_size);
-    assert(mbx_out_start_addr != 0);
-    assert(mbx_out_length <= mailbox.max_size);
-    assert(mbx_out_length >= mailbox.min_size);
-
-    // var fbs = std.io.fixedBufferStream(buf);
+    assert(config.isValid());
 
     const State = enum {
         start,
@@ -53,12 +42,11 @@ pub fn sdoWrite(
         // read_mbx_first_segment,
     };
 
-    // var subdevice_cnt: ?u3 = null;
     state: switch (State.start) {
         .start => {
             if (buf.len < 5) continue :state .send_expedited_request;
 
-            if (buf.len <= client.Normal.dataMaxSizeForMailbox(mbx_out_length)) {
+            if (buf.len <= client.Normal.dataMaxSizeForMailbox(config.mbx_out.length)) {
                 continue :state .send_normal_request;
             } else {
                 return error.NotImplemented;
@@ -80,15 +68,14 @@ pub fn sdoWrite(
                 port,
                 station_address,
                 recv_timeout_us,
-                mbx_out_start_addr,
-                mbx_out_length,
+                config.mbx_out,
                 .{ .coe = out_content },
             );
             continue :state .read_mbx;
         },
         .send_normal_request => {
             assert(buf.len > 4);
-            assert(buf.len <= client.Normal.dataMaxSizeForMailbox(mbx_out_length));
+            assert(buf.len <= client.Normal.dataMaxSizeForMailbox(config.mbx_out.length));
 
             const out_content = OutContent{ .normal = client.Normal.initDownloadRequest(
                 cnt,
@@ -103,8 +90,7 @@ pub fn sdoWrite(
                 port,
                 station_address,
                 recv_timeout_us,
-                mbx_out_start_addr,
-                mbx_out_length,
+                config.mbx_out,
                 .{ .coe = out_content },
             );
             continue :state .read_mbx;
@@ -141,8 +127,7 @@ pub fn sdoWrite(
                 port,
                 station_address,
                 recv_timeout_us,
-                mbx_in_start_addr,
-                mbx_in_length,
+                config.mbx_in,
                 mbx_timeout_us,
             );
 
@@ -195,11 +180,10 @@ pub fn sdoReadPack(
     recv_timeout_us: u32,
     mbx_timeout_us: u32,
     cnt: u3,
-    mbx_in_start_addr: u16,
-    mbx_in_length: u16,
-    mbx_out_start_addr: u16,
-    mbx_out_length: u16,
+    config: mailbox.Configuration,
 ) !packed_type {
+    assert(config.isValid());
+
     var bytes = wire.zerosFromPack(packed_type);
     const n_bytes_read = try sdoRead(
         port,
@@ -211,10 +195,7 @@ pub fn sdoReadPack(
         recv_timeout_us,
         mbx_timeout_us,
         cnt,
-        mbx_in_start_addr,
-        mbx_in_length,
-        mbx_out_start_addr,
-        mbx_out_length,
+        config,
         null,
     );
     if (n_bytes_read != bytes.len) {
@@ -243,23 +224,14 @@ pub fn sdoRead(
     recv_timeout_us: u32,
     mbx_timeout_us: u32,
     cnt: u3,
-    mbx_in_start_addr: u16,
-    mbx_in_length: u16,
-    mbx_out_start_addr: u16,
-    mbx_out_length: u16,
+    config: mailbox.Configuration,
     diag: ?*mailbox.InContent,
 ) !usize {
     assert(cnt != 0);
     if (complete_access) {
         assert(subindex == 1 or subindex == 0);
     }
-    // Valid mailbox configuration?
-    assert(mbx_in_start_addr != 0);
-    assert(mbx_in_length <= mailbox.max_size);
-    assert(mbx_in_length >= mailbox.min_size);
-    assert(mbx_out_start_addr != 0);
-    assert(mbx_out_length <= mailbox.max_size);
-    assert(mbx_out_length >= mailbox.min_size);
+    assert(config.isValid());
 
     var fbs = std.io.fixedBufferStream(out);
     const writer = fbs.writer();
@@ -297,8 +269,7 @@ pub fn sdoRead(
                 port,
                 station_address,
                 recv_timeout_us,
-                mbx_out_start_addr,
-                mbx_out_length,
+                config.mbx_out,
                 request,
             );
             continue :state .read_mbx;
@@ -309,8 +280,7 @@ pub fn sdoRead(
                 port,
                 station_address,
                 recv_timeout_us,
-                mbx_in_start_addr,
-                mbx_in_length,
+                config.mbx_in,
                 mbx_timeout_us,
             );
 
@@ -366,6 +336,31 @@ pub fn sdoRead(
     }
     unreachable;
 }
+
+/// Cnt session id for CoE
+///
+/// Ref: IEC 61158-6-12:2019 5.6.1
+pub const Cnt = struct {
+    // 0 reserved, next after 7 is 1
+    cnt: u3 = 1,
+
+    // TODO: atomics / thread safety
+    pub fn nextCnt(self: *Cnt) u3 {
+        const next_cnt: u3 = switch (self.cnt) {
+            0 => unreachable,
+            1 => 2,
+            2 => 3,
+            3 => 4,
+            4 => 5,
+            5 => 6,
+            6 => 7,
+            7 => 1,
+        };
+        assert(next_cnt != 0);
+        self.cnt = next_cnt;
+        return next_cnt;
+    }
+};
 
 /// MailboxOut Content for CoE
 pub const OutContent = union(enum) {
@@ -664,10 +659,6 @@ pub const IdentityObject = struct {
 
 /// Sync Manager Channel
 ///
-/// There are up to 32 sync manager channels.
-///
-/// Each channel can be assigned up to 254 PDOs.
-///
 /// The u16 in this array is the PDO index.
 ///
 /// TODO: Unclear what the difference between a sync manager channel
@@ -675,6 +666,8 @@ pub const IdentityObject = struct {
 ///
 /// Ref: IEC 61158-6-12:2019 5.6.7.4.10.1
 pub const SMChannel = std.BoundedArray(u16, 254);
+
+pub fn readSMChannel() !SMChannel {}
 
 pub const SMSynchronizationType = enum(u16) {
     not_synchronized = 0,
@@ -697,31 +690,6 @@ pub const SyncManagerSynchronization = struct {
     synchronization_type: SMSynchronizationType,
     cycle_time_ns: u32,
     shift_time_ns: u32,
-};
-
-/// Cnt session id for CoE
-///
-/// Ref: IEC 61158-6-12:2019 5.6.1
-pub const Cnt = struct {
-    // 0 reserved, next after 7 is 1
-    cnt: u3 = 1,
-
-    // TODO: atomics / thread safety
-    pub fn nextCnt(self: *Cnt) u3 {
-        const next_cnt: u3 = switch (self.cnt) {
-            0 => unreachable,
-            1 => 2,
-            2 => 3,
-            3 => 4,
-            4 => 5,
-            5 => 6,
-            6 => 7,
-            7 => 1,
-        };
-        assert(next_cnt != 0);
-        self.cnt = next_cnt;
-        return next_cnt;
-    }
 };
 
 /// The maximum number of sync managers is limited to 32.
@@ -783,11 +751,9 @@ pub fn readPDOAssignment(
     recv_timeout_us: u32,
     mbx_timeout_us: u32,
     cnt: *Cnt,
-    mbx_in_start_addr: u16,
-    mbx_in_length: u16,
-    mbx_out_start_addr: u16,
-    mbx_out_length: u16,
+    config: mailbox.Configuration,
 ) !void {
+    assert(config.isValid());
     // the sync manager communication type index is an array of sync manager
     // communication types. subindex 0 is the number of entries.
     const n_sm = try sdoReadPack(
@@ -800,10 +766,7 @@ pub fn readPDOAssignment(
         recv_timeout_us,
         mbx_timeout_us,
         cnt.nextCnt(),
-        mbx_in_start_addr,
-        mbx_in_length,
-        mbx_out_start_addr,
-        mbx_out_length,
+        config,
     );
     std.log.warn("n_sm: {}", .{n_sm});
 
@@ -823,10 +786,7 @@ pub fn readPDOAssignment(
             recv_timeout_us,
             mbx_timeout_us,
             cnt.nextCnt(),
-            mbx_in_start_addr,
-            mbx_in_length,
-            mbx_out_start_addr,
-            mbx_out_length,
+            config,
         ));
     }
 
@@ -855,10 +815,7 @@ pub fn readPDOAssignment(
             recv_timeout_us,
             mbx_timeout_us,
             cnt.nextCnt(),
-            mbx_in_start_addr,
-            mbx_in_length,
-            mbx_out_start_addr,
-            mbx_out_length,
+            config,
         );
 
         if (n_pdos > entries.capacity()) return error.InvalidCoENumberOfPDOs;
@@ -874,10 +831,7 @@ pub fn readPDOAssignment(
                 recv_timeout_us,
                 mbx_timeout_us,
                 cnt.nextCnt(),
-                mbx_in_start_addr,
-                mbx_in_length,
-                mbx_out_start_addr,
-                mbx_out_length,
+                config,
             ));
         }
     }

@@ -11,6 +11,51 @@ const wire = @import("wire.zig");
 
 pub const coe = @import("mailbox/coe.zig");
 
+pub const HalfConfiguration = struct {
+    /// Start memory address of memory governed by the mailbox sync manager.
+    start_addr: u16,
+    /// Length of the memory region, in bytes, governed by the mailbox sync manager.
+    length: u16,
+
+    pub fn init(start_addr: u16, length: u16) !HalfConfiguration {
+        if (start_addr == 0 or
+            length == 0 or
+            length > max_size or
+            length < min_size)
+            return error.InvalidMbxConfiguration;
+
+        return HalfConfiguration{
+            .start_addr = start_addr,
+            .length = length,
+        };
+    }
+
+    pub fn isValid(self: HalfConfiguration) bool {
+        return !(self.start_addr == 0 or
+            self.length == 0 or
+            self.length > max_size or
+            self.length < min_size);
+    }
+};
+
+pub const Configuration = struct {
+    /// For communication from subdevice to maindevice
+    mbx_in: HalfConfiguration,
+    /// For communication from maindevice to subdevice
+    mbx_out: HalfConfiguration,
+
+    pub fn init(mbx_in_start_addr: u16, mbx_in_length: u16, mbx_out_start_addr: u16, mbx_out_length: u16) !Configuration {
+        return Configuration{
+            .mbx_in = try HalfConfiguration.init(mbx_in_start_addr, mbx_in_length),
+            .mbx_out = try HalfConfiguration.init(mbx_out_start_addr, mbx_out_length),
+        };
+    }
+
+    pub fn isValid(self: Configuration) bool {
+        return self.mbx_in.isValid() and self.mbx_out.isValid();
+    }
+};
+
 /// Write to mailbox out (write data from maindevice to subdevice mailbox).
 ///
 /// You must ensure that the size of the content will fit in the mailbox size
@@ -20,13 +65,10 @@ pub fn writeMailboxOut(
     port: *nic.Port,
     station_address: u16,
     recv_timeout_us: u32,
-    mbx_out_start_addr: u16,
-    mbx_out_length: u16,
+    mbx_out: HalfConfiguration,
     content: OutContent,
 ) !void {
-    assert(mbx_out_start_addr != 0);
-    assert(mbx_out_length <= max_size);
-    assert(mbx_out_length >= min_size);
+    assert(mbx_out.isValid());
 
     const act_mbx_out = try commands.fprdPackWkc(
         port,
@@ -38,8 +80,8 @@ pub fn writeMailboxOut(
 
     // Mailbox configured correctly?
     // Can check this for free since we already have the full SM attr.
-    if (act_mbx_out.length != mbx_out_length or
-        act_mbx_out.physical_start_address != mbx_out_start_addr or
+    if (act_mbx_out.length != mbx_out.length or
+        act_mbx_out.physical_start_address != mbx_out.start_addr or
         act_mbx_out.control.buffer_type != .mailbox or
         act_mbx_out.control.direction != .output or
         act_mbx_out.control.DLS_user_event_enable != true or
@@ -89,13 +131,10 @@ pub fn readMailboxInTimeout(
     port: *nic.Port,
     station_address: u16,
     recv_timeout_us: u32,
-    mbx_in_start_addr: u16,
-    mbx_in_length: u16,
+    mbx_in: HalfConfiguration,
     mbx_timeout_us: u32,
 ) !InContent {
-    assert(mbx_in_start_addr != 0);
-    assert(mbx_in_length <= max_size);
-    assert(mbx_in_length >= min_size);
+    assert(mbx_in.isValid());
 
     var timer = Timer.start() catch |err| switch (err) {
         error.TimerUnsupported => unreachable,
@@ -106,8 +145,7 @@ pub fn readMailboxInTimeout(
             port,
             station_address,
             recv_timeout_us,
-            mbx_in_start_addr,
-            mbx_in_length,
+            mbx_in,
         )) |in_content| {
             return in_content;
         }
@@ -125,12 +163,9 @@ pub fn readMailboxIn(
     port: *nic.Port,
     station_address: u16,
     recv_timeout_us: u32,
-    mbx_in_start_addr: u16,
-    mbx_in_length: u16,
+    mbx_in: HalfConfiguration,
 ) !?InContent {
-    assert(mbx_in_start_addr != 0);
-    assert(mbx_in_length <= max_size);
-    assert(mbx_in_length >= min_size);
+    assert(mbx_in.isValid());
 
     const act_mbx_in = try commands.fprdPackWkc(
         port,
@@ -145,8 +180,8 @@ pub fn readMailboxIn(
 
     // Mailbox configured correctly?
     // Can check this for free since we already have the full SM attr.
-    if (act_mbx_in.length != mbx_in_length or
-        act_mbx_in.physical_start_address != mbx_in_start_addr or
+    if (act_mbx_in.length != mbx_in.length or
+        act_mbx_in.physical_start_address != mbx_in.start_addr or
         act_mbx_in.control.buffer_type != .mailbox or
         act_mbx_in.control.direction != .input or
         act_mbx_in.control.DLS_user_event_enable != true or

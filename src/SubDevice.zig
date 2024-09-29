@@ -452,6 +452,16 @@ pub fn sdoWrite(
         }
     }
 
+    // TODO: move this into runtime info
+    // SM1 is mailbox in
+    // SM0 is mailbox out
+    const config = try mailbox.Configuration.init(
+        sms.SM1.physical_start_address,
+        sms.SM1.length,
+        sms.SM0.physical_start_address,
+        sms.SM0.length,
+    );
+
     return try coe.sdoWrite(
         port,
         station_address,
@@ -461,12 +471,8 @@ pub fn sdoWrite(
         buf,
         recv_timeout_us,
         mbx_timeout_us,
-        self.runtime_info.cnt.nextCnt(), // SM1 is mailbox in
-        sms.SM1.physical_start_address,
-        sms.SM1.length,
-        // SM0 is mailbox out
-        sms.SM0.physical_start_address,
-        sms.SM0.length,
+        self.runtime_info.cnt.nextCnt(),
+        config,
         null,
     );
 }
@@ -499,6 +505,16 @@ pub fn sdoRead(
         }
     }
 
+    // TODO: move this into runtime info
+    // SM1 is mailbox in
+    // SM0 is mailbox out
+    const config = try mailbox.Configuration.init(
+        sms.SM1.physical_start_address,
+        sms.SM1.length,
+        sms.SM0.physical_start_address,
+        sms.SM0.length,
+    );
+
     return try coe.sdoRead(
         port,
         station_address,
@@ -509,12 +525,7 @@ pub fn sdoRead(
         recv_timeout_us,
         mbx_timeout_us,
         self.runtime_info.cnt.nextCnt(),
-        // SM1 is mailbox in
-        sms.SM1.physical_start_address,
-        sms.SM1.length,
-        // SM0 is mailbox out
-        sms.SM0.physical_start_address,
-        sms.SM0.length,
+        config,
         null,
     );
 }

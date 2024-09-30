@@ -689,6 +689,27 @@ pub const FMMURegister = packed struct {
     FMMU13: FMMUAttributes,
     FMMU14: FMMUAttributes,
     FMMU15: FMMUAttributes,
+
+    pub fn writeFMMUConfig(self: *FMMURegister, config: FMMUAttributes, fmmu_idx: u4) void {
+        switch (fmmu_idx) {
+            0 => self.FMMU0 = config,
+            1 => self.FMMU0 = config,
+            2 => self.FMMU0 = config,
+            3 => self.FMMU0 = config,
+            4 => self.FMMU0 = config,
+            5 => self.FMMU0 = config,
+            6 => self.FMMU0 = config,
+            7 => self.FMMU0 = config,
+            8 => self.FMMU0 = config,
+            9 => self.FMMU0 = config,
+            10 => self.FMMU0 = config,
+            11 => self.FMMU0 = config,
+            12 => self.FMMU0 = config,
+            13 => self.FMMU0 = config,
+            14 => self.FMMU0 = config,
+            15 => self.FMMU0 = config,
+        }
+    }
 };
 
 pub const SyncManagerBufferType = enum(u2) {
@@ -868,6 +889,43 @@ pub const SMRegister = packed struct(u2048) {
     SM29: SyncManagerAttributes,
     SM30: SyncManagerAttributes,
     SM31: SyncManagerAttributes,
+
+    pub fn asArray(self: SMRegister) [32]SyncManagerAttributes {
+        var res: [32]SyncManagerAttributes = undefined;
+        res[0] = self.SM0;
+        res[1] = self.SM1;
+        res[2] = self.SM2;
+        res[3] = self.SM3;
+        res[4] = self.SM4;
+        res[5] = self.SM5;
+        res[6] = self.SM6;
+        res[7] = self.SM7;
+        res[8] = self.SM8;
+        res[9] = self.SM9;
+        res[10] = self.SM10;
+        res[11] = self.SM11;
+        res[12] = self.SM12;
+        res[13] = self.SM13;
+        res[14] = self.SM14;
+        res[15] = self.SM15;
+        res[16] = self.SM16;
+        res[17] = self.SM17;
+        res[18] = self.SM18;
+        res[19] = self.SM19;
+        res[20] = self.SM20;
+        res[21] = self.SM21;
+        res[22] = self.SM22;
+        res[23] = self.SM23;
+        res[24] = self.SM24;
+        res[25] = self.SM25;
+        res[26] = self.SM26;
+        res[27] = self.SM27;
+        res[28] = self.SM28;
+        res[29] = self.SM29;
+        res[30] = self.SM30;
+        res[31] = self.SM31;
+        return res;
+    }
 };
 
 // TODO: verify representation of sys time difference
@@ -929,3 +987,15 @@ const DCSyncActivationRegister = packed struct(u8) {
     generate_sync1: bool,
     reserved: u5 = 0,
 };
+
+/// FMMU
+pub fn fmmuConfigFromSM(num_fmmus: u4, sms: SMRegister, inputs_start_addr: u32, inputs_bit_length: u32) !FMMURegister {
+    var fmmu_count = num_fmmus;
+
+    var fmmu_registers = 
+
+    const sm_array = sms.asArray();
+    for (sm_array, 0..) |sm, i| {
+        if (sm.control.buffer_type == .mailbox or !sm.channel_enable_PDI) continue;
+    }
+}

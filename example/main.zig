@@ -37,21 +37,26 @@ const eni = ecm.ENI{
                     .timeout_us = 10_000,
                 },
             },
+            .inputs_bit_length = 128,
         },
         .{
             .identity = beckhoff_EL3048,
             .station_address = 0x1002,
             .ring_position = 2,
+            .inputs_bit_length = 256,
         },
         .{
             .identity = beckhoff_EL7041_1000,
             .station_address = 0x1003,
             .ring_position = 3,
+            .inputs_bit_length = 64,
+            .outputs_bit_length = 64,
         },
         .{
             .identity = beckhoff_EL2008,
             .station_address = 0x1004,
             .ring_position = 4,
+            .outputs_bit_length = 8,
         },
     },
 };

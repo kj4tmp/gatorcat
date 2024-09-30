@@ -40,7 +40,7 @@ pub const RuntimeInfo = struct {
     sms: ?esc.SMRegister = null,
 
     /// FMMU configurations
-    fmmus: ?sii.FMMUCatagory = null,
+    // fmmus: ?sii.FMMUCatagory = null,
 
     /// name string from the SII
     name: ?sii.SIIString = null,
@@ -289,7 +289,7 @@ pub fn transitionIP(
     }
 
     // write SM configuration to subdevice
-    wkc = try commands.fpwrPack(
+    try commands.fpwrPackWkc(
         port,
         self.runtime_info.sms.?,
         .{
@@ -297,10 +297,8 @@ pub fn transitionIP(
             .offset = @intFromEnum(esc.RegisterMap.SM0),
         },
         recv_timeout_us,
+        1,
     );
-    if (wkc != 1) {
-        return error.WKCError;
-    }
 
     // TODO: FMMUs
 
@@ -376,7 +374,10 @@ pub fn transitionPS(
     port: *nic.Port,
     recv_timeout_us: u32,
     eeprom_timeout_us: u32,
+    fmmu_inputs_start_addr: u32,
+    fmmu_outputs_start_addr: u32,
 ) !void {
+
     // if CoE is supported, the subdevice PDOs can be mapped using information
     // from CoE. otherwise it can be obtained from the SII.
     // Ref: IEC 61158-5-12:2019 6.1.1.1
@@ -408,16 +409,64 @@ pub fn transitionPS(
     // TODO: configure PDOs from SoE
 
     // check process data bit lengths
-    if (inputs_bit_length != self.prior_info.inputs_bit_length) return error.InvalidInputsBitLength;
-    if (outputs_bit_length != self.prior_info.outputs_bit_length) return error.InvalidOutputsBitLength;
+    if (inputs_bit_length != self.prior_info.inputs_bit_length) {
+        std.log.err(
+            "station addr: 0x{x}, expected inputs bit length: {}, got {}",
+            .{ station_address, self.prior_info.inputs_bit_length, inputs_bit_length },
+        );
+        return error.InvalidInputsBitLength;
+    }
+    if (outputs_bit_length != self.prior_info.outputs_bit_length) {
+        std.log.err(
+            "station addr: 0x{x}, expected outputs bit length: {}, got {}",
+            .{ station_address, self.prior_info.outputs_bit_length, outputs_bit_length },
+        );
+        return error.InvalidOutputsBitLength;
+    }
 
+    // configure SMs for process data
+    // All sync managers were already configured from the SII in the IP task.
+    // TODO: configure SII using information from CoE
+
+    const sms = (try commands.fprdPackWkc(
+        port,
+        esc.SMRegister,
+        .{
+            .station_address = station_address,
+            .offset = @intFromEnum(esc.RegisterMap.SM0),
+        },
+        recv_timeout_us,
+        1,
+    )).asArray();
+
+    // configure FMMUs
     // read available FMMUs from SII
-    self.runtime_info.fmmus = try sii.readFMMUCatagory(
+    var fmmu_config = std.mem.zeroes(esc.FMMURegister);
+    if (try sii.readFMMUCatagory(
         port,
         station_address,
         recv_timeout_us,
         eeprom_timeout_us,
-    );
+    )) |fmmus| {
+        std.log.info("station addr: 0x{x}, fmmus: {any}", .{ station_address, fmmus.slice() });
+        if (inputs_bit_length > 0) {
+            for (fmmus.slice(), 0..) |fmmu, i| {
+                if (fmmu == .input) {
+                    fmmu_config.writeFMMUConfig(
+                        esc.FMMUAttributes{
+                            .logical_start_address = fmmu_inputs_start_addr,
+                            .length = inputs_bit_length + 7 / 8,
+                            .logical_start_bit = 0,
+                            .logical_end_bit = 0,
+                            //.physical_start_address =
+                        },
+                        @intCast(i),
+                    );
+                    break;
+                }
+            } else return error.NoInputFMMU;
+        }
+    } else if (inputs_bit_length > 0 or outputs_bit_length > 0) return error.NoFMMUs;
 }
 
 pub fn doStartupParameters(

@@ -229,9 +229,9 @@ pub const CatagoryGeneral = packed struct {
 /// Ref: IEC 61158-6-12:2019 5.4 Table 23
 pub const FMMUFunction = enum(u8) {
     not_used = 0x00,
-    used_for_outputs = 0x01,
-    used_for_inputs = 0x02,
-    used_for_syncm_status = 0x03,
+    output = 0x01,
+    input = 0x02,
+    syncm_status = 0x03,
     not_used2 = 0xff,
     _,
 };

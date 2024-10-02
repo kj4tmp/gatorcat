@@ -987,15 +987,3 @@ const DCSyncActivationRegister = packed struct(u8) {
     generate_sync1: bool,
     reserved: u5 = 0,
 };
-
-/// FMMU
-pub fn fmmuConfigFromSM(num_fmmus: u4, sms: SMRegister, inputs_start_addr: u32, inputs_bit_length: u32) !FMMURegister {
-    var fmmu_count = num_fmmus;
-
-    var fmmu_registers = 
-
-    const sm_array = sms.asArray();
-    for (sm_array, 0..) |sm, i| {
-        if (sm.control.buffer_type == .mailbox or !sm.channel_enable_PDI) continue;
-    }
-}

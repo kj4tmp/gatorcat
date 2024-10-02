@@ -374,8 +374,8 @@ pub fn transitionPS(
     port: *nic.Port,
     recv_timeout_us: u32,
     eeprom_timeout_us: u32,
-    fmmu_inputs_start_addr: u32,
-    fmmu_outputs_start_addr: u32,
+    //fmmu_inputs_start_addr: u32,
+    //fmmu_outputs_start_addr: u32,
 ) !void {
 
     // if CoE is supported, the subdevice PDOs can be mapped using information
@@ -438,35 +438,13 @@ pub fn transitionPS(
         recv_timeout_us,
         1,
     )).asArray();
+    _ = sms;
+    // std.log.info("station_addr: 0x{x}, sync managagers: {any}", .{ station_address, sms });
 
     // configure FMMUs
+    // As a first and simple solution, just configure 1 FMMU per sync manager.
     // read available FMMUs from SII
-    var fmmu_config = std.mem.zeroes(esc.FMMURegister);
-    if (try sii.readFMMUCatagory(
-        port,
-        station_address,
-        recv_timeout_us,
-        eeprom_timeout_us,
-    )) |fmmus| {
-        std.log.info("station addr: 0x{x}, fmmus: {any}", .{ station_address, fmmus.slice() });
-        if (inputs_bit_length > 0) {
-            for (fmmus.slice(), 0..) |fmmu, i| {
-                if (fmmu == .input) {
-                    fmmu_config.writeFMMUConfig(
-                        esc.FMMUAttributes{
-                            .logical_start_address = fmmu_inputs_start_addr,
-                            .length = inputs_bit_length + 7 / 8,
-                            .logical_start_bit = 0,
-                            .logical_end_bit = 0,
-                            //.physical_start_address =
-                        },
-                        @intCast(i),
-                    );
-                    break;
-                }
-            } else return error.NoInputFMMU;
-        }
-    } else if (inputs_bit_length > 0 or outputs_bit_length > 0) return error.NoFMMUs;
+
 }
 
 pub fn doStartupParameters(

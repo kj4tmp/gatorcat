@@ -123,4 +123,8 @@ pub fn main() !void {
     const config = ecm.mailbox.Configuration{ .mbx_in = .{ .start_addr = 0x1080, .length = 128 }, .mbx_out = .{ .start_addr = 0x1000, .length = 128 } };
     const mapping = try ecm.mailbox.coe.readPDOMapping(&port, 0x1001, 3000, 10_000, &subdevices[1].runtime_info.cnt, config, 0x1600);
     std.log.err("mapping: {any}", .{mapping.entries.slice()});
+
+    const bitlengths = try ecm.sii.readSMBitLengths(&port, 0x1003, 3000, 10000) orelse return error.NoSyncManagers;
+
+    std.log.err("bitlengths: {any}", .{bitlengths.slice()});
 }

@@ -512,7 +512,7 @@ pub fn readFMMUCatagory(
     return res;
 }
 
-/// There can only be a maximum of 16 sync managers.
+/// There can only be a maximum of 32 sync managers.
 ///
 /// Ref: IEC 61158-6-12:2019 6.7.2
 pub const max_sm = 32;
@@ -690,78 +690,6 @@ pub const PDODirection = enum {
     /// RXPDO = output = transmitted by maindevice
     rx,
 };
-
-/// Iterate over all the PDOs defined in the SII and report the
-/// total bitlength of the inputs and the outputs.
-///
-/// Uses much less stack memory than readPDOs.
-pub fn readPDOBitLengths(
-    port: *nic.Port,
-    station_address: u16,
-    direction: PDODirection,
-    recv_timeout_us: u32,
-    eeprom_timeout_us: u32,
-) !u32 {
-    const catagory = try findCatagoryFP(
-        port,
-        station_address,
-        switch (direction) {
-            .tx => .TXPDO,
-            .rx => .RXPDO,
-        },
-        recv_timeout_us,
-        eeprom_timeout_us,
-    ) orelse return 0;
-
-    // entries are 8 bytes, pdo header is 8 bytes, so
-    // this should be a multiple of eight.
-    if (catagory.byte_length % 8 != 0) return error.InvalidEEPROM;
-
-    var stream = SIIStream.init(
-        port,
-        station_address,
-        catagory.word_address,
-        recv_timeout_us,
-        eeprom_timeout_us,
-    );
-    var limited_reader = std.io.limitedReader(stream.reader(), catagory.byte_length);
-    const reader = limited_reader.reader();
-
-    const State = enum {
-        pdo_header,
-        entries,
-        entries_skip,
-    };
-    var pdo_header: PDO.Header = undefined;
-    var entries_remaining: u8 = 0;
-    var total_bit_length: u32 = 0;
-    state: switch (State.pdo_header) {
-        .pdo_header => {
-            assert(entries_remaining == 0);
-            pdo_header = wire.packFromECatReader(PDO.Header, reader) catch |err| switch (err) {
-                error.EndOfStream => return total_bit_length,
-                error.LinkError => return error.LinkError,
-                error.Timeout => return error.Timeout,
-            };
-            if (pdo_header.n_entries > PDO.max_entries) return error.InvalidEEPROM;
-            entries_remaining = pdo_header.n_entries;
-            if (pdo_header.isUsed()) continue :state .entries else continue :state .entries_skip;
-        },
-        .entries => {
-            if (entries_remaining == 0) continue :state .pdo_header;
-            const entry = try wire.packFromECatReader(PDO.Entry, reader);
-            entries_remaining -= 1;
-            total_bit_length += entry.bit_length;
-            continue :state .entries;
-        },
-        .entries_skip => {
-            if (entries_remaining == 0) continue :state .pdo_header;
-            _ = try wire.packFromECatReader(PDO.Entry, reader);
-            entries_remaining -= 1;
-            continue :state .entries_skip;
-        },
-    }
-}
 
 /// Read the full set of PDOs from the eeprom.
 ///
@@ -1128,4 +1056,198 @@ pub fn readSII4ByteFP(
         error.Wkc => return error.Timeout,
     };
     return data;
+}
+
+// We will try to configure FMMUs using information from the SII.
+// We need at most 1 FMMU per SM.
+// At least 1 SM per FMMU.
+//
+// So first we will iterate over the PDOs, and count how many bits are assigned to each SM.
+//
+// Next determine the physical start address of each SyncM using SII.
+//
+// Then we will check what configuration for those Sync Managers is provided by the SII.
+// We will check for the configuration being large enough to encompase the bits.
+//
+// Then we will program the FMMUs using the exact bit size reported from the PDOs.
+//
+// 1. Report PDO size for each SM.
+
+pub const SMBitLength = struct {
+    sm_config: SyncM,
+    bit_length: u32,
+};
+
+pub const SMBitLengths = std.BoundedArray(SMBitLength, 32);
+/// Iterate over all the PDOs defined in the SII and report the
+/// total bitlength of the inputs and the outputs.
+///
+/// Uses much less stack memory than readPDOs.
+pub fn readSMBitLengths(
+    port: *nic.Port,
+    station_address: u16,
+    recv_timeout_us: u32,
+    eeprom_timeout_us: u32,
+) !?SMBitLengths {
+    const sm_catagory = try readSMCatagory(
+        port,
+        station_address,
+        recv_timeout_us,
+        eeprom_timeout_us,
+    ) orelse return null;
+
+    var res = SMBitLengths{};
+    for (sm_catagory.slice()) |sm| {
+        try res.append(SMBitLength{ .sm_config = sm, .bit_length = 0 });
+    }
+
+    for ([2]CatagoryType{ .TXPDO, .RXPDO }) |catagory_type| {
+        const catagory = try findCatagoryFP(
+            port,
+            station_address,
+            catagory_type,
+            recv_timeout_us,
+            eeprom_timeout_us,
+        ) orelse {
+            std.log.info("station_addr: 0x{x}, couldnt find cat: {}, skipping", .{ station_address, catagory_type });
+            continue;
+        };
+        std.log.info("trying: {}", .{catagory_type});
+
+        // entries are 8 bytes, pdo header is 8 bytes, so
+        // this should be a multiple of eight.
+        if (catagory.byte_length % 8 != 0) return error.InvalidEEPROM;
+
+        var stream = SIIStream.init(
+            port,
+            station_address,
+            catagory.word_address,
+            recv_timeout_us,
+            eeprom_timeout_us,
+        );
+        var limited_reader = std.io.limitedReader(stream.reader(), catagory.byte_length);
+        const reader = limited_reader.reader();
+
+        const State = enum {
+            pdo_header,
+            entries,
+            entries_skip,
+        };
+        var pdo_header: PDO.Header = undefined;
+        var entries_remaining: u8 = 0;
+        var current_sm: u8 = 0;
+        state: switch (State.pdo_header) {
+            .pdo_header => {
+                assert(entries_remaining == 0);
+                pdo_header = wire.packFromECatReader(PDO.Header, reader) catch |err| switch (err) {
+                    error.EndOfStream => break :state,
+                    error.LinkError => return error.LinkError,
+                    error.Timeout => return error.Timeout,
+                };
+                if (pdo_header.n_entries > PDO.max_entries) return error.InvalidEEPROM;
+                current_sm = pdo_header.syncM;
+                entries_remaining = pdo_header.n_entries;
+                if (pdo_header.isUsed()) continue :state .entries else continue :state .entries_skip;
+            },
+            .entries => {
+                if (pdo_header.syncM + 1 > res.len) return error.InvalidEEPROM;
+                switch (res.get(pdo_header.syncM).sm_config.syncM_type) {
+                    .mailbox_in, .mailbox_out, .not_used_or_unknown => return error.InvalidEEPROM,
+                    _ => return error.InvalidEEPROM,
+                    .process_data_inputs => {
+                        if (catagory_type == .RXPDO) return error.InvalidEEPROM;
+                    },
+                    .process_data_outputs => {
+                        if (catagory_type == .TXPDO) return error.InvalidEEPROM;
+                    },
+                }
+                assert(current_sm <= max_sm);
+                assert(current_sm <= res.len);
+                if (entries_remaining == 0) continue :state .pdo_header;
+                const entry = try wire.packFromECatReader(PDO.Entry, reader);
+                entries_remaining -= 1;
+                res.slice()[current_sm].bit_length += entry.bit_length;
+                continue :state .entries;
+            },
+            .entries_skip => {
+                if (entries_remaining == 0) continue :state .pdo_header;
+                _ = try wire.packFromECatReader(PDO.Entry, reader);
+                entries_remaining -= 1;
+                continue :state .entries_skip;
+            },
+        }
+    }
+    return res;
+}
+
+/// Iterate over all the PDOs defined in the SII and report the
+/// total bitlength of the inputs or the outputs (depending on direction parameter).
+///
+/// Uses much less stack memory than readPDOs.
+pub fn readPDOBitLengths(
+    port: *nic.Port,
+    station_address: u16,
+    direction: PDODirection,
+    recv_timeout_us: u32,
+    eeprom_timeout_us: u32,
+) !u32 {
+    const catagory = try findCatagoryFP(
+        port,
+        station_address,
+        switch (direction) {
+            .tx => .TXPDO,
+            .rx => .RXPDO,
+        },
+        recv_timeout_us,
+        eeprom_timeout_us,
+    ) orelse return 0;
+
+    // entries are 8 bytes, pdo header is 8 bytes, so
+    // this should be a multiple of eight.
+    if (catagory.byte_length % 8 != 0) return error.InvalidEEPROM;
+
+    var stream = SIIStream.init(
+        port,
+        station_address,
+        catagory.word_address,
+        recv_timeout_us,
+        eeprom_timeout_us,
+    );
+    var limited_reader = std.io.limitedReader(stream.reader(), catagory.byte_length);
+    const reader = limited_reader.reader();
+
+    const State = enum {
+        pdo_header,
+        entries,
+        entries_skip,
+    };
+    var pdo_header: PDO.Header = undefined;
+    var entries_remaining: u8 = 0;
+    var total_bit_length: u32 = 0;
+    state: switch (State.pdo_header) {
+        .pdo_header => {
+            assert(entries_remaining == 0);
+            pdo_header = wire.packFromECatReader(PDO.Header, reader) catch |err| switch (err) {
+                error.EndOfStream => return total_bit_length,
+                error.LinkError => return error.LinkError,
+                error.Timeout => return error.Timeout,
+            };
+            if (pdo_header.n_entries > PDO.max_entries) return error.InvalidEEPROM;
+            entries_remaining = pdo_header.n_entries;
+            if (pdo_header.isUsed()) continue :state .entries else continue :state .entries_skip;
+        },
+        .entries => {
+            if (entries_remaining == 0) continue :state .pdo_header;
+            const entry = try wire.packFromECatReader(PDO.Entry, reader);
+            entries_remaining -= 1;
+            total_bit_length += entry.bit_length;
+            continue :state .entries;
+        },
+        .entries_skip => {
+            if (entries_remaining == 0) continue :state .pdo_header;
+            _ = try wire.packFromECatReader(PDO.Entry, reader);
+            entries_remaining -= 1;
+            continue :state .entries_skip;
+        },
+    }
 }

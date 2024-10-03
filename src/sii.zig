@@ -1058,37 +1058,21 @@ pub fn readSII4ByteFP(
     return data;
 }
 
-// We will try to configure FMMUs using information from the SII.
-// We need at most 1 FMMU per SM.
-// At least 1 SM per FMMU.
-//
-// So first we will iterate over the PDOs, and count how many bits are assigned to each SM.
-//
-// Next determine the physical start address of each SyncM using SII.
-//
-// Then we will check what configuration for those Sync Managers is provided by the SII.
-// We will check for the configuration being large enough to encompase the bits.
-//
-// Then we will program the FMMUs using the exact bit size reported from the PDOs.
-//
-// 1. Report PDO size for each SM.
-
 pub const SMBitLength = struct {
+    /// Sync manaager configuration from the SII
     sm_config: SyncM,
-    bit_length: u32,
+    /// total bit length of PDOs assigned to this sync manager.
+    pdo_bit_length: u32,
 };
+/// Index of this array is sync manager index.
+pub const SMPDOBitLengths = std.BoundedArray(SMBitLength, 32);
 
-pub const SMBitLengths = std.BoundedArray(SMBitLength, 32);
-/// Iterate over all the PDOs defined in the SII and report the
-/// total bitlength of the inputs and the outputs.
-///
-/// Uses much less stack memory than readPDOs.
-pub fn readSMBitLengths(
+pub fn readSMPDOBitLengths(
     port: *nic.Port,
     station_address: u16,
     recv_timeout_us: u32,
     eeprom_timeout_us: u32,
-) !?SMBitLengths {
+) !?SMPDOBitLengths {
     const sm_catagory = try readSMCatagory(
         port,
         station_address,
@@ -1096,9 +1080,9 @@ pub fn readSMBitLengths(
         eeprom_timeout_us,
     ) orelse return null;
 
-    var res = SMBitLengths{};
+    var res = SMPDOBitLengths{};
     for (sm_catagory.slice()) |sm| {
-        try res.append(SMBitLength{ .sm_config = sm, .bit_length = 0 });
+        try res.append(SMBitLength{ .sm_config = sm, .pdo_bit_length = 0 });
     }
 
     for ([2]CatagoryType{ .TXPDO, .RXPDO }) |catagory_type| {
@@ -1128,11 +1112,7 @@ pub fn readSMBitLengths(
         var limited_reader = std.io.limitedReader(stream.reader(), catagory.byte_length);
         const reader = limited_reader.reader();
 
-        const State = enum {
-            pdo_header,
-            entries,
-            entries_skip,
-        };
+        const State = enum { pdo_header, entries, entries_skip, end };
         var pdo_header: PDO.Header = undefined;
         var entries_remaining: u8 = 0;
         var current_sm: u8 = 0;
@@ -1140,7 +1120,7 @@ pub fn readSMBitLengths(
             .pdo_header => {
                 assert(entries_remaining == 0);
                 pdo_header = wire.packFromECatReader(PDO.Header, reader) catch |err| switch (err) {
-                    error.EndOfStream => break :state,
+                    error.EndOfStream => continue :state .end,
                     error.LinkError => return error.LinkError,
                     error.Timeout => return error.Timeout,
                 };
@@ -1166,7 +1146,7 @@ pub fn readSMBitLengths(
                 if (entries_remaining == 0) continue :state .pdo_header;
                 const entry = try wire.packFromECatReader(PDO.Entry, reader);
                 entries_remaining -= 1;
-                res.slice()[current_sm].bit_length += entry.bit_length;
+                res.slice()[current_sm].pdo_bit_length += entry.bit_length;
                 continue :state .entries;
             },
             .entries_skip => {
@@ -1175,6 +1155,7 @@ pub fn readSMBitLengths(
                 entries_remaining -= 1;
                 continue :state .entries_skip;
             },
+            .end => {},
         }
     }
     return res;

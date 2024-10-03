@@ -445,6 +445,22 @@ pub fn transitionPS(
     // As a first and simple solution, just configure 1 FMMU per sync manager.
     // read available FMMUs from SII
 
+    // We will try to configure FMMUs using information from the SII.
+    // We need at most 1 FMMU per SM.
+    // At least 1 SM per FMMU.
+    //
+    // So first we will iterate over the PDOs, and count how many bits are assigned to each SM.
+    //
+    // Next determine the physical start address of each SyncM using SII.
+    //
+    // Then we will check what configuration for those Sync Managers is provided by the SII.
+    // We will check for the configuration being large enough to encompase the bits.
+    //
+    // Then we will program the FMMUs using the exact bit size reported from the PDOs.
+    //
+    // 1. Report PDO size for each SM.
+
+    // const sm_pdo_bitlengths = try sii.readSMPDOBitLengths(port, station_address, recv_timeout_us, eeprom_timeout_us);
 }
 
 pub fn doStartupParameters(

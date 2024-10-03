@@ -44,6 +44,15 @@ pub fn init(
     };
 }
 
+// pub fn validateENI(eni: *const ENI, pi_byte_length: usize) !void {
+//     if (pi_byte_length > std.math.maxInt(u32)) return error.ProcessImageTooBig;
+
+//     var pi_size_inputs_bytes: u32 = 0;
+//     var pi_size_outputs_bytes: u32 = 0;
+
+//     for (eni.subdevices) |subdevice| {}
+// }
+
 /// Initialize the ethercat bus.
 ///
 /// Sets all subdevices to the INIT state.

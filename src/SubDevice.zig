@@ -179,7 +179,7 @@ pub fn transitionIP(
         );
         return error.UnexpectedSubDevice;
     }
-    const dl_info_res = try commands.fprdPack(
+    const dl_info_res = try commands.fprdPackWkc(
         port,
         esc.DLInformationRegister,
         .{
@@ -187,12 +187,10 @@ pub fn transitionIP(
             .offset = @intFromEnum(esc.RegisterMap.DL_information),
         },
         recv_timeout_us,
+        1,
     );
-    if (dl_info_res.wkc == 1) {
-        self.runtime_info.dl_info = dl_info_res.ps;
-    } else {
-        return error.WKCError;
-    }
+
+    self.runtime_info.dl_info = dl_info_res;
 
     self.runtime_info.general = try sii.readGeneralCatagory(
         port,
@@ -226,9 +224,9 @@ pub fn transitionIP(
         order_id = order_id_array.slice();
     }
 
-    // reset FMMUs
+    // wipe FMMUs
     var zero_fmmus = wire.zerosFromPack(esc.FMMURegister);
-    var wkc = try commands.fpwr(
+    try commands.fpwrWkc(
         port,
         .{
             .station_address = station_address,
@@ -238,14 +236,12 @@ pub fn transitionIP(
         },
         &zero_fmmus,
         recv_timeout_us,
+        1,
     );
-    if (wkc != 1) {
-        return error.WKCError;
-    }
 
-    // reset SMs
+    // wipe SMs
     var zero_sms = wire.zerosFromPack(esc.SMRegister);
-    wkc = try commands.fpwr(
+    try commands.fpwrWkc(
         port,
         .{
             .station_address = station_address,
@@ -255,39 +251,42 @@ pub fn transitionIP(
         },
         &zero_sms,
         recv_timeout_us,
+        1,
     );
-    if (wkc != 1) {
-        return error.WKCError;
-    }
 
-    // Set default syncmanager configurations from sii info section
-
-    // Set default syncmanager configurations.
-    // If mailbox is supported:
-    // SM0 should be used for Mailbox Out (from maindevice to subdevice)
-    // SM1 should be used for Mailbox In (from subdevice to maindevice)
+    // configure sync managers.
+    // during the IP transition, we should configure the mailbox sync managers.
     self.runtime_info.sms = std.mem.zeroes(esc.SMRegister);
-    if (info.std_recv_mbx_offset > 0) { // mbx supported?
-        self.runtime_info.sms.?.SM0 = esc.SyncManagerAttributes.mbxOutDefaults(
-            info.std_recv_mbx_offset,
-            info.std_recv_mbx_size,
-        );
-        self.runtime_info.sms.?.SM1 = esc.SyncManagerAttributes.mbxInDefaults(
-            info.std_send_mbx_offset,
-            info.std_send_mbx_size,
-        );
+    switch (self.prior_info.auto_config) {
+        .none => {
+            // If mailbox is supported:
+            // SM0 should be used for Mailbox Out (from maindevice to subdevice)
+            // SM1 should be used for Mailbox In (from subdevice to maindevice)
+            if (info.std_recv_mbx_offset > 0) { // mbx supported?
+                self.runtime_info.sms.?.SM0 = esc.SyncManagerAttributes.mbxOutDefaults(
+                    info.std_recv_mbx_offset,
+                    info.std_recv_mbx_size,
+                );
+                self.runtime_info.sms.?.SM1 = esc.SyncManagerAttributes.mbxInDefaults(
+                    info.std_send_mbx_offset,
+                    info.std_send_mbx_size,
+                );
+            }
+        },
+        .sii => {
+            // Trust default syncmanager configurations from sii
+            // Set SM from SII SM section if it exists
+            const sii_sms = try sii.readSMCatagory(
+                port,
+                station_address,
+                recv_timeout_us,
+                eeprom_timeout_us,
+            );
+            if (sii_sms) |sms| {
+                self.runtime_info.sms = sii.escSMsFromSIISMs(sms.slice());
+            }
+        },
     }
-    // Set SM from SII SM section if it exists
-    const sii_sms = try sii.readSMCatagory(
-        port,
-        station_address,
-        recv_timeout_us,
-        eeprom_timeout_us,
-    );
-    if (sii_sms) |sms| {
-        self.runtime_info.sms = sii.escSMsFromSIISMs(sms.slice());
-    }
-
     // write SM configuration to subdevice
     try commands.fpwrPackWkc(
         port,
@@ -300,19 +299,9 @@ pub fn transitionIP(
         1,
     );
 
-    // TODO: FMMUs
-
-    // std.log.info("sii fmmus: {any}", .{
-    //     std.json.fmt(runtime_info.fmmus, .{
-    //         .whitespace = .indent_4,
-    //     }),
-    // });
-
     // TODO: topology
     // TODO: physical type
     // TODO: active ports
-
-    // TODO: require transition to init
 
     std.log.info("0x{x}: {s}", .{ station_address, order_id orelse "null" });
     std.log.info("    vendor_id: 0x{x}", .{self.runtime_info.info.?.vendor_id});
@@ -386,43 +375,60 @@ pub fn transitionPS(
 
     try self.doStartupParameters(port, .PS, recv_timeout_us);
 
-    // read PDOs from SII
-    const inputs_bit_length = try sii.readPDOBitLengths(
-        port,
-        station_address,
-        .tx,
-        recv_timeout_us,
-        eeprom_timeout_us,
-    );
-    std.log.info("station addr: 0x{x}, inputs_bit_length: {}", .{ station_address, inputs_bit_length });
+    switch (self.prior_info.auto_config) {
+        .none => {},
+        .sii => {
+            // the entire SM configuration was already written from the SII as part of the IP transition.
+            // we do not need to modify it here.
 
-    const outputs_bit_length = try sii.readPDOBitLengths(
-        port,
-        station_address,
-        .rx,
-        recv_timeout_us,
-        eeprom_timeout_us,
-    );
-    std.log.info("station addr: 0x{x}, outputs_bit_length: {}", .{ station_address, outputs_bit_length });
+            // 1. count available FMMUs
+            // 2. Obtain bit_length of each sync manager
+            // 3. sort sync managers by start address
+            // 4. if sync managers are next to each other and are the same directio, use a single FMMU, otherwise use multiple
+            // 5. configure FMMUs
+
+            var min_fmmu_required: u8 = 0;
+            if (self.prior_info.inputs_bit_length > 0) min_fmmu_required += 1;
+            if (self.prior_info.outputs_bit_length > 0) min_fmmu_required += 1;
+
+            const fmmus = try sii.readFMMUCatagory(
+                port,
+                station_address,
+                recv_timeout_us,
+                eeprom_timeout_us,
+            );
+            if (fmmus.len < min_fmmu_required) return error.NotEnoughFMMUs;
+
+            const sm_bit_lengths = try sii.readSMBitLengths(
+                port,
+                station_address,
+                recv_timeout_us,
+                eeprom_timeout_us,
+            );
+
+            const totals = sm_bit_lengths.totalBitLengths();
+
+            if (totals.inputs_bit_length != self.prior_info.inputs_bit_length) {
+                std.log.err(
+                    "station addr: 0x{x}, expected inputs bit length: {}, got {}",
+                    .{ station_address, self.prior_info.inputs_bit_length, totals.inputs_bit_length },
+                );
+                return error.InvalidInputsBitLength;
+            }
+            if (totals.outputs_bit_length != self.prior_info.outputs_bit_length) {
+                std.log.err(
+                    "station addr: 0x{x}, expected outputs bit length: {}, got {}",
+                    .{ station_address, self.prior_info.outputs_bit_length, totals.outputs_bit_length },
+                );
+                return error.InvalidOutputsBitLength;
+            }
+            std.log.info("station addr: 0x{x}, inputs_bit_length: {}", .{ station_address, totals.inputs_bit_length });
+            std.log.info("station addr: 0x{x}, outputs_bit_length: {}", .{ station_address, totals.outputs_bit_length });
+        },
+    }
 
     // TODO: configure pdos / sync managers from CoE
     // TODO: configure PDOs from SoE
-
-    // check process data bit lengths
-    if (inputs_bit_length != self.prior_info.inputs_bit_length) {
-        std.log.err(
-            "station addr: 0x{x}, expected inputs bit length: {}, got {}",
-            .{ station_address, self.prior_info.inputs_bit_length, inputs_bit_length },
-        );
-        return error.InvalidInputsBitLength;
-    }
-    if (outputs_bit_length != self.prior_info.outputs_bit_length) {
-        std.log.err(
-            "station addr: 0x{x}, expected outputs bit length: {}, got {}",
-            .{ station_address, self.prior_info.outputs_bit_length, outputs_bit_length },
-        );
-        return error.InvalidOutputsBitLength;
-    }
 
     // configure SMs for process data
     // All sync managers were already configured from the SII in the IP task.

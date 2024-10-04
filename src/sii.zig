@@ -472,14 +472,16 @@ pub fn readFMMUCatagory(
     station_address: u16,
     recv_timeout_us: u32,
     eeprom_timeout_us: u32,
-) !?FMMUCatagory {
+) !FMMUCatagory {
+    var res = FMMUCatagory{};
+
     const catagory = try findCatagoryFP(
         port,
         station_address,
         .FMMU,
         recv_timeout_us,
         eeprom_timeout_us,
-    ) orelse return null;
+    ) orelse return res;
 
     const n_fmmu: u17 = std.math.divExact(
         u17,
@@ -487,7 +489,8 @@ pub fn readFMMUCatagory(
         @divExact(@bitSizeOf(FMMUFunction), 8),
     ) catch return error.InvalidSII;
     if (n_fmmu == 0) {
-        return null;
+        assert(res.len == 0);
+        return res;
     }
     if (n_fmmu > max_fmmu) {
         return error.InvalidSII;
@@ -502,10 +505,8 @@ pub fn readFMMUCatagory(
     var limited_reader = std.io.limitedReader(stream.reader(), catagory.byte_length);
     const reader = limited_reader.reader();
 
-    var res = FMMUCatagory{};
     for (0..n_fmmu) |_| {
-        // TODO: better enum reader
-        res.append(try reader.readEnum(FMMUFunction, std.builtin.Endian.little)) catch |err| switch (err) {
+        res.append(try wire.packFromECatReader(FMMUFunction, reader)) catch |err| switch (err) {
             error.Overflow => return error.InvalidSII,
         };
     }
@@ -1059,30 +1060,56 @@ pub fn readSII4ByteFP(
 }
 
 pub const SMBitLength = struct {
+    /// index of this sync manager
+    sm_idx: u8,
     /// Sync manaager configuration from the SII
     sm_config: SyncM,
     /// total bit length of PDOs assigned to this sync manager.
+    /// Will be zero if this is a mailbox SM.
     pdo_bit_length: u32,
 };
-/// Index of this array is sync manager index.
-pub const SMPDOBitLengths = std.BoundedArray(SMBitLength, 32);
 
-pub fn readSMPDOBitLengths(
+pub const SMBitLengths = struct {
+    bit_lengths: std.BoundedArray(SMBitLength, max_sm) = .{},
+
+    pub const Totals = struct {
+        inputs_bit_length: u32 = 0,
+        outputs_bit_length: u32 = 0,
+    };
+    pub fn totalBitLengths(self: *const SMBitLengths) Totals {
+        var res = Totals{};
+        for (self.bit_lengths.slice()) |bit_length| {
+            switch (bit_length.sm_config.syncM_type) {
+                .mailbox_in, .mailbox_out, .not_used_or_unknown => {},
+                _ => unreachable,
+                .process_data_inputs => {
+                    res.inputs_bit_length += bit_length.pdo_bit_length;
+                },
+                .process_data_outputs => {
+                    res.outputs_bit_length += bit_length.pdo_bit_length;
+                },
+            }
+        }
+        return res;
+    }
+};
+
+pub fn readSMBitLengths(
     port: *nic.Port,
     station_address: u16,
     recv_timeout_us: u32,
     eeprom_timeout_us: u32,
-) !?SMPDOBitLengths {
+) !SMBitLengths {
+    var res = SMBitLengths{};
     const sm_catagory = try readSMCatagory(
         port,
         station_address,
         recv_timeout_us,
         eeprom_timeout_us,
-    ) orelse return null;
+    ) orelse return res;
 
-    var res = SMPDOBitLengths{};
-    for (sm_catagory.slice()) |sm| {
-        try res.append(SMBitLength{ .sm_config = sm, .pdo_bit_length = 0 });
+    for (sm_catagory.slice(), 0..) |sm, idx| {
+        try res.bit_lengths.append(SMBitLength{ .sm_idx = @intCast(idx), .sm_config = sm, .pdo_bit_length = 0 });
     }
 
     for ([2]CatagoryType{ .TXPDO, .RXPDO }) |catagory_type| {
@@ -1096,7 +1123,6 @@ pub fn readSMPDOBitLengths(
             std.log.info("station_addr: 0x{x}, couldnt find cat: {}, skipping", .{ station_address, catagory_type });
             continue;
         };
-        std.log.info("trying: {}", .{catagory_type});
 
         // entries are 8 bytes, pdo header is 8 bytes, so
         // this should be a multiple of eight.
@@ -1130,8 +1156,8 @@ pub fn readSMPDOBitLengths(
                 if (pdo_header.isUsed()) continue :state .entries else continue :state .entries_skip;
             },
             .entries => {
-                if (pdo_header.syncM + 1 > res.len) return error.InvalidEEPROM;
-                switch (res.get(pdo_header.syncM).sm_config.syncM_type) {
+                if (pdo_header.syncM + 1 > res.bit_lengths.len) return error.InvalidEEPROM;
+                switch (res.bit_lengths.get(pdo_header.syncM).sm_config.syncM_type) {
                     .mailbox_in, .mailbox_out, .not_used_or_unknown => return error.InvalidEEPROM,
                     _ => return error.InvalidEEPROM,
                     .process_data_inputs => {
@@ -1142,11 +1168,11 @@ pub fn readSMPDOBitLengths(
                     },
                 }
                 assert(current_sm <= max_sm);
-                assert(current_sm <= res.len);
+                assert(current_sm <= res.bit_lengths.len);
                 if (entries_remaining == 0) continue :state .pdo_header;
                 const entry = try wire.packFromECatReader(PDO.Entry, reader);
                 entries_remaining -= 1;
-                res.slice()[current_sm].pdo_bit_length += entry.bit_length;
+                res.bit_lengths.slice()[current_sm].pdo_bit_length += entry.bit_length;
                 continue :state .entries;
             },
             .entries_skip => {
@@ -1156,6 +1182,24 @@ pub fn readSMPDOBitLengths(
                 continue :state .entries_skip;
             },
             .end => {},
+        }
+    }
+    // check that the PDOs actually fit in the sync manager length
+    for (res.bit_lengths.slice()) |bit_length| {
+        switch (bit_length.sm_config.syncM_type) {
+            .mailbox_in, .mailbox_out, .not_used_or_unknown => {
+                assert(bit_length.pdo_bit_length == 0);
+            },
+            _ => unreachable,
+            .process_data_inputs, .process_data_outputs => {
+                if ((bit_length.pdo_bit_length + 7) / 8 > bit_length.sm_config.length) {
+                    std.log.err(
+                        "station addr: 0x{x}, pdo bit length: {} cannot fit in sm byte length: {}, sm_config: {}, sm_idx: {}",
+                        .{ station_address, bit_length.pdo_bit_length, bit_length.sm_config.length, bit_length.sm_config, bit_length.sm_idx },
+                    );
+                    return error.SMLengthTooSmallForPDOs;
+                }
+            },
         }
     }
     return res;

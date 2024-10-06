@@ -17,7 +17,7 @@ const EtherType = enum(u16) {
 const InitECatCmds = struct { ecat_cmds: []ECatCmd };
 
 const ECatCmd = struct {
-    transitions: []Transition,
+    //transitions: []Transition,
     before_subdevice: ?bool,
     comment: ?String,
     requires: Requires,
@@ -256,7 +256,7 @@ const SubDevice = struct {
 
         const MailboxCommand = struct {
             // min length 1
-            transitions: []Transition,
+            //transitions: []Transition,
             comment: ?String,
             timeout_ms: i32,
             data: ?HexBinary,
@@ -269,7 +269,7 @@ const SubDevice = struct {
         const ServiceChannelCommand = struct {
             fixed: ?bool,
             // min length 1
-            transitions: []Transition,
+            //transitions: []Transition,
             comment: ?String,
             timeout_ms: i32,
             op_code: i32,
@@ -293,7 +293,7 @@ const SubDevice = struct {
                     fixed: ?bool,
                     complete_access: ?bool,
                     // min len 1
-                    transitions: []Transition,
+                    //transitions: []Transition,
                     comment: ?String,
                     timeout_ms: i32,
                     ccs: CCS,

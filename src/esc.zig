@@ -323,6 +323,7 @@ pub const DLStatusRegister = packed struct {
 
 // TODO: DL User Specific Registers, Ref: IEC 61158-4-12:2019 6.1.5.4
 
+// TODO: fix these?
 /// DL-User Event Register
 ///
 /// The event registers are used to indicate and event to the DL-user.

@@ -1125,43 +1125,39 @@ pub const SMPDOBitLengths = struct {
         });
     }
 
-    fn startAddrAreUnique(self: *const SMPDOBitLengths) bool {
-        var seen = std.BoundedArray(u32, max_sm){};
-        for (self.pdo_bit_lengths.slice()) |pdo_bit_length| {
-            for (seen.slice()) |seen_start_addr| {
-                if (seen_start_addr == pdo_bit_length.start_addr) {
-                    return false;
-                } else {
-                    seen.append(pdo_bit_length.start_addr) catch unreachable;
-                }
-            }
-            return true;
-        }
-        return true;
-    }
-
     fn lessThan(context: void, a: SMPDOBitLength, b: SMPDOBitLength) bool {
         _ = context;
-        assert(a.start_addr != b.start_addr);
         return a.start_addr < b.start_addr;
     }
 
     pub fn sortAndVerifyNonOverlapping(self: *SMPDOBitLengths) !void {
-        if (!self.startAddrAreUnique()) return error.OverLappingSM;
-        std.mem.sort(SMPDOBitLength, self.pdo_bit_lengths.slice(), {}, SMPDOBitLengths.lessThan);
+        if (self.pdo_bit_lengths.len <= 1) return;
+
+        std.sort.insertion(SMPDOBitLength, self.pdo_bit_lengths.slice(), {}, SMPDOBitLengths.lessThan);
+        assert(std.sort.isSorted(SMPDOBitLength, self.pdo_bit_lengths.slice(), {}, SMPDOBitLengths.lessThan));
+        for (1..self.pdo_bit_lengths.len) |i| {
+            const this_sm = self.pdo_bit_lengths.slice()[i];
+            const last_sm = self.pdo_bit_lengths.slice()[i - 1];
+            if (last_sm.start_addr + last_sm.pdo_byte_length > this_sm.start_addr or
+                last_sm.start_addr == this_sm.start_addr)
+            {
+                std.log.warn("overlapping sync managers: {}, {}", .{ this_sm, last_sm });
+                return error.OverlappingSM;
+            }
+        }
     }
 };
 
 test "sort and verfiy non overlapping SMPDOBitLengths" {
     var pdo_bit_lengths = SMPDOBitLengths{};
-    try pdo_bit_lengths.pdo_bit_lengths.append(SMPDOBitLength{ .direction = .tx, .pdo_bit_length = 12, .pdo_byte_length = 2, .start_addr = 1000, .sm_idx = 3 });
-    try pdo_bit_lengths.pdo_bit_lengths.append(SMPDOBitLength{ .direction = .tx, .pdo_bit_length = 12, .pdo_byte_length = 2, .start_addr = 998, .sm_idx = 3 });
-    try pdo_bit_lengths.pdo_bit_lengths.append(SMPDOBitLength{ .direction = .tx, .pdo_bit_length = 12, .pdo_byte_length = 2, .start_addr = 1002, .sm_idx = 3 });
+    try pdo_bit_lengths.pdo_bit_lengths.append(SMPDOBitLength{ .direction = .tx, .pdo_bit_length = 12, .pdo_byte_length = 2, .start_addr = 1000, .sm_idx = 2 });
+    try pdo_bit_lengths.pdo_bit_lengths.append(SMPDOBitLength{ .direction = .tx, .pdo_bit_length = 12, .pdo_byte_length = 2, .start_addr = 998, .sm_idx = 4 });
+    try pdo_bit_lengths.pdo_bit_lengths.append(SMPDOBitLength{ .direction = .tx, .pdo_bit_length = 12, .pdo_byte_length = 2, .start_addr = 1002, .sm_idx = 1 });
     try pdo_bit_lengths.sortAndVerifyNonOverlapping();
 
     try std.testing.expectEqual(@as(u32, 998), pdo_bit_lengths.pdo_bit_lengths.slice()[0].start_addr);
-    try std.testing.expectEqual(@as(u32, 1000), pdo_bit_lengths.pdo_bit_lengths.slice()[0].start_addr);
-    try std.testing.expectEqual(@as(u32, 1002), pdo_bit_lengths.pdo_bit_lengths.slice()[0].start_addr);
+    try std.testing.expectEqual(@as(u32, 1000), pdo_bit_lengths.pdo_bit_lengths.slice()[1].start_addr);
+    try std.testing.expectEqual(@as(u32, 1002), pdo_bit_lengths.pdo_bit_lengths.slice()[2].start_addr);
 }
 
 test "overlapping sync managers" {
@@ -1278,6 +1274,7 @@ pub fn readSMPDOBitLengths(
     return res;
 }
 
+// TODO: remove this?
 /// Iterate over all the PDOs defined in the SII and report the
 /// total bitlength of the inputs or the outputs (depending on direction parameter).
 ///

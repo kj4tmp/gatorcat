@@ -330,25 +330,25 @@ pub const DLStatusRegister = packed struct {
 /// The events can be masked.
 ///
 /// Ref: IEC 61158-4-12:2019 6.1.6
-pub const DLUserEventRegister = packed struct {
-    /// event active R1 was written
-    DL_user_R1_change: bool,
-    DC_event_0: bool,
-    DC_event_1: bool,
-    DC_event_2: bool,
-    SM_change_event: bool,
-    EEPROM_emulation_command_pending: bool,
-    DLE_specific: u2,
-    SM_ch_events: [16]bool,
-    DLE_specific2: u8,
-};
+// pub const DLUserEventRegister = packed struct {
+//     /// event active R1 was written
+//     DL_user_R1_change: bool,
+//     DC_event_0: bool,
+//     DC_event_1: bool,
+//     DC_event_2: bool,
+//     SM_change_event: bool,
+//     EEPROM_emulation_command_pending: bool,
+//     DLE_specific: u2,
+//     SM_ch_events: [16]bool,
+//     DLE_specific2: u8,
+// };
 
 /// DL User Event Mask
 ///
 /// Ref: IEC 61158-4-12:2019 6.1.6
-pub const DLUserEventMaskRegister = packed struct {
-    event_mask: [32]bool,
-};
+// pub const DLUserEventMaskRegister = packed struct {
+//     event_mask: [32]bool,
+// };
 
 /// External Event Register
 ///
@@ -357,21 +357,21 @@ pub const DLUserEventMaskRegister = packed struct {
 /// the corresponding bit in the IRQ parameter of a PDU is set.
 ///
 /// Ref: IEC 61158-4-12:2019 6.1.6
-pub const ExternalEventRegister = packed struct {
-    DC_event_0: bool,
-    reserved: u1 = 0,
-    DL_status_change: bool,
-    R3_or_R4_change: bool,
-    SM_ch_events: [8]bool,
-    reserved2: u4 = 0,
-};
+// pub const ExternalEventRegister = packed struct {
+//     DC_event_0: bool,
+//     reserved: u1 = 0,
+//     DL_status_change: bool,
+//     R3_or_R4_change: bool,
+//     SM_ch_events: [8]bool,
+//     reserved2: u4 = 0,
+// };
 
 /// External Event Mask Register
 ///
 /// Ref: IEC 61158-4-12:2019 6.1.6
-pub const ExternalEventMaskRegister = packed struct {
-    event_mask: [16]bool,
-};
+// pub const ExternalEventMaskRegister = packed struct {
+//     event_mask: [16]bool,
+// };
 
 /// RX Error Counter Register
 ///
@@ -987,3 +987,7 @@ const DCSyncActivationRegister = packed struct(u8) {
     generate_sync1: bool,
     reserved: u5 = 0,
 };
+
+test {
+    std.testing.refAllDecls(@This());
+}

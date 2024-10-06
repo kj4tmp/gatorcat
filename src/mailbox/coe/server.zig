@@ -734,3 +734,7 @@ test "serialize and deserialize emergency request" {
     const actual = try Emergency.deserialize(&bytes);
     try std.testing.expectEqualDeep(expected, actual);
 }
+
+test {
+    std.testing.refAllDecls(@This());
+}

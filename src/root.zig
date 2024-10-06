@@ -9,5 +9,5 @@ pub const ENI = @import("ENI.zig");
 pub const sii = @import("sii.zig");
 
 test {
-    std.testing.refAllDeclsRecursive(@This());
+    std.testing.refAllDecls(@This());
 }

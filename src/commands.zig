@@ -398,7 +398,7 @@ pub fn lrd(
 pub fn lwr(
     port: *nic.Port,
     address: telegram.LogicalAddress,
-    data: []const u8,
+    data: []u8,
     timeout_us: u32,
 ) !u16 {
     return sendDatagram(
@@ -461,4 +461,8 @@ pub fn frmw(
         data,
         timeout_us,
     );
+}
+
+test {
+    std.testing.refAllDecls(@This());
 }

@@ -58,3 +58,7 @@ const zecm = struct {
         },
     },
 };
+
+test {
+    std.testing.refAllDecls(@This());
+}

@@ -340,3 +340,7 @@ test "calc_autoinc_addr" {
 pub fn calc_station_addr(position: u16) u16 {
     return 0x1000 +% position;
 }
+
+test {
+    std.testing.refAllDecls(@This());
+}

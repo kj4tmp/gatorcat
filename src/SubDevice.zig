@@ -383,6 +383,7 @@ pub fn transitionPS(
 
             // 1. count available FMMUs
             // 2. Obtain bit_length of each sync manager
+            // 3. configure sync managers
             // 3. sort sync managers by start address
             // 4. if sync managers are next to each other and are the same directio, use a single FMMU, otherwise use multiple
             // 5. configure FMMUs
@@ -399,7 +400,7 @@ pub fn transitionPS(
             );
             if (fmmus.len < min_fmmu_required) return error.NotEnoughFMMUs;
 
-            const sm_bit_lengths = try sii.readSMBitLengths(
+            const sm_bit_lengths = try sii.readSMPDOBitLengths(
                 port,
                 station_address,
                 recv_timeout_us,
@@ -598,4 +599,8 @@ pub fn sdoRead(
         config,
         null,
     );
+}
+
+test {
+    std.testing.refAllDecls(@This());
 }

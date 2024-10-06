@@ -124,7 +124,7 @@ pub fn main() !void {
     const mapping = try ecm.mailbox.coe.readPDOMapping(&port, 0x1001, 3000, 10_000, &subdevices[1].runtime_info.cnt, config, 0x1600);
     std.log.err("mapping: {any}", .{mapping.entries.slice()});
 
-    const bitlengths = try ecm.sii.readSMBitLengths(&port, 0x1003, 3000, 10000);
+    const bitlengths = try ecm.sii.readSMPDOBitLengths(&port, 0x1003, 3000, 10000);
 
-    std.log.err("bitlengths: {any}", .{bitlengths.bit_lengths.slice()});
+    std.log.err("bitlengths: {any}", .{bitlengths.pdo_bit_lengths.slice()});
 }

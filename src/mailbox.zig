@@ -362,3 +362,7 @@ comptime {
 pub const min_size = 16;
 
 // TODO: derive min_size
+
+test {
+    std.testing.refAllDecls(@This());
+}

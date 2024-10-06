@@ -602,7 +602,7 @@ pub const CommunicationAreaMap = enum(u16) {
         return 0x1c10 + @as(u16, sm);
     }
     pub fn smSync(sm: u5) u16 {
-        return 0x1c30 + sm;
+        return 0x1c30 + @as(u16, sm);
     }
 };
 
@@ -1067,3 +1067,7 @@ pub fn readPDOMapping(
 //         }
 //     }
 // }
+
+test {
+    std.testing.refAllDecls(@This());
+}

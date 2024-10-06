@@ -6,6 +6,7 @@
 //! to be simpler and easier to define.
 //!
 //! The ENI is constant, and will never be modified by the MainDevice.
+const std = @import("std");
 const sii = @import("sii.zig");
 
 const ENI = @This();
@@ -79,3 +80,7 @@ pub const Transition = enum {
     /// SAFEOP -> SAFEOP
     SS,
 };
+
+test {
+    std.testing.refAllDecls(@This());
+}

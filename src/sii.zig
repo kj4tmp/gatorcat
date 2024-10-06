@@ -1059,57 +1059,150 @@ pub fn readSII4ByteFP(
     return data;
 }
 
-pub const SMBitLength = struct {
+pub const SMPDOBitLength = struct {
     /// index of this sync manager
     sm_idx: u8,
-    /// Sync manaager configuration from the SII
-    sm_config: SyncM,
+    /// start address in esc memory
+    start_addr: u32,
+    pdo_byte_length: u16,
     /// total bit length of PDOs assigned to this sync manager.
-    /// Will be zero if this is a mailbox SM.
-    pdo_bit_length: u32,
+    pdo_bit_length: u16,
+    direction: PDODirection,
 };
 
-pub const SMBitLengths = struct {
-    bit_lengths: std.BoundedArray(SMBitLength, max_sm) = .{},
+pub const SMPDOBitLengths = struct {
+    pdo_bit_lengths: std.BoundedArray(SMPDOBitLength, max_sm) = .{},
 
     pub const Totals = struct {
         inputs_bit_length: u32 = 0,
         outputs_bit_length: u32 = 0,
     };
-    pub fn totalBitLengths(self: *const SMBitLengths) Totals {
+    pub fn totalBitLengths(self: *const SMPDOBitLengths) Totals {
         var res = Totals{};
-        for (self.bit_lengths.slice()) |bit_length| {
-            switch (bit_length.sm_config.syncM_type) {
-                .mailbox_in, .mailbox_out, .not_used_or_unknown => {},
-                _ => unreachable,
-                .process_data_inputs => {
-                    res.inputs_bit_length += bit_length.pdo_bit_length;
+        for (self.pdo_bit_lengths.slice()) |pdo_bit_length| {
+            switch (pdo_bit_length.direction) {
+                .tx => {
+                    res.inputs_bit_length += pdo_bit_length.pdo_bit_length;
                 },
-                .process_data_outputs => {
-                    res.outputs_bit_length += bit_length.pdo_bit_length;
+                .rx => {
+                    res.outputs_bit_length += pdo_bit_length.pdo_bit_length;
                 },
             }
         }
         return res;
     }
+
+    pub fn addPDOBitsToSM(self: *SMPDOBitLengths, bit_length: u8, sm_idx: u8, direction: PDODirection) !void {
+        assert(sm_idx < max_sm);
+        for ((&self.pdo_bit_lengths).slice()) |*pdo_bit_length| {
+            if (pdo_bit_length.sm_idx == sm_idx) {
+                if (direction != pdo_bit_length.direction) {
+                    return error.WrongDirection;
+                }
+                pdo_bit_length.pdo_bit_length += bit_length;
+                // TODO: this is inefficient to re-calcuate every time but I don't care
+                pdo_bit_length.pdo_byte_length = (pdo_bit_length.pdo_bit_length + 7) / 8;
+                return;
+            }
+        } else {
+            return error.SyncManagerNotFound;
+        }
+    }
+    pub fn addSyncManager(self: *SMPDOBitLengths, sm_config: SyncM, sm_idx: u8) !void {
+        assert(sm_idx < max_sm);
+        assert(sm_config.syncM_type == .process_data_inputs or sm_config.syncM_type == .process_data_outputs);
+        assert(sm_config.physical_start_address != 0);
+        try self.pdo_bit_lengths.append(SMPDOBitLength{
+            .pdo_bit_length = 0,
+            .pdo_byte_length = 0,
+            .sm_idx = sm_idx,
+            .start_addr = sm_config.physical_start_address,
+            .direction = switch (sm_config.syncM_type) {
+                .process_data_inputs => .tx,
+                .process_data_outputs => .rx,
+                else => unreachable,
+            },
+        });
+    }
+
+    fn startAddrAreUnique(self: *const SMPDOBitLengths) bool {
+        var seen = std.BoundedArray(u32, max_sm){};
+        for (self.pdo_bit_lengths.slice()) |pdo_bit_length| {
+            for (seen.slice()) |seen_start_addr| {
+                if (seen_start_addr == pdo_bit_length.start_addr) {
+                    return false;
+                } else {
+                    seen.append(pdo_bit_length.start_addr) catch unreachable;
+                }
+            }
+            return true;
+        }
+        return true;
+    }
+
+    fn lessThan(context: void, a: SMPDOBitLength, b: SMPDOBitLength) bool {
+        _ = context;
+        assert(a.start_addr != b.start_addr);
+        return a.start_addr < b.start_addr;
+    }
+
+    pub fn sortAndVerifyNonOverlapping(self: *SMPDOBitLengths) !void {
+        if (!self.startAddrAreUnique()) return error.OverLappingSM;
+        std.mem.sort(SMPDOBitLength, self.pdo_bit_lengths.slice(), {}, SMPDOBitLengths.lessThan);
+    }
 };
 
-pub fn readSMBitLengths(
+test "sort and verfiy non overlapping SMPDOBitLengths" {
+    var pdo_bit_lengths = SMPDOBitLengths{};
+    try pdo_bit_lengths.pdo_bit_lengths.append(SMPDOBitLength{ .direction = .tx, .pdo_bit_length = 12, .pdo_byte_length = 2, .start_addr = 1000, .sm_idx = 3 });
+    try pdo_bit_lengths.pdo_bit_lengths.append(SMPDOBitLength{ .direction = .tx, .pdo_bit_length = 12, .pdo_byte_length = 2, .start_addr = 998, .sm_idx = 3 });
+    try pdo_bit_lengths.pdo_bit_lengths.append(SMPDOBitLength{ .direction = .tx, .pdo_bit_length = 12, .pdo_byte_length = 2, .start_addr = 1002, .sm_idx = 3 });
+    try pdo_bit_lengths.sortAndVerifyNonOverlapping();
+
+    try std.testing.expectEqual(@as(u32, 998), pdo_bit_lengths.pdo_bit_lengths.slice()[0].start_addr);
+    try std.testing.expectEqual(@as(u32, 1000), pdo_bit_lengths.pdo_bit_lengths.slice()[0].start_addr);
+    try std.testing.expectEqual(@as(u32, 1002), pdo_bit_lengths.pdo_bit_lengths.slice()[0].start_addr);
+}
+
+test "overlapping sync managers" {
+    var pdo_bit_lengths = SMPDOBitLengths{};
+    try pdo_bit_lengths.pdo_bit_lengths.append(SMPDOBitLength{ .direction = .tx, .pdo_bit_length = 12, .pdo_byte_length = 2, .start_addr = 1000, .sm_idx = 3 });
+    try pdo_bit_lengths.pdo_bit_lengths.append(SMPDOBitLength{ .direction = .tx, .pdo_bit_length = 12, .pdo_byte_length = 3, .start_addr = 998, .sm_idx = 3 });
+    try pdo_bit_lengths.pdo_bit_lengths.append(SMPDOBitLength{ .direction = .tx, .pdo_bit_length = 12, .pdo_byte_length = 2, .start_addr = 1002, .sm_idx = 3 });
+    try std.testing.expectError(error.OverlappingSM, pdo_bit_lengths.sortAndVerifyNonOverlapping());
+}
+
+test "overlapping sync managers non unique start addr" {
+    var pdo_bit_lengths = SMPDOBitLengths{};
+    try pdo_bit_lengths.pdo_bit_lengths.append(SMPDOBitLength{ .direction = .tx, .pdo_bit_length = 12, .pdo_byte_length = 2, .start_addr = 1000, .sm_idx = 3 });
+    try pdo_bit_lengths.pdo_bit_lengths.append(SMPDOBitLength{ .direction = .tx, .pdo_bit_length = 12, .pdo_byte_length = 2, .start_addr = 1000, .sm_idx = 3 });
+    try pdo_bit_lengths.pdo_bit_lengths.append(SMPDOBitLength{ .direction = .tx, .pdo_bit_length = 12, .pdo_byte_length = 2, .start_addr = 1002, .sm_idx = 3 });
+    try std.testing.expectError(error.OverlappingSM, pdo_bit_lengths.sortAndVerifyNonOverlapping());
+}
+
+pub fn readSMPDOBitLengths(
     port: *nic.Port,
     station_address: u16,
     recv_timeout_us: u32,
     eeprom_timeout_us: u32,
-) !SMBitLengths {
-    var res = SMBitLengths{};
+) !SMPDOBitLengths {
+    var res = SMPDOBitLengths{};
     const sm_catagory = try readSMCatagory(
         port,
         station_address,
         recv_timeout_us,
         eeprom_timeout_us,
     ) orelse return res;
+    const sync_managers = sm_catagory.slice();
 
-    for (sm_catagory.slice(), 0..) |sm, idx| {
-        try res.bit_lengths.append(SMBitLength{ .sm_idx = @intCast(idx), .sm_config = sm, .pdo_bit_length = 0 });
+    for (sync_managers, 0..) |sm_config, sm_idx| {
+        switch (sm_config.syncM_type) {
+            .mailbox_in, .mailbox_out, .not_used_or_unknown => {},
+            _ => return error.InvalidEEPROM,
+            .process_data_inputs, .process_data_outputs => {
+                try res.addSyncManager(sm_config, @intCast(sm_idx));
+            },
+        }
     }
 
     for ([2]CatagoryType{ .TXPDO, .RXPDO }) |catagory_type| {
@@ -1138,10 +1231,10 @@ pub fn readSMBitLengths(
         var limited_reader = std.io.limitedReader(stream.reader(), catagory.byte_length);
         const reader = limited_reader.reader();
 
-        const State = enum { pdo_header, entries, entries_skip, end };
         var pdo_header: PDO.Header = undefined;
         var entries_remaining: u8 = 0;
-        var current_sm: u8 = 0;
+        var current_sm_idx: u8 = 0;
+        const State = enum { pdo_header, entries, entries_skip, end };
         state: switch (State.pdo_header) {
             .pdo_header => {
                 assert(entries_remaining == 0);
@@ -1151,28 +1244,25 @@ pub fn readSMBitLengths(
                     error.Timeout => return error.Timeout,
                 };
                 if (pdo_header.n_entries > PDO.max_entries) return error.InvalidEEPROM;
-                current_sm = pdo_header.syncM;
+                current_sm_idx = pdo_header.syncM;
                 entries_remaining = pdo_header.n_entries;
                 if (pdo_header.isUsed()) continue :state .entries else continue :state .entries_skip;
             },
             .entries => {
-                if (pdo_header.syncM + 1 > res.bit_lengths.len) return error.InvalidEEPROM;
-                switch (res.bit_lengths.get(pdo_header.syncM).sm_config.syncM_type) {
-                    .mailbox_in, .mailbox_out, .not_used_or_unknown => return error.InvalidEEPROM,
-                    _ => return error.InvalidEEPROM,
-                    .process_data_inputs => {
-                        if (catagory_type == .RXPDO) return error.InvalidEEPROM;
-                    },
-                    .process_data_outputs => {
-                        if (catagory_type == .TXPDO) return error.InvalidEEPROM;
-                    },
-                }
-                assert(current_sm <= max_sm);
-                assert(current_sm <= res.bit_lengths.len);
+                assert(pdo_header.syncM < std.math.maxInt(u8));
+                assert(current_sm_idx < max_sm);
                 if (entries_remaining == 0) continue :state .pdo_header;
                 const entry = try wire.packFromECatReader(PDO.Entry, reader);
                 entries_remaining -= 1;
-                res.bit_lengths.slice()[current_sm].pdo_bit_length += entry.bit_length;
+                try res.addPDOBitsToSM(
+                    entry.bit_length,
+                    current_sm_idx,
+                    switch (catagory_type) {
+                        .TXPDO => .tx,
+                        .RXPDO => .rx,
+                        else => unreachable,
+                    },
+                );
                 continue :state .entries;
             },
             .entries_skip => {
@@ -1184,24 +1274,7 @@ pub fn readSMBitLengths(
             .end => {},
         }
     }
-    // check that the PDOs actually fit in the sync manager length
-    for (res.bit_lengths.slice()) |bit_length| {
-        switch (bit_length.sm_config.syncM_type) {
-            .mailbox_in, .mailbox_out, .not_used_or_unknown => {
-                assert(bit_length.pdo_bit_length == 0);
-            },
-            _ => unreachable,
-            .process_data_inputs, .process_data_outputs => {
-                if ((bit_length.pdo_bit_length + 7) / 8 > bit_length.sm_config.length) {
-                    std.log.err(
-                        "station addr: 0x{x}, pdo bit length: {} cannot fit in sm byte length: {}, sm_config: {}, sm_idx: {}",
-                        .{ station_address, bit_length.pdo_bit_length, bit_length.sm_config.length, bit_length.sm_config, bit_length.sm_idx },
-                    );
-                    return error.SMLengthTooSmallForPDOs;
-                }
-            },
-        }
-    }
+    try res.sortAndVerifyNonOverlapping();
     return res;
 }
 
@@ -1275,4 +1348,8 @@ pub fn readPDOBitLengths(
             continue :state .entries_skip;
         },
     }
+}
+
+test {
+    std.testing.refAllDecls(@This());
 }

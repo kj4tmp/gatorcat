@@ -483,3 +483,7 @@ comptime {
     assert(max_frame_length == @divExact(@bitSizeOf(EthernetHeader), 8) + 1500);
 }
 pub const min_frame_length = 60;
+
+test {
+    std.testing.refAllDecls(@This());
+}

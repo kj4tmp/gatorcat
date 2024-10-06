@@ -753,3 +753,7 @@ pub const Command = struct {
 ///
 /// Ref: IEC 61158-6-12:2019 5.6.2.7.1
 pub const Abort = server.Abort;
+
+test {
+    std.testing.refAllDecls(@This());
+}

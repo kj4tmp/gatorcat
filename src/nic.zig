@@ -307,3 +307,7 @@ pub const Port = struct {
         }
     }
 };
+
+test {
+    std.testing.refAllDecls(@This());
+}

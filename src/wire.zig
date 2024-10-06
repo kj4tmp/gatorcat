@@ -219,3 +219,7 @@ test "packFromECat" {
         packFromECat(Command5, [_]u8{ 1, 0x22, 0x11, 0x03, 0xAB }),
     );
 }
+
+test {
+    std.testing.refAllDecls(@This());
+}

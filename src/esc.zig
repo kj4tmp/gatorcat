@@ -1,4 +1,7 @@
 const std = @import("std");
+const assert = std.debug.assert;
+
+const esc = @This();
 
 pub const RegisterMap = enum(u16) {
     DL_information = 0x0000,
@@ -650,7 +653,7 @@ pub const MIIAccessRegister = packed struct {
 /// FMMU Attributes
 ///
 /// Ref: IEC 61158-4-12:2019 6.6.2
-pub const FMMUAttributes = packed struct {
+pub const FMMUAttributes = packed struct(u128) {
     logical_start_address: u32,
     length: u16,
     logical_start_bit: u3,
@@ -666,7 +669,61 @@ pub const FMMUAttributes = packed struct {
     enable: bool,
     reserved5: u7 = 0,
     reserved6: u24 = 0,
+
+    pub fn bitLength(self: FMMUAttributes) u32 {
+        return esc.bitLength(self.length, self.logical_start_bit, self.logical_end_bit);
+    }
 };
+
+/// bit length (primarily for FMMUs)
+///
+/// Ref: IEC 61158-4-12 6.6.1
+pub fn bitLength(octets: u16, start_bit: u3, end_bit: u3) u32 {
+    assert(octets != 0);
+    if (octets == 1) {
+        assert(start_bit <= end_bit);
+    }
+    return 8 * @as(u32, octets) - start_bit - (@as(u32, 7) - end_bit);
+}
+
+test "FMMUAttributes bitLength" {
+    // Ref: IEC 61158-4-12 6.6.1
+    try std.testing.expectEqual(@as(u32, 6), bitLength(2, 3, 0));
+    try std.testing.expectEqual(@as(u32, 6), bitLength(1, 1, 6));
+    // ours
+    try std.testing.expectEqual(@as(u32, 1), bitLength(1, 0, 0));
+    try std.testing.expectEqual(@as(u32, 2), bitLength(1, 0, 1));
+    try std.testing.expectEqual(@as(u32, 3), bitLength(1, 0, 2));
+    try std.testing.expectEqual(@as(u32, 4), bitLength(1, 0, 3));
+    try std.testing.expectEqual(@as(u32, 5), bitLength(1, 0, 4));
+    try std.testing.expectEqual(@as(u32, 6), bitLength(1, 0, 5));
+    try std.testing.expectEqual(@as(u32, 7), bitLength(1, 0, 6));
+    try std.testing.expectEqual(@as(u32, 8), bitLength(1, 0, 7));
+
+    try std.testing.expectEqual(@as(u32, 9), bitLength(2, 0, 0));
+    try std.testing.expectEqual(@as(u32, 10), bitLength(2, 0, 1));
+    try std.testing.expectEqual(@as(u32, 11), bitLength(2, 0, 2));
+    try std.testing.expectEqual(@as(u32, 12), bitLength(2, 0, 3));
+    try std.testing.expectEqual(@as(u32, 13), bitLength(2, 0, 4));
+    try std.testing.expectEqual(@as(u32, 14), bitLength(2, 0, 5));
+    try std.testing.expectEqual(@as(u32, 15), bitLength(2, 0, 6));
+    try std.testing.expectEqual(@as(u32, 16), bitLength(2, 0, 7));
+
+    try std.testing.expectEqual(@as(u32, 9), bitLength(2, 1, 1));
+    try std.testing.expectEqual(@as(u32, 9), bitLength(2, 2, 2));
+    try std.testing.expectEqual(@as(u32, 9), bitLength(2, 7, 7));
+
+    try std.testing.expectEqual(@as(u32, 13), bitLength(2, 1, 5));
+    try std.testing.expectEqual(@as(u32, 13), bitLength(2, 0, 4));
+    try std.testing.expectEqual(@as(u32, 13), bitLength(3, 7, 3));
+}
+
+/// The maximum number of FMMUs is 16.
+///
+/// Ref: IEC 61158-4-12:2019 6.6.2
+pub const max_fmmu = 16;
+
+pub const FMMUArray = std.BoundedArray(FMMUAttributes, max_fmmu);
 
 /// FMMU Register
 ///

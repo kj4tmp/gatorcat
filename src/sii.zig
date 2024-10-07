@@ -1059,7 +1059,7 @@ pub fn readSII4ByteFP(
     return data;
 }
 
-pub const SMPDOBitLength = struct {
+pub const SMPDOAssign = struct {
     /// index of this sync manager
     sm_idx: u8,
     /// start address in esc memory
@@ -1070,16 +1070,16 @@ pub const SMPDOBitLength = struct {
     direction: PDODirection,
 };
 
-pub const SMPDOBitLengths = struct {
-    pdo_bit_lengths: std.BoundedArray(SMPDOBitLength, max_sm) = .{},
+pub const SMPDOAssigns = struct {
+    data: std.BoundedArray(SMPDOAssign, max_sm) = .{},
 
     pub const Totals = struct {
         inputs_bit_length: u32 = 0,
         outputs_bit_length: u32 = 0,
     };
-    pub fn totalBitLengths(self: *const SMPDOBitLengths) Totals {
+    pub fn totalBitLengths(self: *const SMPDOAssigns) Totals {
         var res = Totals{};
-        for (self.pdo_bit_lengths.slice()) |pdo_bit_length| {
+        for (self.data.slice()) |pdo_bit_length| {
             switch (pdo_bit_length.direction) {
                 .tx => {
                     res.inputs_bit_length += pdo_bit_length.pdo_bit_length;
@@ -1092,9 +1092,9 @@ pub const SMPDOBitLengths = struct {
         return res;
     }
 
-    pub fn addPDOBitsToSM(self: *SMPDOBitLengths, bit_length: u8, sm_idx: u8, direction: PDODirection) !void {
+    pub fn addPDOBitsToSM(self: *SMPDOAssigns, bit_length: u8, sm_idx: u8, direction: PDODirection) !void {
         assert(sm_idx < max_sm);
-        for ((&self.pdo_bit_lengths).slice()) |*pdo_bit_length| {
+        for ((&self.data).slice()) |*pdo_bit_length| {
             if (pdo_bit_length.sm_idx == sm_idx) {
                 if (direction != pdo_bit_length.direction) {
                     return error.WrongDirection;
@@ -1108,11 +1108,10 @@ pub const SMPDOBitLengths = struct {
             return error.SyncManagerNotFound;
         }
     }
-    pub fn addSyncManager(self: *SMPDOBitLengths, sm_config: SyncM, sm_idx: u8) !void {
+    pub fn addSyncManager(self: *SMPDOAssigns, sm_config: SyncM, sm_idx: u8) !void {
         assert(sm_idx < max_sm);
         assert(sm_config.syncM_type == .process_data_inputs or sm_config.syncM_type == .process_data_outputs);
-        assert(sm_config.physical_start_address != 0);
-        try self.pdo_bit_lengths.append(SMPDOBitLength{
+        try self.data.append(SMPDOAssign{
             .pdo_bit_length = 0,
             .pdo_byte_length = 0,
             .sm_idx = sm_idx,
@@ -1125,64 +1124,77 @@ pub const SMPDOBitLengths = struct {
         });
     }
 
-    fn lessThan(context: void, a: SMPDOBitLength, b: SMPDOBitLength) bool {
+    fn isSorted(self: *const SMPDOAssigns) bool {
+        return std.sort.isSorted(SMPDOAssign, self.data.slice(), {}, SMPDOAssigns.lessThan);
+    }
+
+    fn isNonOverlapping(self: *const SMPDOAssigns) bool {
+        if (self.data.len <= 1) return true;
+        assert(self.isSorted());
+        for (1..self.data.len) |i| {
+            const this_sm = self.data.slice()[i];
+            const last_sm = self.data.slice()[i - 1];
+            if (last_sm.start_addr + last_sm.pdo_byte_length > this_sm.start_addr or
+                last_sm.start_addr == this_sm.start_addr)
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    fn lessThan(context: void, a: SMPDOAssign, b: SMPDOAssign) bool {
         _ = context;
         return a.start_addr < b.start_addr;
     }
 
-    pub fn sortAndVerifyNonOverlapping(self: *SMPDOBitLengths) !void {
-        if (self.pdo_bit_lengths.len <= 1) return;
+    fn sort(self: *SMPDOAssigns) void {
+        if (self.data.len <= 1) return;
+        std.sort.insertion(SMPDOAssign, self.data.slice(), {}, SMPDOAssigns.lessThan);
+    }
 
-        std.sort.insertion(SMPDOBitLength, self.pdo_bit_lengths.slice(), {}, SMPDOBitLengths.lessThan);
-        assert(std.sort.isSorted(SMPDOBitLength, self.pdo_bit_lengths.slice(), {}, SMPDOBitLengths.lessThan));
-        for (1..self.pdo_bit_lengths.len) |i| {
-            const this_sm = self.pdo_bit_lengths.slice()[i];
-            const last_sm = self.pdo_bit_lengths.slice()[i - 1];
-            if (last_sm.start_addr + last_sm.pdo_byte_length > this_sm.start_addr or
-                last_sm.start_addr == this_sm.start_addr)
-            {
-                std.log.warn("overlapping sync managers: {}, {}", .{ this_sm, last_sm });
-                return error.OverlappingSM;
-            }
-        }
+    pub fn sortAndVerifyNonOverlapping(self: *SMPDOAssigns) !void {
+        self.sort();
+        assert(self.isSorted());
+        if (!self.isNonOverlapping()) return error.OverlappingSM;
     }
 };
 
-test "sort and verfiy non overlapping SMPDOBitLengths" {
-    var pdo_bit_lengths = SMPDOBitLengths{};
-    try pdo_bit_lengths.pdo_bit_lengths.append(SMPDOBitLength{ .direction = .tx, .pdo_bit_length = 12, .pdo_byte_length = 2, .start_addr = 1000, .sm_idx = 2 });
-    try pdo_bit_lengths.pdo_bit_lengths.append(SMPDOBitLength{ .direction = .tx, .pdo_bit_length = 12, .pdo_byte_length = 2, .start_addr = 998, .sm_idx = 4 });
-    try pdo_bit_lengths.pdo_bit_lengths.append(SMPDOBitLength{ .direction = .tx, .pdo_bit_length = 12, .pdo_byte_length = 2, .start_addr = 1002, .sm_idx = 1 });
-    try pdo_bit_lengths.sortAndVerifyNonOverlapping();
+test "sort and verfiy non overlapping SMPDOAssigns" {
+    var data = SMPDOAssigns{};
+    try data.data.append(SMPDOAssign{ .direction = .tx, .pdo_bit_length = 12, .pdo_byte_length = 2, .start_addr = 1000, .sm_idx = 2 });
+    try data.data.append(SMPDOAssign{ .direction = .tx, .pdo_bit_length = 12, .pdo_byte_length = 2, .start_addr = 998, .sm_idx = 4 });
+    try data.data.append(SMPDOAssign{ .direction = .tx, .pdo_bit_length = 12, .pdo_byte_length = 2, .start_addr = 1002, .sm_idx = 1 });
+    try data.sortAndVerifyNonOverlapping();
 
-    try std.testing.expectEqual(@as(u32, 998), pdo_bit_lengths.pdo_bit_lengths.slice()[0].start_addr);
-    try std.testing.expectEqual(@as(u32, 1000), pdo_bit_lengths.pdo_bit_lengths.slice()[1].start_addr);
-    try std.testing.expectEqual(@as(u32, 1002), pdo_bit_lengths.pdo_bit_lengths.slice()[2].start_addr);
+    try std.testing.expectEqual(@as(u32, 998), data.data.slice()[0].start_addr);
+    try std.testing.expectEqual(@as(u32, 1000), data.data.slice()[1].start_addr);
+    try std.testing.expectEqual(@as(u32, 1002), data.data.slice()[2].start_addr);
 }
 
 test "overlapping sync managers" {
-    var pdo_bit_lengths = SMPDOBitLengths{};
-    try pdo_bit_lengths.pdo_bit_lengths.append(SMPDOBitLength{ .direction = .tx, .pdo_bit_length = 12, .pdo_byte_length = 2, .start_addr = 1000, .sm_idx = 3 });
-    try pdo_bit_lengths.pdo_bit_lengths.append(SMPDOBitLength{ .direction = .tx, .pdo_bit_length = 12, .pdo_byte_length = 3, .start_addr = 998, .sm_idx = 3 });
-    try pdo_bit_lengths.pdo_bit_lengths.append(SMPDOBitLength{ .direction = .tx, .pdo_bit_length = 12, .pdo_byte_length = 2, .start_addr = 1002, .sm_idx = 3 });
-    try std.testing.expectError(error.OverlappingSM, pdo_bit_lengths.sortAndVerifyNonOverlapping());
+    var data = SMPDOAssigns{};
+    try data.data.append(SMPDOAssign{ .direction = .tx, .pdo_bit_length = 12, .pdo_byte_length = 2, .start_addr = 1000, .sm_idx = 3 });
+    try data.data.append(SMPDOAssign{ .direction = .tx, .pdo_bit_length = 12, .pdo_byte_length = 3, .start_addr = 998, .sm_idx = 3 });
+    try data.data.append(SMPDOAssign{ .direction = .tx, .pdo_bit_length = 12, .pdo_byte_length = 2, .start_addr = 1002, .sm_idx = 3 });
+    try std.testing.expectError(error.OverlappingSM, data.sortAndVerifyNonOverlapping());
 }
 
 test "overlapping sync managers non unique start addr" {
-    var pdo_bit_lengths = SMPDOBitLengths{};
-    try pdo_bit_lengths.pdo_bit_lengths.append(SMPDOBitLength{ .direction = .tx, .pdo_bit_length = 12, .pdo_byte_length = 2, .start_addr = 1000, .sm_idx = 3 });
-    try pdo_bit_lengths.pdo_bit_lengths.append(SMPDOBitLength{ .direction = .tx, .pdo_bit_length = 12, .pdo_byte_length = 2, .start_addr = 1000, .sm_idx = 3 });
-    try pdo_bit_lengths.pdo_bit_lengths.append(SMPDOBitLength{ .direction = .tx, .pdo_bit_length = 12, .pdo_byte_length = 2, .start_addr = 1002, .sm_idx = 3 });
-    try std.testing.expectError(error.OverlappingSM, pdo_bit_lengths.sortAndVerifyNonOverlapping());
+    var data = SMPDOAssigns{};
+    try data.data.append(SMPDOAssign{ .direction = .tx, .pdo_bit_length = 12, .pdo_byte_length = 2, .start_addr = 1000, .sm_idx = 3 });
+    try data.data.append(SMPDOAssign{ .direction = .tx, .pdo_bit_length = 12, .pdo_byte_length = 2, .start_addr = 1000, .sm_idx = 3 });
+    try data.data.append(SMPDOAssign{ .direction = .tx, .pdo_bit_length = 12, .pdo_byte_length = 2, .start_addr = 1002, .sm_idx = 3 });
+    try std.testing.expectError(error.OverlappingSM, data.sortAndVerifyNonOverlapping());
 }
 
-pub fn readSMPDOBitLengths(
+pub fn readSMPDOAssigns(
     port: *nic.Port,
     station_address: u16,
     recv_timeout_us: u32,
     eeprom_timeout_us: u32,
-) !SMPDOBitLengths {
-    var res = SMPDOBitLengths{};
+) !SMPDOAssigns {
+    var res = SMPDOAssigns{};
     const sm_catagory = try readSMCatagory(
         port,
         station_address,
@@ -1346,6 +1358,57 @@ pub fn readPDOBitLengths(
         },
     }
 }
+
+pub const FMMUConfiguration = struct {
+    data: esc.FMMUArray = .{},
+
+    pub const LogicalMemoryArea = struct {
+        start_addr: u32,
+        bit_length: u32,
+    };
+
+    // fml this is hard, effing germans and their complexity
+    pub fn initFromSMPDOAssigns(
+        sm_assigns: SMPDOAssigns,
+        inputs_area: LogicalMemoryArea,
+        outputs_area: LogicalMemoryArea,
+    ) FMMUConfiguration {
+        const totals = sm_assigns.totalBitLengths();
+        if (totals.inputs_bit_length != inputs_area.bit_length) return error.WrongInputsBitLength;
+        if (totals.outputs_bit_length != outputs_area.bit_length) return error.WrongOutputsBitLength;
+
+        // build array of fmmu configurations
+        // var fmmu_array = esc.FMMUArray{};
+    }
+
+    pub fn addSM(self: *FMMUConfiguration, sm_assign: SMPDOAssign) !void {
+        const fmmus: []esc.FMMUAttributes = self.data.slice();
+        // Find if an existing FMMU can be used, else make one.
+        // Existing FMMU can be used if sync manager lines up with end of FMMU
+        // (FMMU can be extented to cover both SMs).
+        for (fmmus) |*fmmu| {
+            // all FMMUs are byte-aligned (for simplicity)
+            assert(fmmu.physical_start_bit == 0);
+            assert(fmmu.logical_start_bit == 0);
+            if (fmmu.physical_start_address + fmmu.length == sm_assign.start_addr and
+                // since sync managers are byte aligned, I guess fmmu better be too if we want
+                // to add on to the end of it.
+                fmmu.bitLength() % 8 == 0)
+            {}
+        }
+    }
+
+    pub fn addSMToFMMU() !void {}
+
+    pub fn addFMMU(
+        self: *FMMUConfiguration,
+        logical_start_address: u32,
+    ) !void {
+        self.data.append(esc.FMMUAttributes{
+            .logical_start_address = logical_start_address,
+        });
+    }
+};
 
 test {
     std.testing.refAllDecls(@This());

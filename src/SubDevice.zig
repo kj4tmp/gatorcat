@@ -400,14 +400,14 @@ pub fn transitionPS(
             );
             if (fmmus.len < min_fmmu_required) return error.NotEnoughFMMUs;
 
-            const sm_bit_lengths = try sii.readSMPDOBitLengths(
+            const sm_assigns = try sii.readSMPDOAssigns(
                 port,
                 station_address,
                 recv_timeout_us,
                 eeprom_timeout_us,
             );
 
-            const totals = sm_bit_lengths.totalBitLengths();
+            const totals = sm_assigns.totalBitLengths();
 
             if (totals.inputs_bit_length != self.prior_info.inputs_bit_length) {
                 std.log.err(

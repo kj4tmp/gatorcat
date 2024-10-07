@@ -1394,11 +1394,20 @@ pub const FMMUConfiguration = struct {
                 // since sync managers are byte aligned, I guess fmmu better be too if we want
                 // to add on to the end of it.
                 fmmu.bitLength() % 8 == 0)
-            {}
+            {
+                self.addSMToFMMU(sm_assign, fmmu);
+            }
         }
     }
 
-    pub fn addSMToFMMU() !void {}
+    pub fn addSMToFMMU(
+        sm: SMPDOAssign,
+        fmmu: *esc.FMMUAttributes,
+    ) !void {
+        const old_bit_length = fmmu.bitLength();
+        // TODO: WIP
+        assert(fmmu.bitLength() == old_bit_length + sm.pdo_bit_length);
+    }
 
     pub fn addFMMU(
         self: *FMMUConfiguration,

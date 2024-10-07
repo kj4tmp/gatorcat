@@ -673,6 +673,10 @@ pub const FMMUAttributes = packed struct(u128) {
     pub fn bitLength(self: FMMUAttributes) u32 {
         return esc.bitLength(self.length, self.logical_start_bit, self.logical_end_bit);
     }
+
+    // pub fn addBits(self: *FMMUAttributes, n_bits: u32) void {
+
+    // }
 };
 
 /// bit length (primarily for FMMUs)

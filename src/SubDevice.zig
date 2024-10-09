@@ -363,8 +363,8 @@ pub fn transitionPS(
     port: *nic.Port,
     recv_timeout_us: u32,
     eeprom_timeout_us: u32,
-    //fmmu_inputs_start_addr: u32,
-    //fmmu_outputs_start_addr: u32,
+    fmmu_inputs_start_addr: u32,
+    fmmu_outputs_start_addr: u32,
 ) !void {
 
     // if CoE is supported, the subdevice PDOs can be mapped using information
@@ -425,6 +425,25 @@ pub fn transitionPS(
             }
             std.log.info("station addr: 0x{x}, inputs_bit_length: {}", .{ station_address, totals.inputs_bit_length });
             std.log.info("station addr: 0x{x}, outputs_bit_length: {}", .{ station_address, totals.outputs_bit_length });
+
+            const fmmu_config = try sii.FMMUConfiguration.initFromSMPDOAssigns(
+                sm_assigns,
+                .{ .start_addr = fmmu_inputs_start_addr, .bit_length = totals.inputs_bit_length },
+                .{ .start_addr = fmmu_outputs_start_addr, .bit_length = totals.outputs_bit_length },
+            );
+            std.log.info("station addr: 0x{x}, n_FMMU: {}, FMMU config: {any}", .{ station_address, fmmu_config.data.slice().len, fmmu_config.data.slice() });
+
+            // TODO: Sort FMMUs according to order defined in SII
+            if (fmmu_config.data.slice().len > fmmus.len) return error.NotEnoughFMMUs;
+
+            // write fmmu configuration
+            try commands.fpwrPackWkc(
+                port,
+                fmmu_config.dumpFMMURegister(),
+                .{ .station_address = station_address, .offset = @intFromEnum(esc.RegisterMap.FMMU0) },
+                recv_timeout_us,
+                1,
+            );
         },
     }
 

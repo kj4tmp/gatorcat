@@ -14,6 +14,7 @@ const nic = @import("nic.zig");
 const wire = @import("wire.zig");
 const esc = @import("esc.zig");
 const commands = @import("commands.zig");
+const pdi = @import("pdi.zig");
 
 pub const ParameterMap = enum(u16) {
     PDI_control = 0x0000,
@@ -685,20 +686,13 @@ pub fn pdoBitLength(pdos: []const PDO) u32 {
     return res;
 }
 
-pub const PDODirection = enum {
-    /// TXPDO = input = transmitted by subdevice
-    tx,
-    /// RXPDO = output = transmitted by maindevice
-    rx,
-};
-
 /// Read the full set of PDOs from the eeprom.
 ///
 /// Warning: this uses about 1 MB of stack memory.
 pub fn readPDOs(
     port: *nic.Port,
     station_address: u16,
-    direction: PDODirection,
+    direction: pdi.Direction,
     recv_timeout_us: u32,
     eeprom_timeout_us: u32,
 ) !?PDOs {
@@ -706,8 +700,8 @@ pub fn readPDOs(
         port,
         station_address,
         switch (direction) {
-            .tx => .TXPDO,
-            .rx => .RXPDO,
+            .input => .TXPDO,
+            .output => .RXPDO,
         },
         recv_timeout_us,
         eeprom_timeout_us,
@@ -1063,11 +1057,11 @@ pub const SMPDOAssign = struct {
     /// index of this sync manager
     sm_idx: u8,
     /// start address in esc memory
-    start_addr: u32,
+    start_addr: u16,
     pdo_byte_length: u16,
     /// total bit length of PDOs assigned to this sync manager.
     pdo_bit_length: u16,
-    direction: PDODirection,
+    direction: pdi.Direction,
 };
 
 pub const SMPDOAssigns = struct {
@@ -1081,10 +1075,10 @@ pub const SMPDOAssigns = struct {
         var res = Totals{};
         for (self.data.slice()) |pdo_bit_length| {
             switch (pdo_bit_length.direction) {
-                .tx => {
+                .input => {
                     res.inputs_bit_length += pdo_bit_length.pdo_bit_length;
                 },
-                .rx => {
+                .output => {
                     res.outputs_bit_length += pdo_bit_length.pdo_bit_length;
                 },
             }
@@ -1092,7 +1086,7 @@ pub const SMPDOAssigns = struct {
         return res;
     }
 
-    pub fn addPDOBitsToSM(self: *SMPDOAssigns, bit_length: u8, sm_idx: u8, direction: PDODirection) !void {
+    pub fn addPDOBitsToSM(self: *SMPDOAssigns, bit_length: u8, sm_idx: u8, direction: pdi.Direction) !void {
         assert(sm_idx < max_sm);
         for ((&self.data).slice()) |*pdo_bit_length| {
             if (pdo_bit_length.sm_idx == sm_idx) {
@@ -1117,8 +1111,8 @@ pub const SMPDOAssigns = struct {
             .sm_idx = sm_idx,
             .start_addr = sm_config.physical_start_address,
             .direction = switch (sm_config.syncM_type) {
-                .process_data_inputs => .tx,
-                .process_data_outputs => .rx,
+                .process_data_inputs => .input,
+                .process_data_outputs => .output,
                 else => unreachable,
             },
         });
@@ -1162,9 +1156,9 @@ pub const SMPDOAssigns = struct {
 
 test "sort and verfiy non overlapping SMPDOAssigns" {
     var data = SMPDOAssigns{};
-    try data.data.append(SMPDOAssign{ .direction = .tx, .pdo_bit_length = 12, .pdo_byte_length = 2, .start_addr = 1000, .sm_idx = 2 });
-    try data.data.append(SMPDOAssign{ .direction = .tx, .pdo_bit_length = 12, .pdo_byte_length = 2, .start_addr = 998, .sm_idx = 4 });
-    try data.data.append(SMPDOAssign{ .direction = .tx, .pdo_bit_length = 12, .pdo_byte_length = 2, .start_addr = 1002, .sm_idx = 1 });
+    try data.data.append(SMPDOAssign{ .direction = .input, .pdo_bit_length = 12, .pdo_byte_length = 2, .start_addr = 1000, .sm_idx = 2 });
+    try data.data.append(SMPDOAssign{ .direction = .input, .pdo_bit_length = 12, .pdo_byte_length = 2, .start_addr = 998, .sm_idx = 4 });
+    try data.data.append(SMPDOAssign{ .direction = .input, .pdo_bit_length = 12, .pdo_byte_length = 2, .start_addr = 1002, .sm_idx = 1 });
     try data.sortAndVerifyNonOverlapping();
 
     try std.testing.expectEqual(@as(u32, 998), data.data.slice()[0].start_addr);
@@ -1174,17 +1168,17 @@ test "sort and verfiy non overlapping SMPDOAssigns" {
 
 test "overlapping sync managers" {
     var data = SMPDOAssigns{};
-    try data.data.append(SMPDOAssign{ .direction = .tx, .pdo_bit_length = 12, .pdo_byte_length = 2, .start_addr = 1000, .sm_idx = 3 });
-    try data.data.append(SMPDOAssign{ .direction = .tx, .pdo_bit_length = 12, .pdo_byte_length = 3, .start_addr = 998, .sm_idx = 3 });
-    try data.data.append(SMPDOAssign{ .direction = .tx, .pdo_bit_length = 12, .pdo_byte_length = 2, .start_addr = 1002, .sm_idx = 3 });
+    try data.data.append(SMPDOAssign{ .direction = .input, .pdo_bit_length = 12, .pdo_byte_length = 2, .start_addr = 1000, .sm_idx = 3 });
+    try data.data.append(SMPDOAssign{ .direction = .input, .pdo_bit_length = 12, .pdo_byte_length = 3, .start_addr = 998, .sm_idx = 3 });
+    try data.data.append(SMPDOAssign{ .direction = .input, .pdo_bit_length = 12, .pdo_byte_length = 2, .start_addr = 1002, .sm_idx = 3 });
     try std.testing.expectError(error.OverlappingSM, data.sortAndVerifyNonOverlapping());
 }
 
 test "overlapping sync managers non unique start addr" {
     var data = SMPDOAssigns{};
-    try data.data.append(SMPDOAssign{ .direction = .tx, .pdo_bit_length = 12, .pdo_byte_length = 2, .start_addr = 1000, .sm_idx = 3 });
-    try data.data.append(SMPDOAssign{ .direction = .tx, .pdo_bit_length = 12, .pdo_byte_length = 2, .start_addr = 1000, .sm_idx = 3 });
-    try data.data.append(SMPDOAssign{ .direction = .tx, .pdo_bit_length = 12, .pdo_byte_length = 2, .start_addr = 1002, .sm_idx = 3 });
+    try data.data.append(SMPDOAssign{ .direction = .input, .pdo_bit_length = 12, .pdo_byte_length = 2, .start_addr = 1000, .sm_idx = 3 });
+    try data.data.append(SMPDOAssign{ .direction = .input, .pdo_bit_length = 12, .pdo_byte_length = 2, .start_addr = 1000, .sm_idx = 3 });
+    try data.data.append(SMPDOAssign{ .direction = .input, .pdo_bit_length = 12, .pdo_byte_length = 2, .start_addr = 1002, .sm_idx = 3 });
     try std.testing.expectError(error.OverlappingSM, data.sortAndVerifyNonOverlapping());
 }
 
@@ -1266,8 +1260,8 @@ pub fn readSMPDOAssigns(
                     entry.bit_length,
                     current_sm_idx,
                     switch (catagory_type) {
-                        .TXPDO => .tx,
-                        .RXPDO => .rx,
+                        .TXPDO => .input,
+                        .RXPDO => .output,
                         else => unreachable,
                     },
                 );
@@ -1294,7 +1288,7 @@ pub fn readSMPDOAssigns(
 pub fn readPDOBitLengths(
     port: *nic.Port,
     station_address: u16,
-    direction: PDODirection,
+    direction: pdi.Direction,
     recv_timeout_us: u32,
     eeprom_timeout_us: u32,
 ) !u32 {
@@ -1302,8 +1296,8 @@ pub fn readPDOBitLengths(
         port,
         station_address,
         switch (direction) {
-            .tx => .TXPDO,
-            .rx => .RXPDO,
+            .input => .TXPDO,
+            .output => .RXPDO,
         },
         recv_timeout_us,
         eeprom_timeout_us,
@@ -1361,7 +1355,8 @@ pub fn readPDOBitLengths(
 
 pub const FMMUConfiguration = struct {
     data: esc.FMMUArray = .{},
-
+    inputs_area: LogicalMemoryArea,
+    outputs_area: LogicalMemoryArea,
     pub const LogicalMemoryArea = struct {
         start_addr: u32,
         bit_length: u32,
@@ -1372,13 +1367,17 @@ pub const FMMUConfiguration = struct {
         sm_assigns: SMPDOAssigns,
         inputs_area: LogicalMemoryArea,
         outputs_area: LogicalMemoryArea,
-    ) FMMUConfiguration {
+    ) !FMMUConfiguration {
         const totals = sm_assigns.totalBitLengths();
         if (totals.inputs_bit_length != inputs_area.bit_length) return error.WrongInputsBitLength;
         if (totals.outputs_bit_length != outputs_area.bit_length) return error.WrongOutputsBitLength;
 
-        // build array of fmmu configurations
-        // var fmmu_array = esc.FMMUArray{};
+        var res = FMMUConfiguration{ .inputs_area = inputs_area, .outputs_area = outputs_area };
+
+        for (sm_assigns.data.slice()) |sm_assign| {
+            if (sm_assign.pdo_bit_length > 0) try res.addSM(sm_assign);
+        }
+        return res;
     }
 
     pub fn addSM(self: *FMMUConfiguration, sm_assign: SMPDOAssign) !void {
@@ -1386,36 +1385,69 @@ pub const FMMUConfiguration = struct {
         // Find if an existing FMMU can be used, else make one.
         // Existing FMMU can be used if sync manager lines up with end of FMMU
         // (FMMU can be extented to cover both SMs).
-        for (fmmus) |*fmmu| {
+        search_for_usable_fmmu: for (fmmus) |*fmmu| {
             // all FMMUs are byte-aligned (for simplicity)
             assert(fmmu.physical_start_bit == 0);
             assert(fmmu.logical_start_bit == 0);
+            // fmmu must be read or write, not both
+            assert(!(fmmu.write_enable and fmmu.read_enable));
+            // fmmu must be enabled
+            assert(fmmu.enable);
+            // since sync managers are byte aligned, I guess fmmu better be too if we want
+            // to add on to the end of it.
             if (fmmu.physical_start_address + fmmu.length == sm_assign.start_addr and
-                // since sync managers are byte aligned, I guess fmmu better be too if we want
-                // to add on to the end of it.
-                fmmu.bitLength() % 8 == 0)
+                fmmu.bitLength() % 8 == 0 and
+                fmmu.enable and
+                ((fmmu.read_enable and sm_assign.direction == .input) or
+                (fmmu.write_enable and sm_assign.direction == .output)))
             {
-                self.addSMToFMMU(sm_assign, fmmu);
+                fmmu.addBits(sm_assign.pdo_bit_length);
+                break :search_for_usable_fmmu;
+            }
+        } else {
+            // need fresh fmmu, bit pack the new one next to the last one in the logical memory
+            // or make a new one
+            const maybe_last_fmmu: ?esc.FMMUAttributes = blk: {
+                for (fmmus) |*fmmu| {
+                    if ((fmmu.read_enable and sm_assign.direction == .input) or
+                        (fmmu.write_enable and sm_assign.direction == .output))
+                    {
+                        break :blk fmmu.*;
+                    }
+                } else break :blk null;
+            };
+            if (maybe_last_fmmu) |*last_fmmu| {
+                const new_fmmu = esc.FMMUAttributes.initNeighbor(
+                    last_fmmu,
+                    sm_assign.direction,
+                    sm_assign.start_addr,
+                    0,
+                    sm_assign.pdo_bit_length,
+                );
+                try self.data.append(new_fmmu);
+            } else {
+                const new_fmmu = esc.FMMUAttributes.init(
+                    sm_assign.direction,
+                    switch (sm_assign.direction) {
+                        .input => self.inputs_area.start_addr,
+                        .output => self.outputs_area.start_addr,
+                    },
+                    0,
+                    sm_assign.pdo_bit_length,
+                    sm_assign.start_addr,
+                    0,
+                );
+                try self.data.append(new_fmmu);
             }
         }
     }
 
-    pub fn addSMToFMMU(
-        sm: SMPDOAssign,
-        fmmu: *esc.FMMUAttributes,
-    ) !void {
-        const old_bit_length = fmmu.bitLength();
-        // TODO: WIP
-        assert(fmmu.bitLength() == old_bit_length + sm.pdo_bit_length);
-    }
-
-    pub fn addFMMU(
-        self: *FMMUConfiguration,
-        logical_start_address: u32,
-    ) !void {
-        self.data.append(esc.FMMUAttributes{
-            .logical_start_address = logical_start_address,
-        });
+    pub fn dumpFMMURegister(self: *const FMMUConfiguration) esc.FMMURegister {
+        var res = std.mem.zeroes(esc.FMMURegister);
+        for (self.data.slice(), 0..) |fmmu, i| {
+            res.writeFMMUConfig(fmmu, @intCast(i));
+        }
+        return res;
     }
 };
 

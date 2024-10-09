@@ -1,6 +1,8 @@
 const std = @import("std");
 const assert = std.debug.assert;
 
+const pdi = @import("pdi.zig");
+
 const esc = @This();
 
 pub const RegisterMap = enum(u16) {
@@ -657,26 +659,130 @@ pub const FMMUAttributes = packed struct(u128) {
     logical_start_address: u32,
     length: u16,
     logical_start_bit: u3,
-    reserved: u5 = 0,
+    _reserved: u5 = 0,
     logical_end_bit: u3,
-    reserved2: u5 = 0,
+    _reserved2: u5 = 0,
     physical_start_address: u16,
     physical_start_bit: u3,
-    reserved3: u5 = 0,
+    _reserved3: u5 = 0,
+    /// process data inputs (physical memory is source, logical is destination)
     read_enable: bool,
+    /// process data outputs (physical memory is destination, logical is source)
     write_enable: bool,
-    reserved4: u6 = 0,
+    _reserved4: u6 = 0,
     enable: bool,
-    reserved5: u7 = 0,
-    reserved6: u24 = 0,
+    _reserved5: u7 = 0,
+    _reserved6: u24 = 0,
+
+    pub fn init(
+        direction: pdi.Direction,
+        logical_start_address: u32,
+        logical_start_bit: u3,
+        bit_length: u32,
+        physical_start_address: u16,
+        physical_start_bit: u3,
+    ) FMMUAttributes {
+        assert(bit_length > 0);
+        var res = FMMUAttributes{
+            .logical_start_address = logical_start_address,
+            .length = 1,
+            .logical_start_bit = logical_start_bit,
+            .physical_start_address = physical_start_address,
+            .physical_start_bit = physical_start_bit,
+            .logical_end_bit = logical_start_bit,
+            .write_enable = switch (direction) {
+                .input => false,
+                .output => true,
+            },
+            .read_enable = switch (direction) {
+                .input => true,
+                .output => false,
+            },
+            .enable = true,
+        };
+        res.addBits(bit_length - 1); // first bit already specified
+        assert(res.isValid());
+        return res;
+    }
+
+    /// given an FMMU, init an FMMU next to it.
+    pub fn initNeighbor(
+        self: *const FMMUAttributes,
+        direction: pdi.Direction,
+        physical_start_address: u16,
+        physical_start_bit: u3,
+        bit_length: u32,
+    ) FMMUAttributes {
+        assert(bit_length != 0);
+        var res = FMMUAttributes.init(
+            direction,
+            self.logical_start_address,
+            self.logical_start_bit,
+            1,
+            physical_start_address,
+            physical_start_bit,
+        );
+        res.shiftLogicalBits(self.bitLength());
+        res.addBits(bit_length - 1);
+        return res;
+    }
+
+    /// move the FMMU to the right the given number of bits
+    pub fn shiftLogicalBits(self: *FMMUAttributes, n_bits: u32) void {
+        assert(self.isValid());
+        const old_bit_length = self.bitLength();
+        var n_bits_remaining = n_bits;
+        // TODO: optimize!!!
+        while (n_bits_remaining > 0) {
+            if (self.logical_start_bit != 7) {
+                self.logical_start_bit += 1;
+                n_bits_remaining -= 1;
+                continue;
+            } else {
+                self.logical_start_bit = 0;
+                n_bits_remaining -= 1;
+                self.logical_start_address += 1;
+                continue;
+            }
+        }
+        self.logical_end_bit = self.logical_start_bit;
+        self.addBits(old_bit_length - 1);
+        assert(self.bitLength() == old_bit_length);
+        assert(self.isValid());
+    }
 
     pub fn bitLength(self: FMMUAttributes) u32 {
         return esc.bitLength(self.length, self.logical_start_bit, self.logical_end_bit);
     }
 
-    // pub fn addBits(self: *FMMUAttributes, n_bits: u32) void {
+    pub fn addBits(self: *FMMUAttributes, n_bits: u32) void {
+        const old_bit_length = self.bitLength();
+        var n_bits_remaining = n_bits;
+        // TODO: optimize!!!
+        while (n_bits_remaining > 0) {
+            if (self.logical_end_bit != 7) {
+                self.logical_end_bit += 1;
+                n_bits_remaining -= 1;
+                continue;
+            } else {
+                self.logical_end_bit = 0;
+                n_bits_remaining -= 1;
+                self.length += 1;
+                continue;
+            }
+        }
+        assert(self.bitLength() == old_bit_length + n_bits);
+        assert(self.isValid());
+    }
 
-    // }
+    pub fn isValid(self: *const FMMUAttributes) bool {
+        if (self.length == 0) return false;
+        if (self.length == 1 and self.logical_start_bit > self.logical_end_bit) return false;
+        if (self.read_enable and self.write_enable) return false;
+        if (!self.enable) return false;
+        if (self.bitLength() == 0) return false;
+        return true;
+    }
 };
 
 /// bit length (primarily for FMMUs)
@@ -720,6 +826,47 @@ test "FMMUAttributes bitLength" {
     try std.testing.expectEqual(@as(u32, 13), bitLength(2, 1, 5));
     try std.testing.expectEqual(@as(u32, 13), bitLength(2, 0, 4));
     try std.testing.expectEqual(@as(u32, 13), bitLength(3, 7, 3));
+}
+
+test "FMMUAttributes addBits" {
+    var attr = FMMUAttributes{
+        .logical_start_address = 0,
+        .physical_start_bit = 2,
+        .logical_start_bit = 2,
+        .length = 2,
+        .read_enable = true,
+        .write_enable = false,
+        .enable = true,
+        .physical_start_address = 12,
+        .logical_end_bit = 1,
+    };
+    try std.testing.expectEqual(@as(u32, 8), attr.bitLength());
+    attr.addBits(1);
+    try std.testing.expectEqual(@as(u32, 9), attr.bitLength());
+    attr.addBits(1);
+    try std.testing.expectEqual(@as(u32, 10), attr.bitLength());
+    attr.addBits(1);
+    try std.testing.expectEqual(@as(u32, 11), attr.bitLength());
+    attr.addBits(1);
+    try std.testing.expectEqual(@as(u32, 12), attr.bitLength());
+    attr.addBits(1);
+    try std.testing.expectEqual(@as(u32, 13), attr.bitLength());
+    attr.addBits(1);
+    try std.testing.expectEqual(@as(u32, 14), attr.bitLength());
+    attr.addBits(1);
+    try std.testing.expectEqual(@as(u32, 15), attr.bitLength());
+    attr.addBits(1);
+    try std.testing.expectEqual(@as(u32, 16), attr.bitLength());
+    attr.addBits(1);
+    try std.testing.expectEqual(@as(u32, 17), attr.bitLength());
+    attr.addBits(1);
+    try std.testing.expectEqual(@as(u32, 18), attr.bitLength());
+    attr.addBits(35);
+    try std.testing.expectEqual(@as(u32, 18 + 35), attr.bitLength());
+    attr.addBits(64);
+    try std.testing.expectEqual(@as(u32, 18 + 35 + 64), attr.bitLength());
+    attr.addBits(13);
+    try std.testing.expectEqual(@as(u32, 18 + 35 + 64 + 13), attr.bitLength());
 }
 
 /// The maximum number of FMMUs is 16.

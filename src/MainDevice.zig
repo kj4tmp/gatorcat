@@ -285,6 +285,7 @@ pub fn busSAFEOP(self: *MainDevice) !void {
         _ = subdevice_config;
 
         // TODO: use real start addr
+        // TODO: assert non-overlapping FMMU configuration
         try subdevice.transitionPS(
             self.port,
             self.settings.recv_timeout_us,

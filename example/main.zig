@@ -121,7 +121,7 @@ pub fn main() !void {
 
     std.log.warn("pdo bit len: {}", .{ecm.sii.pdoBitLength(res.slice())});
     const config = ecm.mailbox.Configuration{ .mbx_in = .{ .start_addr = 0x1080, .length = 128 }, .mbx_out = .{ .start_addr = 0x1000, .length = 128 } };
-    const mapping = try ecm.mailbox.coe.readPDOMapping(&port, 0x1001, 3000, 10_000, &subdevices[1].runtime_info.cnt, config, 0x1600);
+    const mapping = try ecm.mailbox.coe.readPDOMapping(&port, 0x1001, 3000, 10_000, &subdevices[1].runtime_info.coe.?.cnt, config, 0x1600);
     std.log.err("mapping: {any}", .{mapping.entries.slice()});
 
     const bitlengths = try ecm.sii.readSMPDOAssigns(&port, 0x1003, 3000, 10000);
@@ -134,29 +134,40 @@ pub fn main() !void {
     var timer2 = try std.time.Timer.start();
     var timer3 = try std.time.Timer.start();
     var timer4 = try std.time.Timer.start();
+    var frame_count: u32 = 0;
+
     while (true) {
         timer4.reset();
         const wkc = main_device.sendCyclicFrame() catch |err| switch (err) {
-            error.RecvTimeout => continue,
+            error.RecvTimeout => {
+                std.log.warn("recv timeout", .{});
+                continue;
+            },
             error.LinkError, error.TransactionContention, error.CurruptedFrame => |err2| return err2,
         };
         const recv_us = timer4.read() / std.time.ns_per_us;
+        frame_count += 1;
 
-        std.time.sleep(std.time.ns_per_ms * 1);
+        // std.time.sleep(std.time.ns_per_ms * 1);
 
         if (timer.read() > std.time.ns_per_s * 1) {
             timer.reset();
-            std.log.warn("wkc: {}, recv_us: {}, timer3: {}", .{ wkc, recv_us, timer3.read() / std.time.ns_per_us });
+            std.log.warn("wkc: {}, recv_us: {}, timer3: {}, frames/s: {}", .{ wkc, recv_us, timer3.read() / std.time.ns_per_us, frame_count });
             var fbs2 = std.io.fixedBufferStream(subdevices[1].runtime_info.pi.?.inputs);
             const reader2 = fbs2.reader();
             std.log.warn("el3314: {}", .{(try ecm.wire.packFromECatReader(EL3314ProcessData, reader2)).ch1});
+            frame_count = 0;
         }
 
         if (timer2.read() > std.time.ns_per_s * 0.1) {
             timer2.reset();
             // make the lights flash on the EL2008
-            subdevices[4].runtime_info.pi.?.outputs[0] +%= 1;
+            subdevices[4].runtime_info.pi.?.outputs[0] *%= 2;
+            if (subdevices[4].runtime_info.pi.?.outputs[0] == 0) {
+                subdevices[4].runtime_info.pi.?.outputs[0] = 1;
+            }
         }
+
         timer3.reset();
     }
 }

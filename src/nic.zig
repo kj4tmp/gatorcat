@@ -29,8 +29,11 @@ pub const Port = struct {
     send_mutex: Mutex = .{},
     recv_mutex: Mutex = .{},
     socket: std.posix.socket_t,
-    recv_datagrams: [128][]telegram.Datagram = undefined,
-    recv_datagrams_status: [128]FrameStatus = [_]FrameStatus{FrameStatus.available} ** 128,
+    recv_datagrams: [max_frames][]telegram.Datagram = undefined,
+    recv_datagrams_status: [max_frames]FrameStatus = [_]FrameStatus{FrameStatus.available} ** max_frames,
+    last_used_idx: u8 = 0,
+
+    pub const max_frames: u9 = 256;
 
     pub fn init(
         ifname: []const u8,
@@ -121,14 +124,21 @@ pub const Port = struct {
         self.recv_datagrams_status_mutex.lock();
         defer self.recv_datagrams_status_mutex.unlock();
 
-        for (&self.recv_datagrams_status, 0..) |*status, idx| {
-            if (status.* == FrameStatus.available) {
-                status.* = FrameStatus.in_use;
-                return @intCast(idx);
-            }
-        } else {
-            return error.NoTransactionAvailable;
-        }
+        const new_idx = self.last_used_idx +% 1;
+        if (self.recv_datagrams_status[new_idx] == .available) {
+            self.recv_datagrams_status[new_idx] = .in_use;
+            self.last_used_idx = new_idx;
+            return self.last_used_idx;
+        } else return error.NoTransactionAvailable;
+
+        // for (&self.recv_datagrams_status, 0..) |*status, idx| {
+        //     if (status.* == FrameStatus.available) {
+        //         status.* = FrameStatus.in_use;
+        //         return @intCast(idx);
+        //     }
+        // } else {
+        //     return error.NoTransactionAvailable;
+        // }
     }
 
     /// Send a transaction with the ethercat bus.

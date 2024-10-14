@@ -26,28 +26,8 @@ pub fn init(prior_info: ENI.SubDeviceConfiguration) SubDevice {
 // info gathered at runtime from bus,
 // will be filled in when available
 pub const RuntimeInfo = struct {
-    status: ?esc.ALStatusRegister = null,
-
-    /// DL Info from ESC
-    dl_info: ?esc.DLInformationRegister = null,
-
-    /// first part of the SII
-    info: ?sii.SubDeviceInfoCompact = null,
-
-    /// SII General Catagory
-    general: ?sii.CatagoryGeneral = null,
-
-    /// Syncmanager configurations
-    sms: ?esc.SMRegister = null,
-
-    /// FMMU configurations
-    // fmmus: ?sii.FMMUCatagory = null,
-
-    /// name string from the SII
-    name: ?sii.SIIString = null,
-    /// order id from the SII, ex: EK1100
-    order_id: ?sii.SIIString = null,
-    cnt: coe.Cnt = coe.Cnt{},
+    /// CoE information, null if CoE not supported
+    coe: ?CoE = null,
 
     /// process image
     pi: ?ProcessImage = null,
@@ -57,6 +37,12 @@ pub const RuntimeInfo = struct {
         inputs_area: pdi.LogicalMemoryArea,
         outputs: []u8,
         outputs_area: pdi.LogicalMemoryArea,
+    };
+
+    pub const CoE = struct {
+        config: mailbox.Configuration,
+        supports_complete_access: bool,
+        cnt: coe.Cnt = coe.Cnt{},
     };
 };
 
@@ -173,7 +159,6 @@ pub fn transitionIP(
         recv_timeout_us,
         eeprom_timeout_us,
     );
-    self.runtime_info.info = info;
 
     if (info.vendor_id != self.prior_info.identity.vendor_id or
         info.product_code != self.prior_info.identity.product_code or
@@ -192,50 +177,13 @@ pub fn transitionIP(
         );
         return error.UnexpectedSubDevice;
     }
-    const dl_info_res = try commands.fprdPackWkc(
-        port,
-        esc.DLInformationRegister,
-        .{
-            .station_address = station_address,
-            .offset = @intFromEnum(esc.RegisterMap.DL_information),
-        },
-        recv_timeout_us,
-        1,
-    );
 
-    self.runtime_info.dl_info = dl_info_res;
-
-    self.runtime_info.general = try sii.readGeneralCatagory(
+    const general_catagory = try sii.readGeneralCatagory(
         port,
         station_address,
         recv_timeout_us,
         eeprom_timeout_us,
     );
-
-    if (self.runtime_info.general) |general| {
-        self.runtime_info.order_id = try sii.readSIIString(
-            port,
-            station_address,
-            general.order_idx,
-            recv_timeout_us,
-            eeprom_timeout_us,
-        );
-
-        self.runtime_info.name = try sii.readSIIString(
-            port,
-            station_address,
-            general.name_idx,
-            recv_timeout_us,
-            eeprom_timeout_us,
-        );
-
-        // std.log.info("subdevice station addr: 0x{x}, general: {}", .{ runtime_info.station_address.?, general });
-    }
-
-    var order_id: ?[]const u8 = null;
-    if (self.runtime_info.order_id) |order_id_array| {
-        order_id = order_id_array.slice();
-    }
 
     // wipe FMMUs
     var zero_fmmus = wire.zerosFromPack(esc.FMMURegister);
@@ -269,7 +217,7 @@ pub fn transitionIP(
 
     // configure sync managers.
     // during the IP transition, we should configure the mailbox sync managers.
-    self.runtime_info.sms = std.mem.zeroes(esc.SMRegister);
+    var sms = std.mem.zeroes(esc.SMRegister);
     switch (self.prior_info.auto_config) {
         .none => {},
         .sii => {
@@ -277,18 +225,36 @@ pub fn transitionIP(
             // SM0 should be used for Mailbox Out (from maindevice to subdevice)
             // SM1 should be used for Mailbox In (from subdevice to maindevice)
             if (info.std_recv_mbx_offset > 0) { // mbx supported?
-                self.runtime_info.sms.?.SM0 = esc.SyncManagerAttributes.mbxOutDefaults(
+                sms.SM0 = esc.SyncManagerAttributes.mbxOutDefaults(
                     info.std_recv_mbx_offset,
                     info.std_recv_mbx_size,
                 );
-                self.runtime_info.sms.?.SM1 = esc.SyncManagerAttributes.mbxInDefaults(
+                sms.SM1 = esc.SyncManagerAttributes.mbxInDefaults(
                     info.std_send_mbx_offset,
                     info.std_send_mbx_size,
                 );
             }
+
+            // supports CoE? Complete Access?
+            if (info.mbx_protocol.CoE) {
+                self.runtime_info.coe = RuntimeInfo.CoE{
+                    .config = try mailbox.Configuration.init(
+                        sms.SM1.physical_start_address,
+                        sms.SM1.length,
+                        sms.SM0.physical_start_address,
+                        sms.SM0.length,
+                    ),
+                    .supports_complete_access = blk: {
+                        if (general_catagory) |general| {
+                            break :blk general.coe_details.enable_SDO_complete_access;
+                        } else break :blk false;
+                    },
+                };
+            }
+
             // Trust default syncmanager configurations from sii
             // Set SM from SII SM section if it exists
-            var sii_sms = try sii.readSMCatagory(
+            var maybe_sii_sms = try sii.readSMCatagory(
                 port,
                 station_address,
                 recv_timeout_us,
@@ -303,18 +269,18 @@ pub fn transitionIP(
                 eeprom_timeout_us,
             );
 
-            if (sii_sms) |*sms| {
+            if (maybe_sii_sms) |*sii_sms| {
                 for (sm_assigns.data.slice()) |sm_assign| {
-                    sms.slice()[sm_assign.sm_idx].length = sm_assign.pdo_byte_length;
+                    sii_sms.slice()[sm_assign.sm_idx].length = sm_assign.pdo_byte_length;
                 }
-                self.runtime_info.sms = sii.escSMsFromSIISMs(sms.slice());
+                sms = sii.escSMsFromSIISMs(sii_sms.slice());
             }
         },
     }
     // write SM configuration to subdevice
     try commands.fpwrPackWkc(
         port,
-        self.runtime_info.sms.?,
+        sms,
         .{
             .station_address = station_address,
             .offset = @intFromEnum(esc.RegisterMap.SM0),
@@ -326,44 +292,6 @@ pub fn transitionIP(
     // TODO: topology
     // TODO: physical type
     // TODO: active ports
-
-    std.log.info("0x{x}: {s}", .{ station_address, order_id orelse "null" });
-    std.log.info("    vendor_id: 0x{x}", .{self.runtime_info.info.?.vendor_id});
-    std.log.info("    product_code: 0x{x}", .{self.runtime_info.info.?.product_code});
-    std.log.info("    revision_number: 0x{x}", .{self.runtime_info.info.?.revision_number});
-    std.log.info("    protocols: AoE: {}, EoE: {}, CoE: {}, FoE: {}, SoE: {}, VoE: {}", .{
-        self.runtime_info.info.?.mbx_protocol.AoE,
-        self.runtime_info.info.?.mbx_protocol.EoE,
-        self.runtime_info.info.?.mbx_protocol.CoE,
-        self.runtime_info.info.?.mbx_protocol.FoE,
-        self.runtime_info.info.?.mbx_protocol.SoE,
-        self.runtime_info.info.?.mbx_protocol.VoE,
-    });
-    std.log.info(
-        "    mbx_recv: offset: 0x{x}, size: {}",
-        .{
-            self.runtime_info.info.?.std_recv_mbx_offset,
-            self.runtime_info.info.?.std_recv_mbx_size,
-        },
-    );
-    std.log.info(
-        "    mbx_send: offset: 0x{x}, size: {}",
-        .{
-            self.runtime_info.info.?.std_send_mbx_offset,
-            self.runtime_info.info.?.std_send_mbx_size,
-        },
-    );
-    std.log.info("    DCSupported: {}", .{self.runtime_info.dl_info.?.DCSupported});
-    std.log.info("    pi inputs logical start addr: {}, bit_len: {}, byte_len: {}", .{
-        self.runtime_info.pi.?.inputs_area.start_addr,
-        self.runtime_info.pi.?.inputs_area.bit_length,
-        self.runtime_info.pi.?.inputs.len,
-    });
-    std.log.info("    pi outputs logical start addr: {}, bit_len: {}, byte_len: {}", .{
-        self.runtime_info.pi.?.outputs_area.start_addr,
-        self.runtime_info.pi.?.outputs_area.bit_length,
-        self.runtime_info.pi.?.outputs.len,
-    });
 
     // cant do startup parameters until mailbox is initialized
     try self.doStartupParameters(port, .IP, recv_timeout_us);
@@ -404,6 +332,7 @@ pub fn transitionPS(
     // if CoE is supported, the subdevice PDOs can be mapped using information
     // from CoE. otherwise it can be obtained from the SII.
     // Ref: IEC 61158-5-12:2019 6.1.1.1
+
     // TODO: does it say somewhere that if CoE supported the PDOs MUST be in the CoE?
     const station_address = self.prior_info.station_address;
 
@@ -414,13 +343,6 @@ pub fn transitionPS(
         .sii => {
             // the entire SM configuration was already written from the SII as part of the IP transition.
             // we do not need to modify it here.
-
-            // 1. count available FMMUs
-            // 2. Obtain bit_length of each sync manager
-            // 3. configure sync managers
-            // 3. sort sync managers by start address
-            // 4. if sync managers are next to each other and are the same directio, use a single FMMU, otherwise use multiple
-            // 5. configure FMMUs
 
             var min_fmmu_required: u8 = 0;
             if (self.prior_info.inputs_bit_length > 0) min_fmmu_required += 1;
@@ -483,44 +405,8 @@ pub fn transitionPS(
 
     // TODO: configure pdos / sync managers from CoE
     // TODO: configure PDOs from SoE
-
-    // configure SMs for process data
-    // All sync managers were already configured from the SII in the IP task.
     // TODO: configure SII using information from CoE
 
-    const sms = (try commands.fprdPackWkc(
-        port,
-        esc.SMRegister,
-        .{
-            .station_address = station_address,
-            .offset = @intFromEnum(esc.RegisterMap.SM0),
-        },
-        recv_timeout_us,
-        1,
-    )).asArray();
-    _ = sms;
-    // std.log.info("station_addr: 0x{x}, sync managagers: {any}", .{ station_address, sms });
-
-    // configure FMMUs
-    // As a first and simple solution, just configure 1 FMMU per sync manager.
-    // read available FMMUs from SII
-
-    // We will try to configure FMMUs using information from the SII.
-    // We need at most 1 FMMU per SM.
-    // At least 1 SM per FMMU.
-    //
-    // So first we will iterate over the PDOs, and count how many bits are assigned to each SM.
-    //
-    // Next determine the physical start address of each SyncM using SII.
-    //
-    // Then we will check what configuration for those Sync Managers is provided by the SII.
-    // We will check for the configuration being large enough to encompase the bits.
-    //
-    // Then we will program the FMMUs using the exact bit size reported from the PDOs.
-    //
-    // 1. Report PDO size for each SM.
-
-    // const sm_pdo_bitlengths = try sii.readSMPDOBitLengths(port, station_address, recv_timeout_us, eeprom_timeout_us);
 }
 
 pub fn transitionSO(
@@ -566,45 +452,20 @@ pub fn sdoWrite(
     recv_timeout_us: u32,
     mbx_timeout_us: u32,
 ) !void {
-    const info = self.runtime_info.info orelse return error.InvalidRuntimeInfo;
-    const station_address = self.prior_info.station_address;
-    const sms = self.runtime_info.sms orelse return error.InvalidRuntimeInfo;
-
-    // subdevice supports CoE?
-    if (!info.mbx_protocol.CoE or
-        sms.SM0.physical_start_address == 0 or
-        sms.SM0.length == 0 or
-        sms.SM1.physical_start_address == 0 or
-        sms.SM1.length == 0) return error.CoENotSupported;
-
-    // supports complete access?
-    if (self.runtime_info.general) |general| {
-        if (!general.coe_details.enable_SDO_complete_access and complete_access) {
-            return error.CompleteAccessNotSupported;
-        }
-    }
-
-    // TODO: move this into runtime info
-    // SM1 is mailbox in
-    // SM0 is mailbox out
-    const config = try mailbox.Configuration.init(
-        sms.SM1.physical_start_address,
-        sms.SM1.length,
-        sms.SM0.physical_start_address,
-        sms.SM0.length,
-    );
+    const this_coe = self.runtime_info.coe orelse return error.CoENotSupported;
+    if (complete_access and !this_coe.supports_complete_access) return error.CoECompleteAccessNotSupported;
 
     return try coe.sdoWrite(
         port,
-        station_address,
+        self.prior_info.station_address,
         index,
         subindex,
         complete_access,
         buf,
         recv_timeout_us,
         mbx_timeout_us,
-        self.runtime_info.cnt.nextCnt(),
-        config,
+        self.runtime_info.coe.?.cnt.nextCnt(),
+        this_coe.config,
         null,
     );
 }
@@ -619,45 +480,20 @@ pub fn sdoRead(
     recv_timeout_us: u32,
     mbx_timeout_us: u32,
 ) !usize {
-    const info = self.runtime_info.info orelse return error.InvalidRuntimeInfo;
-    const station_address = self.prior_info.station_address;
-    const sms = self.runtime_info.sms orelse return error.InvalidRuntimeInfo;
-
-    // subdevice supports CoE?
-    if (!info.mbx_protocol.CoE or
-        sms.SM0.physical_start_address == 0 or
-        sms.SM0.length == 0 or
-        sms.SM1.physical_start_address == 0 or
-        sms.SM1.length == 0) return error.CoENotSupported;
-
-    // supports complete access?
-    if (self.runtime_info.general) |general| {
-        if (!general.coe_details.enable_SDO_complete_access and complete_access) {
-            return error.CompleteAccessNotSupported;
-        }
-    }
-
-    // TODO: move this into runtime info
-    // SM1 is mailbox in
-    // SM0 is mailbox out
-    const config = try mailbox.Configuration.init(
-        sms.SM1.physical_start_address,
-        sms.SM1.length,
-        sms.SM0.physical_start_address,
-        sms.SM0.length,
-    );
+    const this_coe = self.runtime_info.coe orelse return error.CoENotSupported;
+    if (complete_access and !this_coe.supports_complete_access) return error.CoECompleteAccessNotSupported;
 
     return try coe.sdoRead(
         port,
-        station_address,
+        self.prior_info.station_address,
         index,
         subindex,
         complete_access,
         out,
         recv_timeout_us,
         mbx_timeout_us,
-        self.runtime_info.cnt.nextCnt(),
-        config,
+        self.runtime_info.coe.?.cnt.nextCnt(),
+        this_coe.config,
         null,
     );
 }

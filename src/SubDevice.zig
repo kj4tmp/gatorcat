@@ -12,6 +12,7 @@ const wire = @import("wire.zig");
 const coe = @import("mailbox/coe.zig");
 const mailbox = @import("mailbox.zig");
 const ENI = @import("ENI.zig");
+const pdi = @import("pdi.zig");
 
 runtime_info: RuntimeInfo = .{},
 prior_info: ENI.SubDeviceConfiguration,
@@ -47,6 +48,16 @@ pub const RuntimeInfo = struct {
     /// order id from the SII, ex: EK1100
     order_id: ?sii.SIIString = null,
     cnt: coe.Cnt = coe.Cnt{},
+
+    /// process image
+    pi: ?ProcessImage = null,
+
+    pub const ProcessImage = struct {
+        inputs: []u8,
+        inputs_area: pdi.LogicalMemoryArea,
+        outputs: []u8,
+        outputs_area: pdi.LogicalMemoryArea,
+    };
 };
 
 const SubDevice = @This();
@@ -150,6 +161,8 @@ pub fn transitionIP(
     recv_timeout_us: u32,
     eeprom_timeout_us: u32,
 ) !void {
+    _ = self.runtime_info.pi orelse return error.InvalidRuntimeInfo;
+
     const station_address = self.prior_info.station_address;
     // check subdevice identity
     const info = try sii.readSIIFP_ps(
@@ -258,7 +271,8 @@ pub fn transitionIP(
     // during the IP transition, we should configure the mailbox sync managers.
     self.runtime_info.sms = std.mem.zeroes(esc.SMRegister);
     switch (self.prior_info.auto_config) {
-        .none => {
+        .none => {},
+        .sii => {
             // If mailbox is supported:
             // SM0 should be used for Mailbox Out (from maindevice to subdevice)
             // SM1 should be used for Mailbox In (from subdevice to maindevice)
@@ -272,17 +286,27 @@ pub fn transitionIP(
                     info.std_send_mbx_size,
                 );
             }
-        },
-        .sii => {
             // Trust default syncmanager configurations from sii
             // Set SM from SII SM section if it exists
-            const sii_sms = try sii.readSMCatagory(
+            var sii_sms = try sii.readSMCatagory(
                 port,
                 station_address,
                 recv_timeout_us,
                 eeprom_timeout_us,
             );
-            if (sii_sms) |sms| {
+            // apparently the SII doesnt set the sync managers to the correct
+            // length for you...
+            const sm_assigns = try sii.readSMPDOAssigns(
+                port,
+                station_address,
+                recv_timeout_us,
+                eeprom_timeout_us,
+            );
+
+            if (sii_sms) |*sms| {
+                for (sm_assigns.data.slice()) |sm_assign| {
+                    sms.slice()[sm_assign.sm_idx].length = sm_assign.pdo_byte_length;
+                }
                 self.runtime_info.sms = sii.escSMsFromSIISMs(sms.slice());
             }
         },
@@ -330,6 +354,16 @@ pub fn transitionIP(
         },
     );
     std.log.info("    DCSupported: {}", .{self.runtime_info.dl_info.?.DCSupported});
+    std.log.info("    pi inputs logical start addr: {}, bit_len: {}, byte_len: {}", .{
+        self.runtime_info.pi.?.inputs_area.start_addr,
+        self.runtime_info.pi.?.inputs_area.bit_length,
+        self.runtime_info.pi.?.inputs.len,
+    });
+    std.log.info("    pi outputs logical start addr: {}, bit_len: {}, byte_len: {}", .{
+        self.runtime_info.pi.?.outputs_area.start_addr,
+        self.runtime_info.pi.?.outputs_area.bit_length,
+        self.runtime_info.pi.?.outputs.len,
+    });
 
     // cant do startup parameters until mailbox is initialized
     try self.doStartupParameters(port, .IP, recv_timeout_us);
@@ -487,6 +521,14 @@ pub fn transitionPS(
     // 1. Report PDO size for each SM.
 
     // const sm_pdo_bitlengths = try sii.readSMPDOBitLengths(port, station_address, recv_timeout_us, eeprom_timeout_us);
+}
+
+pub fn transitionSO(
+    self: *SubDevice,
+    port: *nic.Port,
+    recv_timeout_us: u32,
+) !void {
+    try self.doStartupParameters(port, .SO, recv_timeout_us);
 }
 
 pub fn doStartupParameters(

@@ -9,6 +9,7 @@ const esc = @import("esc.zig");
 const sii = @import("sii.zig");
 const SubDevice = @import("SubDevice.zig");
 const ENI = @import("ENI.zig");
+const pdi = @import("pdi.zig");
 
 const MainDevice = @This();
 
@@ -29,12 +30,13 @@ pub fn init(
     eni: *const ENI,
     subdevices: []SubDevice,
     process_image: []u8,
-) MainDevice {
+) !MainDevice {
     assert(eni.subdevices.len < 65537); // too many subdevices
 
     for (subdevices[0..eni.subdevices.len], eni.subdevices) |*subdevice, subdevice_config| {
         subdevice.* = SubDevice.init(subdevice_config);
     }
+    try pdi.partitionProcessImage(process_image, subdevices[0..eni.subdevices.len]);
     return MainDevice{
         .port = port,
         .settings = settings,
@@ -284,14 +286,13 @@ pub fn busSAFEOP(self: *MainDevice) !void {
     for (self.subdevices[0..self.eni.subdevices.len], self.eni.subdevices) |*subdevice, subdevice_config| {
         _ = subdevice_config;
 
-        // TODO: use real start addr
         // TODO: assert non-overlapping FMMU configuration
         try subdevice.transitionPS(
             self.port,
             self.settings.recv_timeout_us,
             self.settings.eeprom_timeout_us,
-            0,
-            0,
+            subdevice.runtime_info.pi.?.inputs_area.start_addr,
+            subdevice.runtime_info.pi.?.outputs_area.start_addr,
         );
         try subdevice.setALState(
             self.port,
@@ -300,6 +301,28 @@ pub fn busSAFEOP(self: *MainDevice) !void {
             self.settings.recv_timeout_us,
         );
     }
+}
+
+pub fn busOP(self: *MainDevice) !void {
+    for (self.subdevices[0..self.eni.subdevices.len], self.eni.subdevices) |*subdevice, subdevice_config| {
+        _ = subdevice_config;
+
+        try subdevice.transitionSO(
+            self.port,
+            self.settings.recv_timeout_us,
+        );
+        for (0..10) |_| _ = try self.sendCyclicFrame();
+        try subdevice.setALState(
+            self.port,
+            .OP,
+            30000,
+            self.settings.recv_timeout_us,
+        );
+    }
+}
+
+pub fn sendCyclicFrame(self: *MainDevice) !u16 {
+    return try commands.lrw(self.port, 0, self.process_image, self.settings.recv_timeout_us);
 }
 
 /// Assign configured station address.

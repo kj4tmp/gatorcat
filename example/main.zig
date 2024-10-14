@@ -65,7 +65,7 @@ pub fn main() !void {
     var port = try ecm.nic.Port.init("enx00e04c68191a");
     defer port.deinit();
 
-    var main_device = ecm.MainDevice.init(
+    var main_device = try ecm.MainDevice.init(
         &port,
         .{},
         &eni,
@@ -104,14 +104,14 @@ pub fn main() !void {
     const reader = fbs.reader();
     std.log.warn("got {}", .{try ecm.wire.packFromECatReader(i16, reader)});
 
-    const res = try ecm.sii.readPDOs(&port, 0x1004, .output, 3000, 10_000) orelse return error.NoPDOs;
+    const res = try ecm.sii.readPDOs(&port, 0x1001, .input, 3000, 10_000) orelse return error.NoPDOs;
     for (res.slice()) |pdo| {
-        if (try ecm.sii.readSIIString(&port, 0x1004, pdo.header.name_idx, 3000, 10_000)) |name| {
+        if (try ecm.sii.readSIIString(&port, 0x1001, pdo.header.name_idx, 3000, 10_000)) |name| {
             std.log.warn("pdo name: {s}", .{name.slice()});
         }
         std.log.warn("pdo index: 0x{x}, full: {}", .{ pdo.header.index, pdo.header });
         for (pdo.entries.slice()) |entry| {
-            if (try ecm.sii.readSIIString(&port, 0x1004, entry.name_idx, 3000, 10_000)) |name| {
+            if (try ecm.sii.readSIIString(&port, 0x1001, entry.name_idx, 3000, 10_000)) |name| {
                 std.log.warn("    name: {s}", .{name.slice()});
             }
             std.log.warn("    index: 0x{x}, subindex: 0x{x}, data type: {}, full: {}", .{ entry.index, entry.subindex, entry.data_type, entry });
@@ -127,4 +127,55 @@ pub fn main() !void {
     const bitlengths = try ecm.sii.readSMPDOAssigns(&port, 0x1003, 3000, 10000);
 
     std.log.err("bitlengths: {any}", .{bitlengths.data.slice()});
+
+    try main_device.busOP();
+
+    var timer = try std.time.Timer.start();
+    var timer2 = try std.time.Timer.start();
+    var timer3 = try std.time.Timer.start();
+    var timer4 = try std.time.Timer.start();
+    while (true) {
+        timer4.reset();
+        const wkc = main_device.sendCyclicFrame() catch |err| switch (err) {
+            error.RecvTimeout => continue,
+            error.LinkError, error.TransactionContention, error.CurruptedFrame => |err2| return err2,
+        };
+        const recv_us = timer4.read() / std.time.ns_per_us;
+
+        std.time.sleep(std.time.ns_per_ms * 1);
+
+        if (timer.read() > std.time.ns_per_s * 1) {
+            timer.reset();
+            std.log.warn("wkc: {}, recv_us: {}, timer3: {}", .{ wkc, recv_us, timer3.read() / std.time.ns_per_us });
+            var fbs2 = std.io.fixedBufferStream(subdevices[1].runtime_info.pi.?.inputs);
+            const reader2 = fbs2.reader();
+            std.log.warn("el3314: {}", .{(try ecm.wire.packFromECatReader(EL3314ProcessData, reader2)).ch1});
+        }
+
+        if (timer2.read() > std.time.ns_per_s * 0.1) {
+            timer2.reset();
+            // make the lights flash on the EL2008
+            subdevices[4].runtime_info.pi.?.outputs[0] +%= 1;
+        }
+        timer3.reset();
+    }
 }
+
+const EL3314Channel = packed struct(u32) {
+    underrange: bool,
+    overrange: bool,
+    limit1: u2,
+    limit2: u2,
+    err: bool,
+    _reserved: u7,
+    txpdo_state: bool,
+    txpdo_toggle: bool,
+    value: u16,
+};
+
+const EL3314ProcessData = packed struct {
+    ch1: EL3314Channel,
+    ch2: EL3314Channel,
+    ch3: EL3314Channel,
+    ch4: EL3314Channel,
+};

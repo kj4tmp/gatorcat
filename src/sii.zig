@@ -1355,18 +1355,14 @@ pub fn readPDOBitLengths(
 
 pub const FMMUConfiguration = struct {
     data: esc.FMMUArray = .{},
-    inputs_area: LogicalMemoryArea,
-    outputs_area: LogicalMemoryArea,
-    pub const LogicalMemoryArea = struct {
-        start_addr: u32,
-        bit_length: u32,
-    };
+    inputs_area: pdi.LogicalMemoryArea,
+    outputs_area: pdi.LogicalMemoryArea,
 
     // fml this is hard, effing germans and their complexity
     pub fn initFromSMPDOAssigns(
         sm_assigns: SMPDOAssigns,
-        inputs_area: LogicalMemoryArea,
-        outputs_area: LogicalMemoryArea,
+        inputs_area: pdi.LogicalMemoryArea,
+        outputs_area: pdi.LogicalMemoryArea,
     ) !FMMUConfiguration {
         const totals = sm_assigns.totalBitLengths();
         if (totals.inputs_bit_length != inputs_area.bit_length) return error.WrongInputsBitLength;

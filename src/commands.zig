@@ -94,6 +94,18 @@ pub fn apwr(
     );
 }
 
+pub fn apwrPackWkc(
+    port: *nic.Port,
+    packed_type: anytype,
+    address: telegram.PositionAddress,
+    timeout_us: u32,
+    expected_wkc: u16,
+) !void {
+    var data = wire.eCatFromPack(packed_type);
+    const wkc = try apwr(port, address, &data, timeout_us);
+    if (wkc != expected_wkc) return error.Wkc;
+}
+
 /// Auto-increment physical write a packable type
 pub fn apwrPack(
     port: *nic.Port,
@@ -329,6 +341,18 @@ pub fn bwr(
         data,
         timeout_us,
     );
+}
+
+pub fn bwrPackWkc(
+    port: *nic.Port,
+    packed_type: anytype,
+    address: telegram.PositionAddress,
+    timeout_us: u32,
+    expected_wkc: u16,
+) !void {
+    var data = wire.eCatFromPack(packed_type);
+    const wkc = try bwr(port, address, &data, timeout_us);
+    if (wkc != expected_wkc) return error.Wkc;
 }
 
 /// Broadcast write a packable type

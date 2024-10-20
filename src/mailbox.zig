@@ -140,7 +140,7 @@ pub fn readMailboxInTimeout(
         error.TimerUnsupported => unreachable,
     };
 
-    while (timer.read() < mbx_timeout_us * ns_per_us) {
+    while (timer.read() < @as(u64, mbx_timeout_us) * ns_per_us) {
         if (try readMailboxIn(
             port,
             station_address,

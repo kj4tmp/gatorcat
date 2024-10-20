@@ -296,7 +296,7 @@ pub const Port = struct {
             error.TimerUnsupported => unreachable,
         };
         var idx: u8 = undefined;
-        while (timer.read() < timeout_us * ns_per_us) {
+        while (timer.read() < @as(u64, timeout_us) * ns_per_us) {
             idx = self.claim_transaction() catch |err| switch (err) {
                 error.NoTransactionAvailable => continue,
             };
@@ -308,7 +308,7 @@ pub const Port = struct {
 
         try self.send_transaction(idx, send_datagrams);
 
-        while (timer.read() < timeout_us * 1000) {
+        while (timer.read() < @as(u64, timeout_us) * 1000) {
             if (try self.continue_transaction(idx)) {
                 return;
             }

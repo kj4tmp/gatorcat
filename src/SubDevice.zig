@@ -83,7 +83,7 @@ pub fn setALState(
         error.TimerUnsupported => unreachable,
     };
 
-    while (timer.read() < change_timeout_us * ns_per_us) {
+    while (timer.read() < @as(u64, change_timeout_us) * ns_per_us) {
         const status = try commands.fprdPackWkc(
             port,
             esc.ALStatusRegister,

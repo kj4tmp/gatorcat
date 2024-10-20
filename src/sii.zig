@@ -995,7 +995,7 @@ pub fn readSII4ByteFP(
         error.TimerUnsupported => unreachable,
     };
     // wait for eeprom to be not busy
-    while (timer.read() < eeprom_timeout_us * ns_per_us) {
+    while (timer.read() < @as(u64, eeprom_timeout_us) * ns_per_us) {
         const sii_status = commands.fprdPackWkc(
             port,
             esc.SIIControlStatusRegister,

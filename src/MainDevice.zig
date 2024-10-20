@@ -250,7 +250,12 @@ pub fn busPREOP(self: *MainDevice) !void {
 
     // perform IP tasks for each subdevice
     for (self.subdevices[0..self.eni.subdevices.len], self.eni.subdevices) |*subdevice, subdevice_config| {
-        try self.assignStationAddress(subdevice_config.station_address, subdevice_config.ring_position);
+        try assignStationAddress(
+            self.port,
+            subdevice_config.station_address,
+            subdevice_config.ring_position,
+            self.settings.recv_timeout_us,
+        );
         try subdevice.transitionIP(
             self.port,
             self.settings.recv_timeout_us,
@@ -326,10 +331,10 @@ pub fn sendCyclicFrame(self: *MainDevice) !u16 {
 }
 
 /// Assign configured station address.
-fn assignStationAddress(self: *MainDevice, station_address: u16, ring_position: u16) !void {
+pub fn assignStationAddress(port: *nic.Port, station_address: u16, ring_position: u16, recv_timeout_us: u32) !void {
     const autoinc_address = calc_autoinc_addr(ring_position);
-    const wkc = try commands.apwrPack(
-        self.port,
+    try commands.apwrPackWkc(
+        port,
         esc.ConfiguredStationAddressRegister{
             .configured_station_address = station_address,
         },
@@ -337,12 +342,9 @@ fn assignStationAddress(self: *MainDevice, station_address: u16, ring_position: 
             .autoinc_address = autoinc_address,
             .offset = @intFromEnum(esc.RegisterMap.station_address),
         },
-        self.settings.recv_timeout_us,
+        recv_timeout_us,
+        1,
     );
-    if (wkc != 1) {
-        std.log.err("WKCError on station address config: expected wkc 1, got {}.", .{wkc});
-        return error.WKCError;
-    }
 }
 
 /// Calcuate the auto increment address of a subdevice

@@ -17,7 +17,7 @@ pub fn main() !void {
     var args = try std.process.argsWithAllocator(gpa.allocator());
     defer args.deinit();
 
-    const parsed_args = flags.parse(&args, zecm, .{});
+    const parsed_args = try flags.parse(&args, "zecm", zecm, .{});
 
     try std.json.stringify(
         parsed_args,

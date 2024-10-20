@@ -4,8 +4,8 @@
     .minimum_zig_version = "0.13.0",
     .dependencies = .{
         .flags = .{
-            .url = "https://github.com/n0s4/flags/archive/refs/tags/v0.7.0.tar.gz",
-            .hash = "12206c2e1a9d8c1597a2b98064085c1f6207b31dfa3ccfaff2e54726c39db41d27ea",
+            .url = "https://github.com/n0s4/flags/archive/refs/tags/v0.10.0.tar.gz",
+            .hash = "12200d3243c5919d6ae3254f991bdf95956f349ccd6d3463f9beb5454d300a0f1e64",
         },
     },
     .paths = .{

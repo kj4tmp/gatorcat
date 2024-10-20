@@ -1,21 +1,21 @@
 const std = @import("std");
 
-const ecm = @import("ecm");
+const gcat = @import("gatorcat");
 
 pub const std_options = .{
     .log_level = .info,
 };
 
-const beckhoff_EK1100 = ecm.sii.SubDeviceIdentity{ .vendor_id = 0x2, .product_code = 0x44c2c52, .revision_number = 0x110000 };
-const beckhoff_EL3314 = ecm.sii.SubDeviceIdentity{ .vendor_id = 0x2, .product_code = 0xcf23052, .revision_number = 0x120000 };
-const beckhoff_EL3048 = ecm.sii.SubDeviceIdentity{ .vendor_id = 0x2, .product_code = 0xbe83052, .revision_number = 0x130000 };
-const beckhoff_EL7041_1000 = ecm.sii.SubDeviceIdentity{ .vendor_id = 0x2, .product_code = 0x1b813052, .revision_number = 0x1503e8 };
-const beckhoff_EL2008 = ecm.sii.SubDeviceIdentity{ .vendor_id = 0x2, .product_code = 0x7d83052, .revision_number = 0x100000 };
+const beckhoff_EK1100 = gcat.sii.SubDeviceIdentity{ .vendor_id = 0x2, .product_code = 0x44c2c52, .revision_number = 0x110000 };
+const beckhoff_EL3314 = gcat.sii.SubDeviceIdentity{ .vendor_id = 0x2, .product_code = 0xcf23052, .revision_number = 0x120000 };
+const beckhoff_EL3048 = gcat.sii.SubDeviceIdentity{ .vendor_id = 0x2, .product_code = 0xbe83052, .revision_number = 0x130000 };
+const beckhoff_EL7041_1000 = gcat.sii.SubDeviceIdentity{ .vendor_id = 0x2, .product_code = 0x1b813052, .revision_number = 0x1503e8 };
+const beckhoff_EL2008 = gcat.sii.SubDeviceIdentity{ .vendor_id = 0x2, .product_code = 0x7d83052, .revision_number = 0x100000 };
 
-var subdevices: [255]ecm.SubDevice = undefined;
+var subdevices: [255]gcat.SubDevice = undefined;
 var process_image = std.mem.zeroes([255]u8);
 
-const eni = ecm.ENI{
+const eni = gcat.ENI{
     .subdevices = &.{
         .{
             .identity = beckhoff_EK1100,
@@ -62,10 +62,10 @@ const eni = ecm.ENI{
 };
 
 pub fn main() !void {
-    var port = try ecm.nic.Port.init("enx00e04c68191a");
+    var port = try gcat.nic.Port.init("enx00e04c68191a");
     defer port.deinit();
 
-    var main_device = try ecm.MainDevice.init(
+    var main_device = try gcat.MainDevice.init(
         &port,
         .{},
         &eni,
@@ -102,16 +102,16 @@ pub fn main() !void {
     std.log.warn("got {} bytes: {x}", .{ n_bytes, bytes[0..n_bytes] });
     var fbs = std.io.fixedBufferStream(&bytes);
     const reader = fbs.reader();
-    std.log.warn("got {}", .{try ecm.wire.packFromECatReader(i16, reader)});
+    std.log.warn("got {}", .{try gcat.wire.packFromECatReader(i16, reader)});
 
-    const res = try ecm.sii.readPDOs(&port, 0x1001, .input, 3000, 10_000) orelse return error.NoPDOs;
+    const res = try gcat.sii.readPDOs(&port, 0x1001, .input, 3000, 10_000) orelse return error.NoPDOs;
     for (res.slice()) |pdo| {
-        if (try ecm.sii.readSIIString(&port, 0x1001, pdo.header.name_idx, 3000, 10_000)) |name| {
+        if (try gcat.sii.readSIIString(&port, 0x1001, pdo.header.name_idx, 3000, 10_000)) |name| {
             std.log.warn("pdo name: {s}", .{name.slice()});
         }
         std.log.warn("pdo index: 0x{x}, full: {}", .{ pdo.header.index, pdo.header });
         for (pdo.entries.slice()) |entry| {
-            if (try ecm.sii.readSIIString(&port, 0x1001, entry.name_idx, 3000, 10_000)) |name| {
+            if (try gcat.sii.readSIIString(&port, 0x1001, entry.name_idx, 3000, 10_000)) |name| {
                 std.log.warn("    name: {s}", .{name.slice()});
             }
             std.log.warn("    index: 0x{x}, subindex: 0x{x}, data type: {}, full: {}", .{ entry.index, entry.subindex, entry.data_type, entry });
@@ -119,12 +119,12 @@ pub fn main() !void {
     }
     std.log.warn("res size: {any}", .{@sizeOf(@TypeOf(res))});
 
-    std.log.warn("pdo bit len: {}", .{ecm.sii.pdoBitLength(res.slice())});
-    const config = ecm.mailbox.Configuration{ .mbx_in = .{ .start_addr = 0x1080, .length = 128 }, .mbx_out = .{ .start_addr = 0x1000, .length = 128 } };
-    const mapping = try ecm.mailbox.coe.readPDOMapping(&port, 0x1001, 3000, 10_000, &subdevices[1].runtime_info.coe.?.cnt, config, 0x1600);
+    std.log.warn("pdo bit len: {}", .{gcat.sii.pdoBitLength(res.slice())});
+    const config = gcat.mailbox.Configuration{ .mbx_in = .{ .start_addr = 0x1080, .length = 128 }, .mbx_out = .{ .start_addr = 0x1000, .length = 128 } };
+    const mapping = try gcat.mailbox.coe.readPDOMapping(&port, 0x1001, 3000, 10_000, &subdevices[1].runtime_info.coe.?.cnt, config, 0x1600);
     std.log.err("mapping: {any}", .{mapping.entries.slice()});
 
-    const bitlengths = try ecm.sii.readSMPDOAssigns(&port, 0x1003, 3000, 10000);
+    const bitlengths = try gcat.sii.readSMPDOAssigns(&port, 0x1003, 3000, 10000);
 
     std.log.err("bitlengths: {any}", .{bitlengths.data.slice()});
 
@@ -155,7 +155,7 @@ pub fn main() !void {
             std.log.warn("wkc: {}, recv_us: {}, timer3: {}, frames/s: {}", .{ wkc, recv_us, timer3.read() / std.time.ns_per_us, frame_count });
             var fbs2 = std.io.fixedBufferStream(subdevices[1].runtime_info.pi.?.inputs);
             const reader2 = fbs2.reader();
-            std.log.warn("el3314: {}", .{(try ecm.wire.packFromECatReader(EL3314ProcessData, reader2)).ch1});
+            std.log.warn("el3314: {}", .{(try gcat.wire.packFromECatReader(EL3314ProcessData, reader2)).ch1});
             frame_count = 0;
         }
 

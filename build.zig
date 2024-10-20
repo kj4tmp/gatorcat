@@ -5,18 +5,18 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
 
     // module for users of this library
-    const ecm_module = b.addModule("ecm", .{
+    const gatorcat_module = b.addModule("gatorcat", .{
         .root_source_file = b.path("src/root.zig"),
     });
 
     // CLI tool
     const cli_tool = b.addExecutable(.{
-        .name = "ecm-cli",
+        .name = "gatorcat",
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
     });
-    cli_tool.root_module.addImport("ecm", ecm_module);
+    cli_tool.root_module.addImport("gatorcat", gatorcat_module);
 
     const flags = b.dependency("flags", .{
         .target = target,
@@ -43,7 +43,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .root_source_file = b.path("example/main.zig"),
     });
-    example.root_module.addImport("ecm", ecm_module);
+    example.root_module.addImport("gatorcat", gatorcat_module);
     // using addInstallArtifact here so it only installs for the example step
     const example_install = b.addInstallArtifact(example, .{});
     example_step.dependOn(&example_install.step);

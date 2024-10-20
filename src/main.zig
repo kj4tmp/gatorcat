@@ -1,12 +1,11 @@
 const std = @import("std");
 
 const flags = @import("flags");
-const ecm = @import("ecm");
-const nic = ecm.nic;
-const MainDevice = ecm.MainDevice;
+const gcat = @import("gatorcat");
+const nic = gcat.nic;
+const MainDevice = gcat.MainDevice;
 
 pub const std_options = .{
-    // Set the log level to info
     .log_level = .warn,
 };
 
@@ -17,7 +16,7 @@ pub fn main() !void {
     var args = try std.process.argsWithAllocator(gpa.allocator());
     defer args.deinit();
 
-    const parsed_args = try flags.parse(&args, "zecm", zecm, .{});
+    const parsed_args = flags.parseOrExit(&args, "gatorcat", Flags, .{});
 
     try std.json.stringify(
         parsed_args,
@@ -42,10 +41,10 @@ pub fn main() !void {
 }
 
 // CLI options
-const zecm = struct {
+const Flags = struct {
     // Optional description of the program.
     pub const description =
-        \\The Zig EtherCAT MainDevice CLI.
+        \\The GatorCAT CLI.
     ;
     // sub commands
     command: union(enum) {

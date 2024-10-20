@@ -16,7 +16,10 @@ pub fn main() !void {
     var args = try std.process.argsWithAllocator(gpa.allocator());
     defer args.deinit();
 
-    const parsed_args = flags.parseOrExit(&args, "gatorcat", Flags, .{});
+    const parsed_args = flags.parse(&args, "gatorcat", Flags, .{}) catch |err| switch (err) {
+        error.PrintedHelp => std.process.exit(0),
+        else => |scoped_err| return scoped_err,
+    };
 
     try std.json.stringify(
         parsed_args,

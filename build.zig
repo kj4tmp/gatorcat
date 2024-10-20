@@ -4,10 +4,20 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    // module for users of this library
+    // gatorcat module
     const gatorcat_module = b.addModule("gatorcat", .{
         .root_source_file = b.path("src/root.zig"),
     });
+
+    // gatorcat module unit tests
+    const root_unit_tests = b.addTest(.{
+        .root_source_file = b.path("src/root.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    const run_root_unit_tests = b.addRunArtifact(root_unit_tests);
+    const test_step = b.step("test", "Run unit tests");
+    test_step.dependOn(&run_root_unit_tests.step);
 
     // CLI tool
     const cli_tool = b.addExecutable(.{
@@ -18,22 +28,13 @@ pub fn build(b: *std.Build) void {
     });
     cli_tool.root_module.addImport("gatorcat", gatorcat_module);
 
+    // CLI tool dependencies
     const flags = b.dependency("flags", .{
         .target = target,
         .optimize = optimize,
     });
     cli_tool.root_module.addImport("flags", flags.module("flags"));
     b.installArtifact(cli_tool);
-
-    // root module unit tests
-    const root_unit_tests = b.addTest(.{
-        .root_source_file = b.path("src/root.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    const run_root_unit_tests = b.addRunArtifact(root_unit_tests);
-    const test_step = b.step("test", "Run unit tests");
-    test_step.dependOn(&run_root_unit_tests.step);
 
     // example
     const example_step = b.step("example", "Build example");

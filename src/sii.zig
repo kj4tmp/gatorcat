@@ -695,7 +695,8 @@ pub fn readPDOs(
     direction: pdi.Direction,
     recv_timeout_us: u32,
     eeprom_timeout_us: u32,
-) !?PDOs {
+) !PDOs {
+    var pdos = std.BoundedArray(PDO, max_txpdos){};
     const catagory = try findCatagoryFP(
         port,
         station_address,
@@ -705,7 +706,7 @@ pub fn readPDOs(
         },
         recv_timeout_us,
         eeprom_timeout_us,
-    ) orelse return null;
+    ) orelse return pdos;
 
     // entries are 8 bytes, pdo header is 8 bytes, so
     // this should be a multiple of eight.
@@ -720,8 +721,6 @@ pub fn readPDOs(
     );
     var limited_reader = std.io.limitedReader(stream.reader(), catagory.byte_length);
     const reader = limited_reader.reader();
-
-    var pdos = std.BoundedArray(PDO, max_txpdos){};
 
     const State = enum {
         entries,

@@ -84,12 +84,17 @@ fn scan(
     try writer.print("\n", .{});
 
     // summary table
-    try writer.print("Summary:\n", .{});
     try printBusSummary(writer, port, recv_timeout_us, eeprom_timeout_us, num_subdevices);
     // detailed info on each subdevice
-    try writer.print("Details:\n", .{});
     for (0..num_subdevices) |i| {
         try printSubdeviceDetails(writer, port, recv_timeout_us, eeprom_timeout_us, @intCast(i));
+        try printSubdevicePDOs(
+            writer,
+            port,
+            recv_timeout_us,
+            eeprom_timeout_us,
+            gcat.MainDevice.calc_station_addr(@intCast(i)),
+        );
     }
 }
 
@@ -100,9 +105,10 @@ fn printBusSummary(
     eeprom_timeout_us: u32,
     num_subdevices: u16,
 ) !void {
-    try writer.print("                          Auto-incr.  Station  Vendor      Product     Revision   \n", .{});
-    try writer.print(" Pos.   Order ID          Address     Address  ID          Code        Number     \n", .{});
-    try writer.print("----------------------------------------------------------------------------------\n", .{});
+    try writer.print("", .{});
+    try writer.print("Ring                      Auto-incr.  Station                 Product    Revision\n", .{});
+    try writer.print("Pos.    Order ID             Address  Address   Vendor ID        Code      Number\n", .{});
+    try writer.print("---------------------------------------------------------------------------------\n", .{});
     for (0..num_subdevices) |i| {
         const ring_position: u16 = @intCast(i);
         const autoinc_address: u16 = gcat.MainDevice.calc_autoinc_addr(ring_position);
@@ -136,7 +142,7 @@ fn printBusSummary(
             }
         }
         try writer.print(
-            " {d:<5}  {s:<16}      0x{x:04}   0x{x:04}  0x{x:08}  0x{x:08}  0x{x:08} \n",
+            "{d:<5}   {s:<16}      0x{x:04}   0x{x:04}  0x{x:08}  0x{x:08}  0x{x:08} \n",
             .{ ring_position, order_id, autoinc_address, station_address, info.vendor_id, info.product_code, info.revision_number },
         );
     }
@@ -199,31 +205,29 @@ fn printSubdeviceDetails(
             group = group_string.slice();
         }
     }
-
-    try writer.print(
-        "{d}: {s} 0x{x:04}\n",
-        .{ ring_position, order_id, station_address },
-    );
+    try writer.print("==================================\n", .{});
+    try writer.print("=   {d}: {s:^16} 0x{x:04}   =\n", .{ ring_position, order_id, station_address });
+    try writer.print("==================================\n", .{});
     // strings
-    try writer.print("    Order ID: {s}\n", .{order_id});
-    try writer.print("    Name:     {s}\n", .{name});
-    try writer.print("    Group:    {s}\n", .{group});
+    try writer.print("Order ID: {s}\n", .{order_id});
+    try writer.print("Name:     {s}\n", .{name});
+    try writer.print("Group:    {s}\n", .{group});
     try writer.print("\n", .{});
 
     // position
-    try writer.print("    Ring position:            {d:>5}\n", .{ring_position});
-    try writer.print("    Auto-increment address:  0x{x:04}\n", .{autoinc_address});
-    try writer.print("    Station address:         0x{x:04}\n\n", .{station_address});
+    try writer.print("Ring position:            {d:>5}\n", .{ring_position});
+    try writer.print("Auto-increment address:  0x{x:04}\n", .{autoinc_address});
+    try writer.print("Station address:         0x{x:04}\n\n", .{station_address});
 
     // identity
-    try writer.print("    Vendor ID:               0x{x:08}\n", .{info.vendor_id});
-    try writer.print("    Product code:            0x{x:08}\n", .{info.product_code});
-    try writer.print("    Revision number:         0x{x:08}\n", .{info.revision_number});
-    try writer.print("    Serial number:           0x{x:08}\n", .{info.serial_number});
+    try writer.print("Vendor ID:               0x{x:08}\n", .{info.vendor_id});
+    try writer.print("Product code:            0x{x:08}\n", .{info.product_code});
+    try writer.print("Revision number:         0x{x:08}\n", .{info.revision_number});
+    try writer.print("Serial number:           0x{x:08}\n", .{info.serial_number});
     try writer.print("\n", .{});
 
     // supported protocols
-    try writer.print("    Supported mailbox protocols: ", .{});
+    try writer.print("Supported mailbox protocols: ", .{});
 
     const has_mailbox = info.mbx_protocol.AoE or
         info.mbx_protocol.EoE or
@@ -244,28 +248,124 @@ fn printSubdeviceDetails(
         try writer.print("\n", .{});
     }
     if (has_mailbox) {
-        try writer.print("    Default mailbox configuration:\n", .{});
+        try writer.print("Default mailbox configuration:\n", .{});
         try writer.print(
-            "        Mailbox out: offset: 0x{x:04} size: {}\n",
+            "    Mailbox out: offset: 0x{x:04} size: {}\n",
             .{ info.std_recv_mbx_offset, info.std_recv_mbx_size },
         );
         try writer.print(
-            "        Mailbox in:  offset: 0x{x:04} size: {}\n",
+            "    Mailbox in:  offset: 0x{x:04} size: {}\n",
             .{ info.std_send_mbx_offset, info.std_send_mbx_size },
         );
     }
 
     if (info.mbx_protocol.FoE) {
-        try writer.print("    Bootstrap mailbox configuration:\n", .{});
+        try writer.print("Bootstrap mailbox configuration:\n", .{});
         try writer.print(
-            "        Mailbox out: offset: 0x{x:04} size: {}\n",
+            "    Mailbox out: offset: 0x{x:04} size: {}\n",
             .{ info.bootstrap_recv_mbx_offset, info.bootstrap_recv_mbx_size },
         );
         try writer.print(
-            "        Mailbox in:  offset: 0x{x:04} size: {}\n",
+            "    Mailbox in:  offset: 0x{x:04} size: {}\n",
             .{ info.bootstrap_send_mbx_offset, info.bootstrap_send_mbx_size },
         );
     }
 
     try writer.print("\n", .{});
+}
+
+fn printSubdevicePDOs(
+    writer: anytype,
+    port: *gcat.nic.Port,
+    recv_timeout_us: u32,
+    eeprom_timeout_us: u32,
+    station_address: u16,
+) !void {
+    const input_pdos_bit_length = try gcat.sii.readPDOBitLengths(
+        port,
+        station_address,
+        .input,
+        recv_timeout_us,
+        eeprom_timeout_us,
+    );
+
+    const output_pdos_bit_length = try gcat.sii.readPDOBitLengths(
+        port,
+        station_address,
+        .output,
+        recv_timeout_us,
+        eeprom_timeout_us,
+    );
+
+    if (output_pdos_bit_length == 0 and input_pdos_bit_length == 0) {
+        try writer.print("Process Data: None\n", .{});
+        return;
+    } else {
+        try writer.print("Process Data:\n", .{});
+    }
+
+    try writer.print("    Inputs bit length:  {d:>5}\n", .{input_pdos_bit_length});
+    try writer.print("    Outputs bit length: {d:>5}\n", .{output_pdos_bit_length});
+    try writer.print("\n", .{});
+
+    const input_pdos = try gcat.sii.readPDOs(
+        port,
+        station_address,
+        .input,
+        recv_timeout_us,
+        eeprom_timeout_us,
+    );
+
+    const output_pdos = try gcat.sii.readPDOs(
+        port,
+        station_address,
+        .output,
+        recv_timeout_us,
+        eeprom_timeout_us,
+    );
+
+    if (input_pdos.len != 0) {
+        try writer.print("Input PDOs:\n", .{});
+        try printPDOTable(writer, input_pdos, port, station_address, recv_timeout_us, eeprom_timeout_us);
+        try writer.print("\n", .{});
+    }
+
+    if (output_pdos.len != 0) {
+        try writer.print("Output PDOs:\n", .{});
+        try printPDOTable(writer, output_pdos, port, station_address, recv_timeout_us, eeprom_timeout_us);
+        try writer.print("\n", .{});
+    }
+}
+
+fn printPDOTable(
+    writer: anytype,
+    pdos: gcat.sii.PDOs,
+    port: *gcat.nic.Port,
+    station_address: u16,
+    recv_timeout_us: u32,
+    eeprom_timeout_us: u32,
+) !void {
+    const pdo_slice: []const gcat.sii.PDO = pdos.slice();
+    if (pdo_slice.len > 0) {
+        try writer.print("Index    SM Bits  Type              Name \n", .{});
+        try writer.print("----------------------------------------------------------------------\n", .{});
+    }
+    for (pdo_slice) |pdo| {
+        var pdo_name: []const u8 = "";
+        const maybe_name = try gcat.sii.readSIIString(port, station_address, pdo.header.name_idx, recv_timeout_us, eeprom_timeout_us);
+        if (maybe_name) |name| pdo_name = name.slice();
+        try writer.print("0x{x:04}  {d:>3}    -  -                 {s:<64}\n", .{ pdo.header.index, pdo.header.syncM, pdo_name });
+
+        const entries_slice: []const gcat.sii.PDO.Entry = pdo.entries.slice();
+        for (entries_slice) |entry| {
+            var entry_name: []const u8 = "";
+            const maybe_name2 = try gcat.sii.readSIIString(port, station_address, entry.name_idx, recv_timeout_us, eeprom_timeout_us);
+            if (maybe_name2) |name2| entry_name = name2.slice();
+            try writer.print("     -    -  {d:>3}  {s:<16}  {s:<64}\n", .{
+                entry.bit_length,
+                std.enums.tagName(gcat.mailbox.coe.DataTypeArea, @enumFromInt(entry.data_type)) orelse "-",
+                entry_name,
+            });
+        }
+    }
 }

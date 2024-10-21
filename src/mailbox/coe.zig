@@ -1068,6 +1068,69 @@ pub fn readPDOMapping(
 //     }
 // }
 
+/// Basic Data Type Area
+///
+/// Ref: IEC 61158-6-12:2019 5.6.7.3 Table 64
+pub const DataTypeArea = enum(u16) {
+    /// the table does not explicitly mark this as padding but it
+    /// seems beckhoff is using 0 for padding.
+    PADDING = 0x0000,
+    BOOLEAN = 0x0001,
+    INTEGER8 = 0x0002,
+    INTEGER16 = 0x0003,
+    INTEGER32 = 0x0004,
+    UNSIGNED8 = 0x0005,
+    UNSIGNED16 = 0x0006,
+    UNSIGNED32 = 0x0007,
+    REAL32 = 0x0008,
+    VISIBLE_STRING = 0x0009,
+    OCTET_STRING = 0x000a,
+    UNICODE_STRING = 0x000b,
+    TIME_OF_DAY = 0x000c,
+    TIME_DIFFERENCE = 0x000d,
+    // reserved = 0x00e
+    DOMAIN = 0x000f,
+    INTEGER24 = 0x0010,
+    REAL64 = 0x0011,
+    INTEGER40 = 0x0012,
+    INTEGER48 = 0x0013,
+    INTEGER56 = 0x0014,
+    INTEGER64 = 0x0015,
+    UNSIGNED24 = 0x0016,
+    // reserved = 0x0017
+    UNSIGNED40 = 0x0018,
+    UNSIGNED48 = 0x0019,
+    UNSIGNED56 = 0x001a,
+    UNSIGNED64 = 0x001b,
+    // reserved = 0x001c,
+    GUID = 0x001d,
+    BYTE = 0x001e,
+    // reserved = 0x001f-0x002c
+    BITARR8 = 0x002d,
+    BITARR16 = 0x002e,
+    BITARR32 = 0x002f,
+    // reserved = 0x0020
+    PDO_MAPPING = 0x0021,
+    // reserved = 0x0022,
+    IDENTITY = 0x0023,
+    // reserved = 0x0024,
+    COMMAND_PAR = 0x0025,
+    // reserved = 0x0026-0x0028
+    SYNC_PAR = 0x0029,
+    // reserved = 0x002a-0x002f
+    BIT1 = 0x0030,
+    BIT2 = 0x0031,
+    BIT3 = 0x0032,
+    BIT4 = 0x0033,
+    BIT5 = 0x0034,
+    BIT6 = 0x0035,
+    BIT7 = 0x0036,
+    BIT8 = 0x0037,
+    // reserved = 0x0038-0x003f
+    // rest is device profile stuff and reserved
+    _,
+};
+
 test {
     std.testing.refAllDecls(@This());
 }

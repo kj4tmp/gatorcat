@@ -348,7 +348,7 @@ fn printPDOTable(
     const pdo_slice: []const gcat.sii.PDO = pdos.slice();
     if (pdo_slice.len > 0) {
         try writer.print("Index    SM Bits  Type              Name \n", .{});
-        try writer.print("----------------------------------------------------------------------\n", .{});
+        try writer.print("----------------------------------------------------------------------------------\n", .{});
     }
     for (pdo_slice) |pdo| {
         var pdo_name: []const u8 = "";

@@ -422,44 +422,42 @@ pub fn readSIIString(
         return null;
     }
 
-    const catagory_res = try findCatagoryFP(
+    const catagory = try findCatagoryFP(
         port,
         station_address,
         CatagoryType.strings,
         recv_timeout_us,
         eeprom_timeout_us,
+    ) orelse return null;
+
+    var stream = SIIStream.init(
+        port,
+        station_address,
+        catagory.word_address,
+        recv_timeout_us,
+        eeprom_timeout_us,
     );
+    var reader = stream.reader();
 
-    if (catagory_res) |catagory| {
-        var stream = SIIStream.init(
-            port,
-            station_address,
-            catagory.word_address,
-            recv_timeout_us,
-            eeprom_timeout_us,
-        );
-        var reader = stream.reader();
+    const n_strings: u8 = try reader.readByte();
 
-        const n_strings: u8 = try reader.readByte();
-
-        if (n_strings < index) {
-            return null;
-        }
-
-        var string_buf: [255]u8 = undefined;
-        var str_len: u8 = undefined;
-        for (0..index) |_| {
-            str_len = try reader.readByte();
-            try reader.readNoEof(string_buf[0..str_len]);
-        } else {
-            var arr = SIIString{};
-            try arr.appendSlice(string_buf[0..str_len]);
-            return arr;
-        }
-        unreachable;
-    } else {
+    if (n_strings < index) {
         return null;
     }
+
+    var string_buf: [255]u8 = undefined;
+    var str_len: u8 = undefined;
+    for (0..index) |i| {
+        str_len = try reader.readByte();
+        if (str_len % 2 == 0 and i != index - 1 and stream.isWordSeekable()) {
+            stream.seekByWord(@divExact(str_len, 2));
+        } else {
+            try reader.readNoEof(string_buf[0..str_len]);
+        }
+    }
+    var arr = SIIString{};
+    try arr.appendSlice(string_buf[0..str_len]);
+    return arr;
 }
 
 /// There can only be a maxiumum of 16 FMMUs.
@@ -875,7 +873,7 @@ pub const SIIStream = struct {
                 self.recv_timeout_us,
                 self.eeprom_timeout_us,
             );
-            self.eeprom_address += 2;
+            // self.eeprom_address += 2;
 
             self.remainder = 4;
         }
@@ -886,13 +884,20 @@ pub const SIIStream = struct {
         while (self.remainder != 0) {
             writer.writeByte(self.last_four_bytes[4 - self.remainder]) catch return fbs.getWritten().len;
             self.remainder -= 1;
+
+            if (self.remainder % 2 == 0) self.eeprom_address += 1;
         } else {
             return fbs.getWritten().len;
         }
         unreachable;
     }
 
+    pub fn isWordSeekable(self: *const SIIStream) bool {
+        return self.remainder % 2 == 0;
+    }
+
     pub fn seekByWord(self: *SIIStream, amt: u16) void {
+        assert(self.isWordSeekable());
         self.eeprom_address += amt;
         self.remainder = 0; // next call to read will always read eeprom
     }

@@ -76,58 +76,6 @@ pub fn main() !void {
     try main_device.busINIT();
     try main_device.busPREOP();
     try main_device.busSAFEOP();
-
-    // config EL3314 for high resolution mode
-
-    try subdevices[1].sdoWrite(
-        &port,
-        &.{2},
-        0x8000,
-        0x2,
-        false,
-        3000,
-        10_000,
-    );
-
-    var bytes = std.mem.zeroes([255]u8);
-    const n_bytes = try subdevices[1].sdoRead(
-        &port,
-        &bytes,
-        0x6000,
-        0x11,
-        false,
-        3000,
-        10_000,
-    );
-    std.log.warn("got {} bytes: {x}", .{ n_bytes, bytes[0..n_bytes] });
-    var fbs = std.io.fixedBufferStream(&bytes);
-    const reader = fbs.reader();
-    std.log.warn("got {}", .{try gcat.wire.packFromECatReader(i16, reader)});
-
-    const res = try gcat.sii.readPDOs(&port, 0x1001, .input, 3000, 10_000) orelse return error.NoPDOs;
-    for (res.slice()) |pdo| {
-        if (try gcat.sii.readSIIString(&port, 0x1001, pdo.header.name_idx, 3000, 10_000)) |name| {
-            std.log.warn("pdo name: {s}", .{name.slice()});
-        }
-        std.log.warn("pdo index: 0x{x}, full: {}", .{ pdo.header.index, pdo.header });
-        for (pdo.entries.slice()) |entry| {
-            if (try gcat.sii.readSIIString(&port, 0x1001, entry.name_idx, 3000, 10_000)) |name| {
-                std.log.warn("    name: {s}", .{name.slice()});
-            }
-            std.log.warn("    index: 0x{x}, subindex: 0x{x}, data type: {}, full: {}", .{ entry.index, entry.subindex, entry.data_type, entry });
-        }
-    }
-    std.log.warn("res size: {any}", .{@sizeOf(@TypeOf(res))});
-
-    std.log.warn("pdo bit len: {}", .{gcat.sii.pdoBitLength(res.slice())});
-    const config = gcat.mailbox.Configuration{ .mbx_in = .{ .start_addr = 0x1080, .length = 128 }, .mbx_out = .{ .start_addr = 0x1000, .length = 128 } };
-    const mapping = try gcat.mailbox.coe.readPDOMapping(&port, 0x1001, 3000, 10_000, &subdevices[1].runtime_info.coe.?.cnt, config, 0x1600);
-    std.log.err("mapping: {any}", .{mapping.entries.slice()});
-
-    const bitlengths = try gcat.sii.readSMPDOAssigns(&port, 0x1003, 3000, 10000);
-
-    std.log.err("bitlengths: {any}", .{bitlengths.data.slice()});
-
     try main_device.busOP();
 
     var timer = try std.time.Timer.start();

@@ -1447,6 +1447,22 @@ pub const FMMUConfiguration = struct {
     }
 };
 
+pub fn readSubdeviceInfoCompact(
+    port: *nic.Port,
+    station_address: u16,
+    recv_timeout_us: u32,
+    eeprom_timeout_us: u32,
+) !SubDeviceInfoCompact {
+    return try readSIIFP_ps(
+        port,
+        SubDeviceInfoCompact,
+        station_address,
+        @intFromEnum(ParameterMap.PDI_control),
+        recv_timeout_us,
+        eeprom_timeout_us,
+    );
+}
+
 test {
     std.testing.refAllDecls(@This());
 }

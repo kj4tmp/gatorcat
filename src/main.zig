@@ -82,14 +82,46 @@ fn scan(
     try scanner.assignStationAddresses(num_subdevices);
     try out.print("Successfully assigned station addresses.\n", .{});
 
-    // print info about each subdevice
+    // summary table
+    try out.print("Summary:\n", .{});
+    try out.print(" Pos. | Order            | Auto-incr. | Station | Vendor     | Product    | Revision   |\n", .{});
+    try out.print("      | ID               | Address    | Address | ID         | Code       | Number     |\n", .{});
+    try out.print("------|------------------|------------|---------|------------|------------|------------|\n", .{});
     for (0..num_subdevices) |i| {
         const ring_position: u16 = @intCast(i);
         const autoinc_address: u16 = gcat.MainDevice.calc_autoinc_addr(ring_position);
         const station_address: u16 = gcat.MainDevice.calc_station_addr(ring_position);
 
-        try out.print("Ring position: {}\n", .{ring_position});
-        try out.print("Auto-increment address: {}\n", .{autoinc_address});
-        try out.print("Station address: 0x{x}\n", .{station_address});
+        const info = try gcat.sii.readSubdeviceInfoCompact(
+            port,
+            station_address,
+            recv_timeout_us,
+            eeprom_timeout_us,
+        );
+
+        const cat_general = try gcat.sii.readGeneralCatagory(
+            port,
+            station_address,
+            recv_timeout_us,
+            eeprom_timeout_us,
+        );
+
+        var order_id: []const u8 = "";
+        if (cat_general) |general| {
+            const maybe_order_id_string = try gcat.sii.readSIIString(
+                port,
+                station_address,
+                general.order_idx,
+                recv_timeout_us,
+                eeprom_timeout_us,
+            );
+            if (maybe_order_id_string) |order_id_string| {
+                order_id = order_id_string.slice();
+            }
+        }
+        try out.print(
+            "{d:5} | {s:16} |     0x{x:04} |  0x{x:04} | 0x{x:08} | 0x{x:08} | 0x{x:08} |\n",
+            .{ ring_position, order_id, autoinc_address, station_address, info.vendor_id, info.product_code, info.revision_number },
+        );
     }
 }

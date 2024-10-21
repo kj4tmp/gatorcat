@@ -35,6 +35,7 @@ pub fn main() !void {
                 scan_args.recv_timeout_us,
                 scan_args.eeprom_timeout_us,
                 scan_args.INIT_timeout_us,
+                scan_args.ring_position,
             );
         },
     }
@@ -51,6 +52,7 @@ const Flags = struct {
         // scan bus
         scan: struct {
             ifname: []const u8,
+            ring_position: ?u16 = null,
             recv_timeout_us: u32 = 10_000,
             eeprom_timeout_us: u32 = 10_000,
             INIT_timeout_us: u32 = 5_000_000,
@@ -59,6 +61,7 @@ const Flags = struct {
                 .recv_timeout_us = "Frame receive timeout in microseconds.",
                 .eeprom_timeout_us = "SII EEPROM timeout in microseconds.",
                 .INIT_timeout_us = "state transition to INIT timeout in microseconds.",
+                .ring_position = "Optionally specify only a single subdevice at this ring position to be scanned.",
             };
         },
     },
@@ -69,6 +72,7 @@ fn scan(
     recv_timeout_us: u32,
     eeprom_timeout_us: u32,
     INIT_timeout_us: u32,
+    ring_position: ?u16,
 ) !void {
     var scanner = gcat.Scanner.init(port, .{ .eeprom_timeout_us = eeprom_timeout_us, .recv_timeout_us = recv_timeout_us });
     var writer = std.io.getStdOut().writer();
@@ -86,15 +90,26 @@ fn scan(
     // summary table
     try printBusSummary(writer, port, recv_timeout_us, eeprom_timeout_us, num_subdevices);
     // detailed info on each subdevice
-    for (0..num_subdevices) |i| {
-        try printSubdeviceDetails(writer, port, recv_timeout_us, eeprom_timeout_us, @intCast(i));
+    if (ring_position) |position| {
+        try printSubdeviceDetails(writer, port, recv_timeout_us, eeprom_timeout_us, @intCast(position));
         try printSubdevicePDOs(
             writer,
             port,
             recv_timeout_us,
             eeprom_timeout_us,
-            gcat.MainDevice.calc_station_addr(@intCast(i)),
+            gcat.MainDevice.calc_station_addr(@intCast(position)),
         );
+    } else {
+        for (0..num_subdevices) |i| {
+            try printSubdeviceDetails(writer, port, recv_timeout_us, eeprom_timeout_us, @intCast(i));
+            try printSubdevicePDOs(
+                writer,
+                port,
+                recv_timeout_us,
+                eeprom_timeout_us,
+                gcat.MainDevice.calc_station_addr(@intCast(i)),
+            );
+        }
     }
 }
 

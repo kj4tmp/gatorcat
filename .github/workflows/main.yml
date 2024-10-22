@@ -17,6 +17,8 @@ jobs:
 
       - name: Setup Zig Compiler
         uses: mlugg/setup-zig@v1.2.1
+        with:
+          version: master
 
       - name: Build and test Zig Project
         run: zig build test

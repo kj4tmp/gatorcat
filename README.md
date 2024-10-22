@@ -1,6 +1,6 @@
 # GatorCAT
 
-![Tests](https://github.com/kj4tmp/gatorcat/actions/workflows/main/badge.svg)
+![Tests](https://github.com/kj4tmp/gatorcat/actions/workflows/main.yml/badge.svg)
 
 GatorCAT is an EtherCAT maindevice written in the zig programming language.
 

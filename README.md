@@ -2,9 +2,10 @@
 
 ![Tests](https://github.com/kj4tmp/gatorcat/actions/workflows/main.yml/badge.svg)
 
-GatorCAT is an EtherCAT maindevice written in the zig programming language.
+GatorCAT is an EtherCAT maindevice written for the zig programming language.
 
-This library is in extremely early development.
+> [!WARNING]
+> GatorCAT is **alpha** software. Using it today means participating in its development.
 
 ## Status
 
@@ -12,6 +13,13 @@ This library is in extremely early development.
 - [x] can manipulate process data
 - [x] CoE supported
 - [x] autoconfiguration from SII EEPROM
+- [x] CLI for scanning networks
+
+## Next
+
+- [ ] multiple datagrams per frame
+- [ ] generic NIC interface
+- [ ] frame queue / async
 
 ## TODOs
 
@@ -19,17 +27,13 @@ This library is in extremely early development.
 - [ ] audit std.log statements
 - [ ] re-organize files to separate lib from CLI
 - [ ] support DC
-- [ ] multiple datagrams per frame
-- [ ] frame queue / async
 - [ ] generic nic interface
 - [ ] EoE
 - [ ] FoE
 - [ ] cable redundancy
 - [ ] dynamic PDO assignment via CoE
 - [ ] parse ENI.xml
-- [ ] CLI
-  - [ ] scanning
-  - [ ] network diag, error counters etc
+- [ ] CLI for network diag, error counters etc
 - [ ] distributed clocks
 - [ ] topology monitoring
 - [ ] emergency messages

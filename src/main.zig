@@ -27,7 +27,10 @@ pub fn main() !void {
 
     switch (parsed_args.command) {
         .scan => |scan_args| {
-            var port = try gcat.nic.Port.init(scan_args.ifname);
+            var raw_socket = try gcat.nic.RawSocket.init(scan_args.ifname);
+            defer raw_socket.deinit();
+
+            var port = gcat.nic.Port.init(raw_socket.networkAdapter());
             defer port.deinit();
 
             try scan(

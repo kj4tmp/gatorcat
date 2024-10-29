@@ -28,88 +28,18 @@ pub const Port = struct {
     recv_datagrams_status_mutex: Mutex = .{},
     send_mutex: Mutex = .{},
     recv_mutex: Mutex = .{},
-    socket: std.posix.socket_t,
     recv_datagrams: [max_frames][]telegram.Datagram = undefined,
     recv_datagrams_status: [max_frames]FrameStatus = [_]FrameStatus{FrameStatus.available} ** max_frames,
     last_used_idx: u8 = 0,
+    network_adapter: NetworkAdapter,
 
     pub const max_frames: u9 = 256;
 
     pub fn init(
-        ifname: []const u8,
-    ) !Port {
-        assert(ifname.len <= std.posix.IFNAMESIZE - 1); // ifname too long
-        const socket: std.posix.socket_t = try std.posix.socket(
-            std.posix.AF.PACKET,
-            std.posix.SOCK.RAW,
-            std.mem.nativeToBig(u32, ETH_P_ETHERCAT),
-        );
-        var timeout_rcv = std.posix.timeval{
-            .sec = 0,
-            .usec = 1,
-        };
-        try std.posix.setsockopt(
-            socket,
-            std.posix.SOL.SOCKET,
-            std.posix.SO.RCVTIMEO,
-            std.mem.asBytes(&timeout_rcv),
-        );
-
-        var timeout_snd = std.posix.timeval{
-            .sec = 0,
-            .usec = 1,
-        };
-        try std.posix.setsockopt(
-            socket,
-            std.posix.SOL.SOCKET,
-            std.posix.SO.SNDTIMEO,
-            std.mem.asBytes(&timeout_snd),
-        );
-        const dontroute_enable: c_int = 1;
-        try std.posix.setsockopt(
-            socket,
-            std.posix.SOL.SOCKET,
-            std.posix.SO.DONTROUTE,
-            std.mem.asBytes(&dontroute_enable),
-        );
-        var ifr: std.posix.ifreq = std.mem.zeroInit(std.posix.ifreq, .{});
-        @memcpy(ifr.ifrn.name[0..ifname.len], ifname);
-        ifr.ifrn.name[ifname.len] = 0;
-        try std.posix.ioctl_SIOCGIFINDEX(socket, &ifr);
-        const ifindex: i32 = ifr.ifru.ivalue;
-
-        const IFF_PROMISC = 256;
-        const IFF_BROADCAST = 2;
-        const SIOCGIFFLAGS = 0x8913;
-        const SIOCSIFFLAGS = 0x8914;
-
-        var rval = std.posix.errno(std.os.linux.ioctl(socket, SIOCGIFFLAGS, @intFromPtr(&ifr)));
-        switch (rval) {
-            .SUCCESS => {},
-            else => {
-                return error.nicError;
-            },
-        }
-        ifr.ifru.flags = ifr.ifru.flags | IFF_BROADCAST | IFF_PROMISC;
-        rval = std.posix.errno(std.os.linux.ioctl(socket, SIOCSIFFLAGS, @intFromPtr(&ifr)));
-        switch (rval) {
-            .SUCCESS => {},
-            else => {
-                return error.nicError;
-            },
-        }
-        const sockaddr_ll = std.posix.sockaddr.ll{
-            .family = std.posix.AF.PACKET,
-            .ifindex = ifindex,
-            .protocol = std.mem.nativeToBig(u16, @as(u16, ETH_P_ETHERCAT)),
-            .halen = 0, //not used
-            .addr = .{ 0, 0, 0, 0, 0, 0, 0, 0 }, //not used
-            .pkttype = 0, //not used
-            .hatype = 0, //not used
-        };
-        try std.posix.bind(socket, @ptrCast(&sockaddr_ll), @sizeOf(@TypeOf(sockaddr_ll)));
+        network_adapter: NetworkAdapter,
+    ) Port {
         return Port{
-            .socket = socket,
+            .network_adapter = network_adapter,
         };
     }
     pub fn deinit(self: *Port) void {
@@ -170,7 +100,7 @@ pub const Port = struct {
         {
             self.send_mutex.lock();
             defer self.send_mutex.unlock();
-            _ = std.posix.write(self.socket, out) catch return error.LinkError;
+            _ = self.network_adapter.write(out) catch return error.LinkError;
         }
         {
             self.recv_datagrams_status_mutex.lock();
@@ -219,7 +149,7 @@ pub const Port = struct {
         {
             self.recv_mutex.lock();
             defer self.recv_mutex.unlock();
-            n_bytes_read = std.posix.read(self.socket, &buf) catch |err| switch (err) {
+            n_bytes_read = self.network_adapter.read(&buf) catch |err| switch (err) {
                 error.WouldBlock => return error.FrameNotFound,
                 else => {
                     std.log.err("Socket error: {}", .{err});
@@ -315,6 +245,130 @@ pub const Port = struct {
         } else {
             return error.RecvTimeout;
         }
+    }
+};
+
+/// Interface for networking hardware
+pub const NetworkAdapter = struct {
+    ptr: *anyopaque,
+    vtable: *const VTable,
+
+    pub const VTable = struct {
+        write: *const fn (ctx: *anyopaque, data: []const u8) anyerror!usize,
+        read: *const fn (ctx: *anyopaque, out: []u8) anyerror!usize,
+    };
+
+    pub fn write(self: NetworkAdapter, data: []const u8) anyerror!usize {
+        return try self.vtable.write(self.ptr, data);
+    }
+
+    pub fn read(self: NetworkAdapter, out: []u8) anyerror!usize {
+        return try self.vtable.read(self.ptr, out);
+    }
+};
+
+/// Raw socket implementation for NetworkAdapter
+pub const RawSocket = struct {
+    socket: std.posix.socket_t,
+
+    pub fn init(
+        ifname: []const u8,
+    ) !RawSocket {
+        assert(ifname.len <= std.posix.IFNAMESIZE - 1); // ifname too long
+        const socket: std.posix.socket_t = try std.posix.socket(
+            std.posix.AF.PACKET,
+            std.posix.SOCK.RAW,
+            std.mem.nativeToBig(u32, ETH_P_ETHERCAT),
+        );
+        var timeout_rcv = std.posix.timeval{
+            .sec = 0,
+            .usec = 1,
+        };
+        try std.posix.setsockopt(
+            socket,
+            std.posix.SOL.SOCKET,
+            std.posix.SO.RCVTIMEO,
+            std.mem.asBytes(&timeout_rcv),
+        );
+
+        var timeout_snd = std.posix.timeval{
+            .sec = 0,
+            .usec = 1,
+        };
+        try std.posix.setsockopt(
+            socket,
+            std.posix.SOL.SOCKET,
+            std.posix.SO.SNDTIMEO,
+            std.mem.asBytes(&timeout_snd),
+        );
+        const dontroute_enable: c_int = 1;
+        try std.posix.setsockopt(
+            socket,
+            std.posix.SOL.SOCKET,
+            std.posix.SO.DONTROUTE,
+            std.mem.asBytes(&dontroute_enable),
+        );
+        var ifr: std.posix.ifreq = std.mem.zeroInit(std.posix.ifreq, .{});
+        @memcpy(ifr.ifrn.name[0..ifname.len], ifname);
+        ifr.ifrn.name[ifname.len] = 0;
+        try std.posix.ioctl_SIOCGIFINDEX(socket, &ifr);
+        const ifindex: i32 = ifr.ifru.ivalue;
+
+        const IFF_PROMISC = 256;
+        const IFF_BROADCAST = 2;
+        const SIOCGIFFLAGS = 0x8913;
+        const SIOCSIFFLAGS = 0x8914;
+
+        var rval = std.posix.errno(std.os.linux.ioctl(socket, SIOCGIFFLAGS, @intFromPtr(&ifr)));
+        switch (rval) {
+            .SUCCESS => {},
+            else => {
+                return error.nicError;
+            },
+        }
+        ifr.ifru.flags = ifr.ifru.flags | IFF_BROADCAST | IFF_PROMISC;
+        rval = std.posix.errno(std.os.linux.ioctl(socket, SIOCSIFFLAGS, @intFromPtr(&ifr)));
+        switch (rval) {
+            .SUCCESS => {},
+            else => {
+                return error.nicError;
+            },
+        }
+        const sockaddr_ll = std.posix.sockaddr.ll{
+            .family = std.posix.AF.PACKET,
+            .ifindex = ifindex,
+            .protocol = std.mem.nativeToBig(u16, @as(u16, ETH_P_ETHERCAT)),
+            .halen = 0, //not used
+            .addr = .{ 0, 0, 0, 0, 0, 0, 0, 0 }, //not used
+            .pkttype = 0, //not used
+            .hatype = 0, //not used
+        };
+        try std.posix.bind(socket, @ptrCast(&sockaddr_ll), @sizeOf(@TypeOf(sockaddr_ll)));
+        return RawSocket{
+            .socket = socket,
+        };
+    }
+
+    pub fn deinit(self: *RawSocket) void {
+        _ = self;
+        // TODO: de init socket
+    }
+
+    pub fn write(ctx: *anyopaque, bytes: []const u8) std.posix.WriteError!usize {
+        const self: *RawSocket = @ptrCast(@alignCast(ctx));
+        return try std.posix.write(self.socket, bytes);
+    }
+
+    pub fn read(ctx: *anyopaque, out: []u8) std.posix.ReadError!usize {
+        const self: *RawSocket = @ptrCast(@alignCast(ctx));
+        return try std.posix.read(self.socket, out);
+    }
+
+    pub fn networkAdapter(self: *RawSocket) NetworkAdapter {
+        return NetworkAdapter{
+            .ptr = self,
+            .vtable = &.{ .write = write, .read = read },
+        };
     }
 };
 

@@ -15,11 +15,13 @@ GatorCAT is an EtherCAT maindevice written for the zig programming language.
 - [x] autoconfiguration from SII EEPROM
 - [x] CLI for scanning networks
 
-## Next
+## Road to 0.1.0
 
 - [ ] multiple datagrams per frame
-- [ ] generic NIC interface
-- [ ] frame queue / async
+- [ ] topology monitoring
+- [x] NIC interface / vtable
+- [ ] windows support via npcap
+- [ ] docs
 
 ## TODOs
 
@@ -41,8 +43,6 @@ GatorCAT is an EtherCAT maindevice written for the zig programming language.
 - [ ] calculate expected WKCs
 - [ ] segmented SDO transfer
 - [ ] eeprom write access
-- [ ] generic / embedded friendly interfaces
   - [ ] nic
-    - [ ] windows / npcap support
     - [ ] linux / XDP
   - [ ] timers

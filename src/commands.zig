@@ -39,6 +39,7 @@ fn sendDatagram(
         error.CurruptedFrame => return error.CurruptedFrame,
         error.TransactionContention => return error.TransactionContention,
     };
+    // TODO: revise to validate frames!
     @memcpy(data, frame.datagrams().slice()[0].data);
     return frame.datagrams().slice()[0].wkc;
 }

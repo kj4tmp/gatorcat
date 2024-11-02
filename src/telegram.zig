@@ -90,30 +90,6 @@ pub const StationAddress = packed struct(u32) {
 
 pub const LogicalAddress = u32;
 
-/// Datagram Header
-///
-/// Ref: IEC 61158-4-12:2019 5.4.1.2
-pub const DatagramHeader = packed struct(u80) {
-    /// service command, APRD etc.
-    command: Command,
-    /// used my maindevice to identify duplicate or lost datagrams
-    idx: u8,
-    /// auto-increment, configured station, or logical address
-    /// when position addressing
-    address: u32,
-    /// length of following data, in bytes, not including wkc
-    length: u11,
-    /// reserved, 0
-    reserved: u3 = 0,
-    /// true when frame has circulated at least once, else false
-    circulating: bool,
-    /// multiple datagrams, true when more datagrams follow, else false
-    next: bool,
-    /// EtherCAT event request register of all subdevices combined with
-    /// a logical OR. Two byte bitmask (IEC 61131-3 WORD)
-    irq: u16,
-};
-
 /// Datagram
 ///
 /// The IEC standard specifies the different commands
@@ -127,7 +103,7 @@ pub const DatagramHeader = packed struct(u80) {
 ///
 /// Ref: IEC 61158-4-12:2019 5.4.1.2
 pub const Datagram = struct {
-    header: DatagramHeader,
+    header: Header,
     data: []const u8,
     /// Working counter.
     /// The working counter is incremented if an EtherCAT device was successfully addressed
@@ -161,18 +137,42 @@ pub const Datagram = struct {
 
     fn getLength(self: Datagram) usize {
         return self.header.length +
-            @divExact(@bitSizeOf(DatagramHeader), 8) +
+            @divExact(@bitSizeOf(Header), 8) +
             @divExact(@bitSizeOf(u16), 8);
     }
 
     pub const max_data_length = EtherCATFrame.max_datagrams_length -
-        @divExact(@bitSizeOf(DatagramHeader), 8) -
+        @divExact(@bitSizeOf(Header), 8) -
         @divExact(@bitSizeOf(u16), 8);
+
+    /// Datagram Header
+    ///
+    /// Ref: IEC 61158-4-12:2019 5.4.1.2
+    pub const Header = packed struct(u80) {
+        /// service command, APRD etc.
+        command: Command,
+        /// used my maindevice to identify duplicate or lost datagrams
+        idx: u8,
+        /// auto-increment, configured station, or logical address
+        /// when position addressing
+        address: u32,
+        /// length of following data, in bytes, not including wkc
+        length: u11,
+        /// reserved, 0
+        reserved: u3 = 0,
+        /// true when frame has circulated at least once, else false
+        circulating: bool,
+        /// multiple datagrams, true when more datagrams follow, else false
+        next: bool,
+        /// EtherCAT event request register of all subdevices combined with
+        /// a logical OR. Two byte bitmask (IEC 61131-3 WORD)
+        irq: u16,
+    };
 };
 
 /// Stack portable storage of a datagram.
 const PortableDatagram = struct {
-    header: DatagramHeader,
+    header: Datagram.Header,
     /// inclusive start of datagram data in parent data
     data_start: u16,
     /// exclusive end of datagram data in parent data
@@ -370,7 +370,7 @@ pub const EthernetFrame = struct {
         var fbs_datastore = std.io.fixedBufferStream(&data_store);
 
         reading_datgrams: for (0..15) |_| {
-            const header = try wire.packFromECatReader(DatagramHeader, reader);
+            const header = try wire.packFromECatReader(Datagram.Header, reader);
             const n_bytes_read = try reader.readAll(data_store[try fbs_datastore.getPos() .. try fbs_datastore.getPos() + header.length]);
             if (n_bytes_read != header.length) {
                 return error.CurruptedFrame;
@@ -418,7 +418,7 @@ pub const EthernetFrame = struct {
             );
             return error.InvalidEtherCATHeader;
         }
-        const datagram_header = try wire.packFromECatReader(DatagramHeader, reader);
+        const datagram_header = try wire.packFromECatReader(Datagram.Header, reader);
         return datagram_header.idx;
     }
 };

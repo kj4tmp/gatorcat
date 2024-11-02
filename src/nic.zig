@@ -25,11 +25,11 @@ const FrameStatus = enum {
 };
 
 pub const Port = struct {
-    recv_datagrams_status_mutex: Mutex = .{},
     send_mutex: Mutex = .{},
     recv_mutex: Mutex = .{},
-    recv_datagrams: [max_frames][]telegram.Datagram = undefined,
-    recv_datagrams_status: [max_frames]FrameStatus = [_]FrameStatus{FrameStatus.available} ** max_frames,
+    recv_frames_status_mutex: Mutex = .{},
+    recv_frames: [max_frames]*telegram.EtherCATFrame = undefined,
+    recv_frames_status: [max_frames]FrameStatus = [_]FrameStatus{FrameStatus.available} ** max_frames,
     last_used_idx: u8 = 0,
     network_adapter: NetworkAdapter,
 
@@ -51,44 +51,35 @@ pub const Port = struct {
     ///
     /// claim a transaction idx with the ethercat bus.
     pub fn claim_transaction(self: *Port) error{NoTransactionAvailable}!u8 {
-        self.recv_datagrams_status_mutex.lock();
-        defer self.recv_datagrams_status_mutex.unlock();
+        self.recv_frames_status_mutex.lock();
+        defer self.recv_frames_status_mutex.unlock();
 
         const new_idx = self.last_used_idx +% 1;
-        if (self.recv_datagrams_status[new_idx] == .available) {
-            self.recv_datagrams_status[new_idx] = .in_use;
+        if (self.recv_frames_status[new_idx] == .available) {
+            self.recv_frames_status[new_idx] = .in_use;
             self.last_used_idx = new_idx;
             return self.last_used_idx;
         } else return error.NoTransactionAvailable;
-
-        // for (&self.recv_datagrams_status, 0..) |*status, idx| {
-        //     if (status.* == FrameStatus.available) {
-        //         status.* = FrameStatus.in_use;
-        //         return @intCast(idx);
-        //     }
-        // } else {
-        //     return error.NoTransactionAvailable;
-        // }
     }
 
     /// Send a transaction with the ethercat bus.
     ///
     /// Parameter send_datagram is the datagram to be sent
     /// and is used to deserialize the data on response.
-    pub fn send_transaction(self: *Port, idx: u8, send_datagrams: []telegram.Datagram) !void {
-        assert(send_datagrams.len > 0); // no datagrams
-        assert(send_datagrams.len <= 15); // too many datagrams
-        assert(self.recv_datagrams_status[idx] == FrameStatus.in_use); // should claim transaction first
+    pub fn send_transaction(self: *Port, idx: u8, send_frame: *telegram.EtherCATFrame, recv_frame_ptr: *telegram.EtherCATFrame) !void {
+        assert(send_frame.datagrams().slice().len > 0); // no datagrams
+        assert(send_frame.datagrams().slice().len <= 15); // too many datagrams
+        assert(self.recv_frames_status[idx] == FrameStatus.in_use); // should claim transaction first
 
         // store pointer to where to deserialize frames later
-        self.recv_datagrams[idx] = send_datagrams;
+        self.recv_frames[idx] = recv_frame_ptr;
 
         // assign identity of frame as first datagram idx
-        send_datagrams[0].header.idx = idx;
+        send_frame.assignIdx(idx);
 
         var frame = telegram.EthernetFrame.init(
             Port.get_ethernet_header(),
-            telegram.EtherCATFrame.init(send_datagrams),
+            send_frame.*,
         );
 
         var out_buf: [telegram.max_frame_length]u8 = undefined;
@@ -103,9 +94,9 @@ pub const Port = struct {
             _ = self.network_adapter.write(out) catch return error.LinkError;
         }
         {
-            self.recv_datagrams_status_mutex.lock();
-            defer self.recv_datagrams_status_mutex.unlock();
-            self.recv_datagrams_status[idx] = FrameStatus.in_use_receivable;
+            self.recv_frames_status_mutex.lock();
+            defer self.recv_frames_status_mutex.unlock();
+            self.recv_frames_status[idx] = FrameStatus.in_use_receivable;
         }
     }
 
@@ -119,7 +110,7 @@ pub const Port = struct {
     ///
     /// Returns true when frame has been deserailized successfully.
     pub fn continue_transaction(self: *Port, idx: u8) !bool {
-        switch (self.recv_datagrams_status[idx]) {
+        switch (self.recv_frames_status[idx]) {
             .available => unreachable,
             .in_use => unreachable,
             .in_use_receivable => {},
@@ -133,7 +124,7 @@ pub const Port = struct {
             },
             error.InvalidFrame => {},
         };
-        switch (self.recv_datagrams_status[idx]) {
+        switch (self.recv_frames_status[idx]) {
             .available => unreachable,
             .in_use => unreachable,
             .in_use_receivable => return false,
@@ -166,16 +157,17 @@ pub const Port = struct {
         const recv_frame_idx = telegram.EthernetFrame.identifyFromBuffer(bytes_read) catch return error.InvalidFrame;
         std.log.debug("identified frame as idx: {}", .{recv_frame_idx});
 
-        switch (self.recv_datagrams_status[recv_frame_idx]) {
+        switch (self.recv_frames_status[recv_frame_idx]) {
             .in_use_receivable => {
-                self.recv_datagrams_status_mutex.lock();
-                defer self.recv_datagrams_status_mutex.unlock();
-                const frame_res = telegram.EthernetFrame.deserialize(bytes_read, self.recv_datagrams[recv_frame_idx]);
-                if (frame_res) {
-                    self.recv_datagrams_status[recv_frame_idx] = FrameStatus.in_use_received;
+                self.recv_frames_status_mutex.lock();
+                defer self.recv_frames_status_mutex.unlock();
+                const frame_res = telegram.EthernetFrame.deserialize(bytes_read);
+                if (frame_res) |frame| {
+                    self.recv_frames[recv_frame_idx].* = frame.ethercat_frame;
+                    self.recv_frames_status[recv_frame_idx] = FrameStatus.in_use_received;
                 } else |err| switch (err) {
                     else => {
-                        self.recv_datagrams_status[recv_frame_idx] = FrameStatus.in_use_currupted;
+                        self.recv_frames_status[recv_frame_idx] = FrameStatus.in_use_currupted;
                         return;
                     },
                 }
@@ -192,9 +184,9 @@ pub const Port = struct {
     /// call to send_frame.
     pub fn release_transaction(self: *Port, idx: u8) void {
         {
-            self.recv_datagrams_status_mutex.lock();
-            defer self.recv_datagrams_status_mutex.unlock();
-            self.recv_datagrams_status[idx] = FrameStatus.available;
+            self.recv_frames_status_mutex.lock();
+            defer self.recv_frames_status_mutex.unlock();
+            self.recv_frames_status[idx] = FrameStatus.available;
         }
     }
 
@@ -214,13 +206,14 @@ pub const Port = struct {
         CurruptedFrame,
     };
 
-    pub fn send_recv_datagrams(
+    pub fn send_recv_frame(
         self: *Port,
-        send_datagrams: []telegram.Datagram,
+        send_frame: *telegram.EtherCATFrame,
+        recv_frame_ptr: *telegram.EtherCATFrame,
         timeout_us: u32,
     ) SendRecvError!void {
-        assert(send_datagrams.len != 0); // no datagrams
-        assert(send_datagrams.len <= 15); // too many datagrams
+        assert(send_frame.datagrams().slice().len != 0); // no datagrams
+        assert(send_frame.datagrams().slice().len <= 15); // too many datagrams
 
         var timer = Timer.start() catch |err| switch (err) {
             error.TimerUnsupported => unreachable,
@@ -236,7 +229,7 @@ pub const Port = struct {
         }
         defer self.release_transaction(idx);
 
-        try self.send_transaction(idx, send_datagrams);
+        try self.send_transaction(idx, send_frame, recv_frame_ptr);
 
         while (timer.read() < @as(u64, timeout_us) * 1000) {
             if (try self.continue_transaction(idx)) {

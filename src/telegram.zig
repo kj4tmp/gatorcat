@@ -128,7 +128,7 @@ pub const DatagramHeader = packed struct(u80) {
 /// Ref: IEC 61158-4-12:2019 5.4.1.2
 pub const Datagram = struct {
     header: DatagramHeader,
-    data: []u8,
+    data: []const u8,
     /// Working counter.
     /// The working counter is incremented if an EtherCAT device was successfully addressed
     /// and a read operation, a write operation or a read/write operation was executed successfully.
@@ -170,6 +170,16 @@ pub const Datagram = struct {
         @divExact(@bitSizeOf(u16), 8);
 };
 
+/// Stack portable storage of a datagram.
+const PortableDatagram = struct {
+    header: DatagramHeader,
+    /// inclusive start of datagram data in parent data
+    data_start: u16,
+    /// exclusive end of datagram data in parent data
+    data_end: u16,
+    wkc: u16,
+};
+
 /// EtherCAT Header
 ///
 /// Ref: IEC 61158-4-12:2019 5.3.3
@@ -186,29 +196,62 @@ pub const EtherCATHeader = packed struct(u16) {
 /// EtherCAT Frame.
 /// Must be embedded inside an Ethernet Frame.
 ///
+/// Also called DLPDU (Data Link Layer Process Data Unit).
+///
 /// Ref: IEC 61158-4-12:2019 5.3.3
 pub const EtherCATFrame = struct {
     header: EtherCATHeader,
-    datagrams: []Datagram,
+    portable_datagrams: std.BoundedArray(PortableDatagram, max_datagrams),
+    data_store: [Datagram.max_data_length]u8,
 
-    pub fn init(datagrams: []Datagram) EtherCATFrame {
-        assert(datagrams.len != 0); // no datagrams
-        assert(datagrams.len <= 15); // too many datagrams
+    pub fn init(dgrams: []Datagram) !EtherCATFrame {
+        assert(dgrams.len != 0); // no datagrams
+        assert(dgrams.len <= 15); // too many datagrams
+        for (dgrams) |datagram| {
+            assert(datagram.data.len > 0);
+        }
 
         var header_length: u11 = 0;
+        var portable_datagrams = std.BoundedArray(PortableDatagram, max_datagrams){};
+        var data_store = [1]u8{0} ** Datagram.max_data_length;
+        var fbs = std.io.fixedBufferStream(&data_store);
+        const writer = fbs.writer();
 
-        for (datagrams) |datagram| {
+        for (dgrams) |datagram| {
             header_length += @intCast(datagram.getLength());
+            try writer.writeAll(datagram.data);
+            try portable_datagrams.append(PortableDatagram{
+                .header = datagram.header,
+                .data_start = @intCast(try fbs.getPos() - datagram.data.len),
+                .data_end = @intCast(try fbs.getPos()),
+                .wkc = datagram.wkc,
+            });
         }
-        assert(header_length <= max_datagrams_length);
-
         const header = EtherCATHeader{
             .length = header_length,
         };
         return EtherCATFrame{
             .header = header,
-            .datagrams = datagrams,
+            .portable_datagrams = portable_datagrams,
+            .data_store = data_store,
         };
+    }
+
+    const Datagrams = std.BoundedArray(Datagram, max_datagrams);
+
+    pub fn datagrams(self: *const EtherCATFrame) Datagrams {
+        var dgrams = Datagrams{};
+
+        for (self.portable_datagrams.slice()) |portable_datagram| {
+            dgrams.append(Datagram{
+                .header = portable_datagram.header,
+                .data = self.data_store[portable_datagram.data_start..portable_datagram.data_end],
+                .wkc = portable_datagram.wkc,
+            }) catch |err| switch (err) {
+                error.Overflow => unreachable,
+            };
+        }
+        return dgrams;
     }
 
     fn getLength(self: EtherCATFrame) usize {
@@ -218,6 +261,14 @@ pub const EtherCATFrame = struct {
     const max_datagrams_length = max_frame_length -
         @divExact(@bitSizeOf(EthernetHeader), 8) -
         @divExact(@bitSizeOf(EtherCATHeader), 8);
+
+    const max_datagrams = 15;
+
+    /// assign idx to first datagram for frame identification
+    /// in nic
+    pub fn assignIdx(self: *EtherCATFrame, idx: u8) void {
+        self.portable_datagrams.slice()[0].header.idx = idx;
+    }
 };
 
 pub const EtherType = enum(u16) {
@@ -249,55 +300,20 @@ const reusable_padding = std.mem.zeroes([46]u8);
 pub const EthernetFrame = struct {
     header: EthernetHeader,
     ethercat_frame: EtherCATFrame,
-    padding: []const u8,
+    n_padding: u8,
 
     pub fn init(
         header: EthernetHeader,
         ethercat_frame: EtherCATFrame,
     ) EthernetFrame {
         const length: usize = @divExact(@bitSizeOf(EthernetHeader), 8) + ethercat_frame.getLength();
-        const n_pad: usize = min_frame_length -| length;
+        const n_pad: u8 = @intCast(min_frame_length -| length);
 
         return EthernetFrame{
             .header = header,
             .ethercat_frame = ethercat_frame,
-            .padding = reusable_padding[0..n_pad],
+            .n_padding = n_pad,
         };
-    }
-
-    /// calcuate the length of the frame in bytes
-    /// without padding
-    // pub fn getLengthWithoutPadding(self: EthernetFrame) u16 {
-    //     var length: u16 = 0;
-    //     length +|= @bitSizeOf(@TypeOf(self.header)) / 8;
-    //     length +|= self.ethercat_frame.getLength();
-    //     return length;
-    // }
-
-    // /// Get required number of padding bytes
-    // /// for this frame.
-    // /// Assumes no existing padding.
-    // pub fn getRequiredPaddingLength(self: EthernetFrame) u16 {
-    //     return @as(u16, min_frame_length) -| self.getLengthWithoutPadding();
-    // }
-
-    // pub fn getLengthWithPadding(self: EthernetFrame) u32 {
-    //     var length: u32 = 0;
-    //     length +|= @sizeOf(self.header);
-    //     length +|= self.ethercat_frame.getLength();
-    //     length +|= self.padding.len;
-    //     return length;
-    // }
-
-    // /// write calcuated fields
-    // pub fn calc(self: *EthernetFrame) void {
-    //     self.ethercat_frame.calc();
-    // }
-
-    /// assign idx to first datagram for frame identification
-    /// in nic
-    pub fn assignIdx(self: *EthernetFrame, idx: u8) void {
-        self.ethercat_frame.datagrams[0].header.idx = idx;
     }
 
     /// serialize this frame into the out buffer
@@ -311,20 +327,19 @@ pub const EthernetFrame = struct {
         try writer.writeInt(u48, self.header.src_mac, big);
         try writer.writeInt(u16, @intFromEnum(self.header.ether_type), big);
         try wire.eCatFromPackToWriter(self.ethercat_frame.header, writer);
-        for (self.ethercat_frame.datagrams) |datagram| {
+        for (self.ethercat_frame.datagrams().slice()) |datagram| {
             try wire.eCatFromPackToWriter(datagram.header, writer);
             try writer.writeAll(datagram.data);
             try wire.eCatFromPackToWriter(datagram.wkc, writer);
         }
-        try writer.writeAll(self.padding);
+        try writer.writeByteNTimes(0, self.n_padding);
         return fbs.getWritten().len;
     }
 
     /// deserialze bytes into datagrams
     pub fn deserialize(
         received: []const u8,
-        out: []Datagram,
-    ) !void {
+    ) !EthernetFrame {
         var fbs_reading = std.io.fixedBufferStream(received);
         const reader = fbs_reading.reader();
 
@@ -350,18 +365,33 @@ pub const EthernetFrame = struct {
             return error.InvalidEtherCATHeader;
         }
 
-        for (out) |*out_datagram| {
-            out_datagram.header = try wire.packFromECatReader(DatagramHeader, reader);
-            std.log.debug("datagram header: {}", .{out_datagram.header});
-            if (out_datagram.header.length != out_datagram.data.len) {
+        var data_store = [_]u8{0} ** Datagram.max_data_length;
+        var datagrams = std.BoundedArray(Datagram, EtherCATFrame.max_datagrams){};
+        var fbs_datastore = std.io.fixedBufferStream(&data_store);
+
+        reading_datgrams: for (0..15) |_| {
+            const header = try wire.packFromECatReader(DatagramHeader, reader);
+            const n_bytes_read = try reader.readAll(data_store[try fbs_datastore.getPos() .. try fbs_datastore.getPos() + header.length]);
+            if (n_bytes_read != header.length) {
                 return error.CurruptedFrame;
             }
-            const n_bytes_read = try reader.readAll(out_datagram.data);
-            if (n_bytes_read != out_datagram.data.len) {
-                return error.CurruptedFrame;
-            }
-            out_datagram.wkc = try wire.packFromECatReader(u16, reader);
+            try fbs_datastore.seekBy(header.length);
+            const wkc = try wire.packFromECatReader(u16, reader);
+            try datagrams.append(Datagram{
+                .header = header,
+                .data = data_store[try fbs_datastore.getPos() - header.length .. try fbs_datastore.getPos()],
+                .wkc = wkc,
+            });
+            if (!header.next) break :reading_datgrams;
+        } else {
+            return error.CurruptedFrame; // should always see header.next false
         }
+
+        const ethercat_frame = try EtherCATFrame.init(datagrams.slice());
+        return EthernetFrame.init(
+            ethernet_header,
+            ethercat_frame,
+        );
     }
 
     pub fn identifyFromBuffer(buf: []const u8) !u8 {
@@ -404,7 +434,7 @@ test "ethernet frame serialization" {
             .src_mac = 0xAABB_CCDD_EEFF,
             .ether_type = .ETHERCAT,
         },
-        EtherCATFrame.init(&datagrams),
+        try EtherCATFrame.init(&datagrams),
     );
     var out_buf: [max_frame_length]u8 = undefined;
     const serialized = out_buf[0..try frame.serialize(&out_buf)];
@@ -454,7 +484,7 @@ test "ethernet frame serialization / deserialization" {
             .src_mac = 0xAAAA_AAAA_AAAA,
             .ether_type = .ETHERCAT,
         },
-        EtherCATFrame.init(&datagrams),
+        try EtherCATFrame.init(&datagrams),
     );
 
     var out_buf: [max_frame_length]u8 = undefined;
@@ -467,9 +497,9 @@ test "ethernet frame serialization / deserialization" {
     var datagrams2 = datagrams;
     datagrams2[0].data = &data2;
 
-    try EthernetFrame.deserialize(serialize_copy, &datagrams2);
+    const frame2 = try EthernetFrame.deserialize(serialize_copy);
 
-    try std.testing.expectEqualDeep(frame.ethercat_frame.datagrams, &datagrams2);
+    try std.testing.expectEqualDeep(frame, frame2);
 }
 
 /// Max frame length

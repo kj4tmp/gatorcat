@@ -23,8 +23,13 @@ fn sendDatagram(
             data,
         ),
     };
-    port.send_recv_datagrams(
-        &datagrams,
+    var frame = telegram.EtherCATFrame.init(&datagrams) catch |err| switch (err) {
+        error.Overflow => unreachable,
+        error.NoSpaceLeft => unreachable,
+    };
+    port.send_recv_frame(
+        &frame,
+        &frame,
         timeout_us,
     ) catch |err| switch (err) {
         // only one datagram so it should fit
@@ -34,7 +39,8 @@ fn sendDatagram(
         error.CurruptedFrame => return error.CurruptedFrame,
         error.TransactionContention => return error.TransactionContention,
     };
-    return datagrams[0].wkc;
+    @memcpy(data, frame.datagrams().slice()[0].data);
+    return frame.datagrams().slice()[0].wkc;
 }
 
 /// No operation.

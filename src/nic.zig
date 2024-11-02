@@ -25,8 +25,6 @@ const FrameStatus = enum {
 };
 
 pub const Port = struct {
-    send_mutex: Mutex = .{},
-    recv_mutex: Mutex = .{},
     recv_frames_status_mutex: Mutex = .{},
     recv_frames: [max_frames]*telegram.EtherCATFrame = undefined,
     recv_frames_status: [max_frames]FrameStatus = [_]FrameStatus{FrameStatus.available} ** max_frames,
@@ -35,16 +33,8 @@ pub const Port = struct {
 
     pub const max_frames: u9 = 256;
 
-    pub fn init(
-        network_adapter: NetworkAdapter,
-    ) Port {
-        return Port{
-            .network_adapter = network_adapter,
-        };
-    }
-    pub fn deinit(self: *Port) void {
-        _ = self;
-        // TODO: de init socket
+    pub fn init(network_adapter: NetworkAdapter) Port {
+        return Port{ .network_adapter = network_adapter };
     }
 
     /// claim transaction
@@ -81,11 +71,9 @@ pub const Port = struct {
             error.NoSpaceLeft => return error.FrameSerializationFailure,
         };
         const out = out_buf[0..n_bytes];
-        {
-            self.send_mutex.lock();
-            defer self.send_mutex.unlock();
-            _ = self.network_adapter.write(out) catch return error.LinkError;
-        }
+
+        // TODO: handle partial write error
+        _ = self.network_adapter.write(out) catch return error.LinkError;
         {
             self.recv_frames_status_mutex.lock();
             defer self.recv_frames_status_mutex.unlock();
@@ -129,20 +117,16 @@ pub const Port = struct {
     fn recv_frame(self: *Port) !void {
         var buf: [telegram.max_frame_length]u8 = undefined;
         var n_bytes_read: usize = 0;
-        {
-            self.recv_mutex.lock();
-            defer self.recv_mutex.unlock();
-            n_bytes_read = self.network_adapter.read(&buf) catch |err| switch (err) {
-                error.WouldBlock => return error.FrameNotFound,
-                else => {
-                    std.log.err("Socket error: {}", .{err});
-                    return error.LinkError;
-                },
-            };
-        }
-        if (n_bytes_read == 0) {
-            return;
-        }
+
+        n_bytes_read = self.network_adapter.read(&buf) catch |err| switch (err) {
+            error.WouldBlock => return error.FrameNotFound,
+            else => {
+                std.log.err("Socket error: {}", .{err});
+                return error.LinkError;
+            },
+        };
+        if (n_bytes_read == 0) return;
+
         const bytes_read: []const u8 = buf[0..n_bytes_read];
         const recv_frame_idx = telegram.EthernetFrame.identifyFromBuffer(bytes_read) catch return error.InvalidFrame;
 
@@ -240,10 +224,12 @@ pub const NetworkAdapter = struct {
         read: *const fn (ctx: *anyopaque, out: []u8) anyerror!usize,
     };
 
+    /// warning: implementation must be thread-safe
     pub fn write(self: NetworkAdapter, data: []const u8) anyerror!usize {
         return try self.vtable.write(self.ptr, data);
     }
 
+    /// warning: implementation must be thread-safe
     pub fn read(self: NetworkAdapter, out: []u8) anyerror!usize {
         return try self.vtable.read(self.ptr, out);
     }
@@ -251,6 +237,8 @@ pub const NetworkAdapter = struct {
 
 /// Raw socket implementation for NetworkAdapter
 pub const RawSocket = struct {
+    write_mutex: Mutex = .{},
+    read_mutex: Mutex = .{},
     socket: std.posix.socket_t,
 
     pub fn init(
@@ -332,17 +320,20 @@ pub const RawSocket = struct {
     }
 
     pub fn deinit(self: *RawSocket) void {
-        _ = self;
-        // TODO: de init socket
+        std.posix.close(self.socket);
     }
 
     pub fn write(ctx: *anyopaque, bytes: []const u8) std.posix.WriteError!usize {
         const self: *RawSocket = @ptrCast(@alignCast(ctx));
+        self.write_mutex.lock();
+        defer self.write_mutex.unlock();
         return try std.posix.write(self.socket, bytes);
     }
 
     pub fn read(ctx: *anyopaque, out: []u8) std.posix.ReadError!usize {
         const self: *RawSocket = @ptrCast(@alignCast(ctx));
+        self.read_mutex.lock();
+        defer self.read_mutex.unlock();
         return try std.posix.read(self.socket, out);
     }
 

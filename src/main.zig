@@ -31,7 +31,6 @@ pub fn main() !void {
             defer raw_socket.deinit();
 
             var port = gcat.nic.Port.init(raw_socket.networkAdapter());
-            defer port.deinit();
 
             try scan(
                 &port,

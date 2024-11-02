@@ -63,10 +63,7 @@ pub const Port = struct {
     }
 
     /// Send a transaction with the ethercat bus.
-    ///
-    /// Parameter send_datagram is the datagram to be sent
-    /// and is used to deserialize the data on response.
-    pub fn send_transaction(self: *Port, idx: u8, send_frame: *telegram.EtherCATFrame, recv_frame_ptr: *telegram.EtherCATFrame) !void {
+    pub fn send_transaction(self: *Port, idx: u8, send_frame: *const telegram.EtherCATFrame, recv_frame_ptr: *telegram.EtherCATFrame) !void {
         assert(send_frame.datagrams().slice().len > 0); // no datagrams
         assert(send_frame.datagrams().slice().len <= 15); // too many datagrams
         assert(self.recv_frames_status[idx] == FrameStatus.in_use); // should claim transaction first
@@ -74,20 +71,16 @@ pub const Port = struct {
         // store pointer to where to deserialize frames later
         self.recv_frames[idx] = recv_frame_ptr;
 
-        // assign identity of frame as first datagram idx
-        send_frame.assignIdx(idx);
-
         var frame = telegram.EthernetFrame.init(
             Port.get_ethernet_header(),
             send_frame.*,
         );
 
         var out_buf: [telegram.max_frame_length]u8 = undefined;
-        const n_bytes = frame.serialize(&out_buf) catch |err| switch (err) {
+        const n_bytes = frame.serialize(idx, &out_buf) catch |err| switch (err) {
             error.NoSpaceLeft => return error.FrameSerializationFailure,
         };
         const out = out_buf[0..n_bytes];
-        std.log.debug("send: {x}, len: {}", .{ out, out.len });
         {
             self.send_mutex.lock();
             defer self.send_mutex.unlock();
@@ -108,7 +101,7 @@ pub const Port = struct {
     ///
     /// Returns false if return frame was not found (call again to try to recieve it).
     ///
-    /// Returns true when frame has been deserailized successfully.
+    /// Returns true when frame has been deserialized successfully.
     pub fn continue_transaction(self: *Port, idx: u8) !bool {
         switch (self.recv_frames_status[idx]) {
             .available => unreachable,
@@ -134,7 +127,6 @@ pub const Port = struct {
     }
 
     fn recv_frame(self: *Port) !void {
-        std.log.debug("attempting to recv...", .{});
         var buf: [telegram.max_frame_length]u8 = undefined;
         var n_bytes_read: usize = 0;
         {
@@ -149,13 +141,10 @@ pub const Port = struct {
             };
         }
         if (n_bytes_read == 0) {
-            std.log.debug("no bytes to read", .{});
             return;
         }
         const bytes_read: []const u8 = buf[0..n_bytes_read];
-        std.log.debug("recv: {x}, len: {}", .{ bytes_read, bytes_read.len });
         const recv_frame_idx = telegram.EthernetFrame.identifyFromBuffer(bytes_read) catch return error.InvalidFrame;
-        std.log.debug("identified frame as idx: {}", .{recv_frame_idx});
 
         switch (self.recv_frames_status[recv_frame_idx]) {
             .in_use_receivable => {

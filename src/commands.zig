@@ -17,7 +17,6 @@ fn sendDatagram(
     var datagrams: [1]telegram.Datagram = .{
         telegram.Datagram.init(
             command,
-            0,
             address,
             false,
             data,

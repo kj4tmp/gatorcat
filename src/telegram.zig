@@ -118,12 +118,11 @@ pub const Datagram = struct {
     /// For a read/write command: if read command successful wkc+=1, if write command successful wkc+=2. If both wkc+=3.
     wkc: u16,
 
-    pub fn init(command: Command, idx: u8, address: u32, next: bool, data: []u8) Datagram {
+    pub fn init(command: Command, address: u32, next: bool, data: []u8) Datagram {
         assert(data.len < max_data_length);
         return Datagram{
             .header = .{
                 .command = command,
-                .idx = idx,
                 .address = address,
                 .length = @intCast(data.len),
                 .circulating = false,
@@ -152,7 +151,7 @@ pub const Datagram = struct {
         /// service command, APRD etc.
         command: Command,
         /// used my maindevice to identify duplicate or lost datagrams
-        idx: u8,
+        idx: u8 = 0,
         /// auto-increment, configured station, or logical address
         /// when position addressing
         address: u32,
@@ -168,16 +167,6 @@ pub const Datagram = struct {
         /// a logical OR. Two byte bitmask (IEC 61131-3 WORD)
         irq: u16,
     };
-};
-
-/// Stack portable storage of a datagram.
-const PortableDatagram = struct {
-    header: Datagram.Header,
-    /// inclusive start of datagram data in parent data
-    data_start: u16,
-    /// exclusive end of datagram data in parent data
-    data_end: u16,
-    wkc: u16,
 };
 
 /// EtherCAT Header
@@ -264,11 +253,16 @@ pub const EtherCATFrame = struct {
 
     const max_datagrams = 15;
 
-    /// assign idx to first datagram for frame identification
-    /// in nic
-    pub fn assignIdx(self: *EtherCATFrame, idx: u8) void {
-        self.portable_datagrams.slice()[0].header.idx = idx;
-    }
+    /// Stack portable storage of a datagram.
+    /// This struct is packed only for reducing its size.
+    const PortableDatagram = packed struct(u128) {
+        header: Datagram.Header,
+        /// inclusive start of datagram data in parent data
+        data_start: u16,
+        /// exclusive end of datagram data in parent data
+        data_end: u16,
+        wkc: u16,
+    };
 };
 
 pub const EtherType = enum(u16) {
@@ -287,8 +281,6 @@ pub const EthernetHeader = packed struct(u112) {
     src_mac: u48,
     ether_type: EtherType,
 };
-
-const reusable_padding = std.mem.zeroes([46]u8);
 
 /// Ethernet Frame
 ///
@@ -320,15 +312,22 @@ pub const EthernetFrame = struct {
     /// for tranmission on the line.
     ///
     /// Returns number of bytes written, or error.
-    pub fn serialize(self: *const EthernetFrame, out: []u8) !usize {
+    pub fn serialize(self: *const EthernetFrame, idx: u8, out: []u8) !usize {
         var fbs = std.io.fixedBufferStream(out);
         const writer = fbs.writer();
         try writer.writeInt(u48, self.header.dest_mac, big);
         try writer.writeInt(u48, self.header.src_mac, big);
         try writer.writeInt(u16, @intFromEnum(self.header.ether_type), big);
         try wire.eCatFromPackToWriter(self.ethercat_frame.header, writer);
-        for (self.ethercat_frame.datagrams().slice()) |datagram| {
-            try wire.eCatFromPackToWriter(datagram.header, writer);
+        for (self.ethercat_frame.datagrams().slice(), 0..) |datagram, i| {
+            // inject idx at first datagram to identify frame
+            if (i == 0) {
+                var header_copy = datagram.header;
+                header_copy.idx = idx;
+                try wire.eCatFromPackToWriter(header_copy, writer);
+            } else {
+                try wire.eCatFromPackToWriter(datagram.header, writer);
+            }
             try writer.writeAll(datagram.data);
             try wire.eCatFromPackToWriter(datagram.wkc, writer);
         }
@@ -336,7 +335,7 @@ pub const EthernetFrame = struct {
         return fbs.getWritten().len;
     }
 
-    /// deserialze bytes into datagrams
+    /// deserialize bytes into datagrams
     pub fn deserialize(
         received: []const u8,
     ) !EthernetFrame {
@@ -426,7 +425,7 @@ pub const EthernetFrame = struct {
 test "ethernet frame serialization" {
     var data: [4]u8 = .{ 0x01, 0x02, 0x03, 0x04 };
     var datagrams: [1]Datagram = .{
-        Datagram.init(.BRD, 123, 0xABCDEF12, false, &data),
+        Datagram.init(.BRD, 0xABCDEF12, false, &data),
     };
     var frame = EthernetFrame.init(
         .{
@@ -437,7 +436,7 @@ test "ethernet frame serialization" {
         try EtherCATFrame.init(&datagrams),
     );
     var out_buf: [max_frame_length]u8 = undefined;
-    const serialized = out_buf[0..try frame.serialize(&out_buf)];
+    const serialized = out_buf[0..try frame.serialize(123, &out_buf)];
     const expected = [min_frame_length]u8{
         // zig fmt: off
 
@@ -475,7 +474,7 @@ test "ethernet frame serialization / deserialization" {
 
     var data: [4]u8 = .{ 0x01, 0x02, 0x03, 0x04 };
     var datagrams: [1]Datagram = .{
-        Datagram.init(.BRD, 0, 0xABCD, false, &data,),
+        Datagram.init(.BRD, 0xABCD, false, &data,),
     };
 
     var frame = EthernetFrame.init(
@@ -488,7 +487,7 @@ test "ethernet frame serialization / deserialization" {
     );
 
     var out_buf: [max_frame_length]u8 = undefined;
-    const serialized = out_buf[0..try frame.serialize(&out_buf)];
+    const serialized = out_buf[0..try frame.serialize(0, &out_buf)];
     var allocator = std.testing.allocator;
     const serialize_copy = try allocator.dupe(u8, serialized);
     defer allocator.free(serialize_copy);

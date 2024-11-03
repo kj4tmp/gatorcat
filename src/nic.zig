@@ -230,19 +230,23 @@ pub const NetworkAdapter = struct {
     vtable: *const VTable,
 
     pub const VTable = struct {
-        send: *const fn (ctx: *anyopaque, data: []const u8) anyerror!usize,
+        send: *const fn (ctx: *anyopaque, data: []const u8) anyerror!void,
         recv: *const fn (ctx: *anyopaque, out: []u8) anyerror!usize,
     };
 
     /// Send data on the wire.
     /// Sent data must include the ethernet header and not the FCS.
-    /// Sent data must be 1 frame.
+    /// Sent data must be 1 frame and less than maximum allowable frame length.
+    /// Must not partially send data, if the data cannot be transmitted atomically,
+    /// an error must be returned.
+    ///
+    /// Returns error on failure, else void.
     ///
     /// This is similar to the behavior of send() in linux on a raw
-    /// socket with MSG_TRUNC enabled.
+    /// socket.
     ///
     /// warning: implementation must be thread-safe.
-    pub fn send(self: NetworkAdapter, data: []const u8) anyerror!usize {
+    pub fn send(self: NetworkAdapter, data: []const u8) anyerror!void {
         assert(data.len <= telegram.max_frame_length);
         return try self.vtable.send(self.ptr, data);
     }
@@ -349,11 +353,11 @@ pub const RawSocket = struct {
         std.posix.close(self.socket);
     }
 
-    pub fn send(ctx: *anyopaque, bytes: []const u8) std.posix.WriteError!usize {
+    pub fn send(ctx: *anyopaque, bytes: []const u8) std.posix.SendError!void {
         const self: *RawSocket = @ptrCast(@alignCast(ctx));
         self.send_mutex.lock();
         defer self.send_mutex.unlock();
-        return try std.posix.write(self.socket, bytes);
+        _ = try std.posix.send(self.socket, bytes, 0);
     }
 
     pub fn recv(ctx: *anyopaque, out: []u8) std.posix.RecvFromError!usize {

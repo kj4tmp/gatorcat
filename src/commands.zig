@@ -45,10 +45,15 @@ fn sendDatagram(
 
 /// No operation.
 /// The subdevice ignores the command.
-///
-/// TODO: implement no op
-pub fn nop(port: *nic.Port) void {
-    _ = port;
+pub fn nop(port: *nic.Port, timeout_us: u32) !u16 {
+    var data: [1]u8 = .{0};
+    return try sendDatagram(
+        port,
+        telegram.Command.NOP,
+        0,
+        &data,
+        timeout_us,
+    );
 }
 
 /// Auto increment physical read.

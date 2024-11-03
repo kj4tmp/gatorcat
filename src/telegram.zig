@@ -247,6 +247,47 @@ pub const EtherCATFrame = struct {
         return self.header.length + @divExact(@bitSizeOf(EtherCATHeader), 8);
     }
 
+    /// when sending and recieving a frame,
+    /// only certain parts of the frame should change.
+    /// We choose to not trust the received frame.
+    /// This function determines if the frame is "currupted"
+    /// when compared to an "original" frame.
+    pub fn isCurrupted(self: *const EtherCATFrame, original: *const EtherCATFrame) bool {
+        if (self.header != original.header) {
+            std.log.err("here", .{});
+            return true;
+        }
+        if (self.portable_datagrams.len != original.portable_datagrams.len) {
+            std.log.err("here2", .{});
+            return true;
+        }
+
+        assert(self.portable_datagrams.len == original.portable_datagrams.len);
+        for (self.portable_datagrams.slice(), original.portable_datagrams.slice(), 0..) |self_dgram, orig_dgram, i| {
+            if (self_dgram.header.command != orig_dgram.header.command) {
+                std.log.err("here6", .{});
+                return true;
+            }
+            // address may be incremented depending on commands
+            const check_addr: bool = switch (orig_dgram.header.command) {
+                .BWR, .BRD, .BRW, .APRD, .APWR, .APRW, .ARMW => false,
+                .FPRD, .FPWR, .FPRW, .LRD, .LWR, .LRW, .FRMW, .NOP => true,
+            };
+            if (check_addr and self_dgram.header.address != orig_dgram.header.address) return true;
+            // idx is skipped since it is injected on serialization
+            if (i != 0 and self_dgram.header.idx != orig_dgram.header.idx) return true;
+            if (self_dgram.header.length != orig_dgram.header.length) return true;
+            if (self_dgram.header.circulating != orig_dgram.header.circulating) return true;
+            if (self_dgram.header.next != orig_dgram.header.next) return true;
+            // TODO: irq can change, i think?
+            if (self_dgram.data_start != orig_dgram.data_start) return true;
+            if (self_dgram.data_end != orig_dgram.data_end) return true;
+            // enforce wkc unchanged for NOP
+            if (self_dgram.header.command == .NOP and self_dgram.wkc != orig_dgram.wkc) return true;
+        }
+        return false;
+    }
+
     const max_datagrams_length = max_frame_length -
         @divExact(@bitSizeOf(EthernetHeader), 8) -
         @divExact(@bitSizeOf(EtherCATHeader), 8);

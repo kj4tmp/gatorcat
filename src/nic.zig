@@ -7,6 +7,7 @@ const Timer = std.time.Timer;
 const ns_per_us = std.time.ns_per_us;
 
 const telegram = @import("telegram.zig");
+const commands = @import("commands.zig");
 
 const ETH_P_ETHERCAT = @intFromEnum(telegram.EtherType.ETHERCAT);
 const MAC_BROADCAST: u48 = 0xffff_ffff_ffff;
@@ -136,6 +137,10 @@ pub const Port = struct {
                 defer self.recv_frames_status_mutex.unlock();
                 const frame_res = telegram.EthernetFrame.deserialize(bytes_read);
                 if (frame_res) |frame| {
+                    if (frame.ethercat_frame.isCurrupted(self.recv_frames[recv_frame_idx])) {
+                        self.recv_frames_status[recv_frame_idx] = FrameStatus.in_use_currupted;
+                        return;
+                    }
                     self.recv_frames[recv_frame_idx].* = frame.ethercat_frame;
                     self.recv_frames_status[recv_frame_idx] = FrameStatus.in_use_received;
                 } else |err| switch (err) {
@@ -211,6 +216,11 @@ pub const Port = struct {
         } else {
             return error.RecvTimeout;
         }
+    }
+
+    /// send and recv a no-op to quickly check if port works and are connected
+    pub fn ping(self: *Port, timeout_us: u32) !void {
+        _ = try commands.nop(self, timeout_us);
     }
 };
 

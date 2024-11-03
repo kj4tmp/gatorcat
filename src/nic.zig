@@ -121,18 +121,20 @@ pub const Port = struct {
 
     fn recv_frame(self: *Port) !void {
         var buf: [telegram.max_frame_length]u8 = undefined;
-        var n_bytes_recv: usize = 0;
+        var frame_size: usize = 0;
 
-        n_bytes_recv = self.network_adapter.recv(&buf) catch |err| switch (err) {
+        frame_size = self.network_adapter.recv(&buf) catch |err| switch (err) {
             error.WouldBlock => return error.FrameNotFound,
             else => {
                 std.log.err("Socket error: {}", .{err});
                 return error.LinkError;
             },
         };
-        if (n_bytes_recv == 0) return;
+        if (frame_size == 0) return;
+        if (frame_size > telegram.max_frame_length) return error.InvalidFrame;
 
-        const bytes_recv: []const u8 = buf[0..n_bytes_recv];
+        assert(frame_size <= telegram.max_frame_length);
+        const bytes_recv: []const u8 = buf[0..frame_size];
         const recv_frame_idx = telegram.EthernetFrame.identifyFromBuffer(bytes_recv) catch return error.InvalidFrame;
 
         switch (self.recv_frames_status[recv_frame_idx]) {
@@ -232,12 +234,30 @@ pub const NetworkAdapter = struct {
         recv: *const fn (ctx: *anyopaque, out: []u8) anyerror!usize,
     };
 
-    /// warning: implementation must be thread-safe
+    /// Send data on the wire.
+    /// Sent data must include the ethernet header and not the FCS.
+    /// Sent data must be 1 frame.
+    ///
+    /// This is similar to the behavior of send() in linux on a raw
+    /// socket with MSG_TRUNC enabled.
+    ///
+    /// warning: implementation must be thread-safe.
     pub fn send(self: NetworkAdapter, data: []const u8) anyerror!usize {
+        assert(data.len <= telegram.max_frame_length);
         return try self.vtable.send(self.ptr, data);
     }
 
-    /// warning: implementation must be thread-safe
+    /// Receive data from the wire.
+    /// Received data must include ethernet header and not the FCS.
+    /// Receive up to 1 frame of data to the out buffer.
+    /// Returns the size of the frame or zero when there is no data,
+    /// regardless of the size of the out buffer.
+    /// Data in the frame beyond the size of the out buffer is discarded.
+    ///
+    /// This is similar to the behavior of recv() in linux on a raw
+    /// socket with MSG_TRUNC enabled.
+    ///
+    /// warning: implementation must be thread-safe.
     pub fn recv(self: NetworkAdapter, out: []u8) anyerror!usize {
         return try self.vtable.recv(self.ptr, out);
     }
@@ -293,20 +313,17 @@ pub const RawSocket = struct {
         try std.posix.ioctl_SIOCGIFINDEX(socket, &ifr);
         const ifindex: i32 = ifr.ifru.ivalue;
 
-        const IFF_PROMISC = 256;
-        const IFF_BROADCAST = 2;
-        const SIOCGIFFLAGS = 0x8913;
-        const SIOCSIFFLAGS = 0x8914;
-
-        var rval = std.posix.errno(std.os.linux.ioctl(socket, SIOCGIFFLAGS, @intFromPtr(&ifr)));
+        var rval = std.posix.errno(std.os.linux.ioctl(socket, std.os.linux.SIOCGIFFLAGS, @intFromPtr(&ifr)));
         switch (rval) {
             .SUCCESS => {},
             else => {
                 return error.nicError;
             },
         }
+        const IFF_PROMISC = 256;
+        const IFF_BROADCAST = 2;
         ifr.ifru.flags = ifr.ifru.flags | IFF_BROADCAST | IFF_PROMISC;
-        rval = std.posix.errno(std.os.linux.ioctl(socket, SIOCSIFFLAGS, @intFromPtr(&ifr)));
+        rval = std.posix.errno(std.os.linux.ioctl(socket, std.os.linux.SIOCSIFFLAGS, @intFromPtr(&ifr)));
         switch (rval) {
             .SUCCESS => {},
             else => {
@@ -339,11 +356,11 @@ pub const RawSocket = struct {
         return try std.posix.write(self.socket, bytes);
     }
 
-    pub fn recv(ctx: *anyopaque, out: []u8) std.posix.ReadError!usize {
+    pub fn recv(ctx: *anyopaque, out: []u8) std.posix.RecvFromError!usize {
         const self: *RawSocket = @ptrCast(@alignCast(ctx));
         self.recv_mutex.lock();
         defer self.recv_mutex.unlock();
-        return try std.posix.read(self.socket, out);
+        return try std.posix.recv(self.socket, out, std.posix.MSG.TRUNC);
     }
 
     pub fn networkAdapter(self: *RawSocket) NetworkAdapter {

@@ -169,17 +169,6 @@ pub const Datagram = struct {
     };
 };
 
-/// EtherCAT Header
-///
-/// Ref: IEC 61158-4-12:2019 5.3.3
-pub const EtherCATHeader = packed struct(u16) {
-    /// length of the following datagrams (not including this header)
-    length: u11,
-    reserved: u1 = 0,
-    /// ESC's only support EtherCAT commands (0x1)
-    type: u4 = 0x1,
-};
-
 // TODO: EtherCAT frame structure containing network variables. Ref: IEC 61158-4-12:2019 5.3.3
 
 /// EtherCAT Frame.
@@ -189,7 +178,7 @@ pub const EtherCATHeader = packed struct(u16) {
 ///
 /// Ref: IEC 61158-4-12:2019 5.3.3
 pub const EtherCATFrame = struct {
-    header: EtherCATHeader,
+    header: Header,
     portable_datagrams: std.BoundedArray(PortableDatagram, max_datagrams),
     data_store: [Datagram.max_data_length]u8,
 
@@ -216,7 +205,7 @@ pub const EtherCATFrame = struct {
                 .wkc = datagram.wkc,
             });
         }
-        const header = EtherCATHeader{
+        const header = Header{
             .length = header_length,
         };
         return EtherCATFrame{
@@ -244,7 +233,7 @@ pub const EtherCATFrame = struct {
     }
 
     fn getLength(self: EtherCATFrame) usize {
-        return self.header.length + @divExact(@bitSizeOf(EtherCATHeader), 8);
+        return self.header.length + @divExact(@bitSizeOf(Header), 8);
     }
 
     /// when sending and recieving a frame,
@@ -289,8 +278,8 @@ pub const EtherCATFrame = struct {
     }
 
     const max_datagrams_length = max_frame_length -
-        @divExact(@bitSizeOf(EthernetHeader), 8) -
-        @divExact(@bitSizeOf(EtherCATHeader), 8);
+        @divExact(@bitSizeOf(EthernetFrame.Header), 8) -
+        @divExact(@bitSizeOf(Header), 8);
 
     const max_datagrams = 15;
 
@@ -304,6 +293,17 @@ pub const EtherCATFrame = struct {
         data_end: u16,
         wkc: u16,
     };
+
+    /// EtherCAT Header
+    ///
+    /// Ref: IEC 61158-4-12:2019 5.3.3
+    pub const Header = packed struct(u16) {
+        /// length of the following datagrams (not including this header)
+        length: u11,
+        reserved: u1 = 0,
+        /// ESC's only support EtherCAT commands (0x1)
+        type: u4 = 0x1,
+    };
 };
 
 pub const EtherType = enum(u16) {
@@ -314,15 +314,6 @@ pub const EtherType = enum(u16) {
 
 // TODO: EtherCAT in UDP Frame. Ref: IEC 61158-4-12:2019 5.3.2
 
-/// Ethernet Header
-///
-/// Ref: IEC 61158-4-12:2019 5.3.1
-pub const EthernetHeader = packed struct(u112) {
-    dest_mac: u48,
-    src_mac: u48,
-    ether_type: EtherType,
-};
-
 /// Ethernet Frame
 ///
 /// This is what is actually sent on the wire.
@@ -331,15 +322,15 @@ pub const EthernetHeader = packed struct(u112) {
 ///
 /// Ref: IEC 61158-4-12:2019 5.3.1
 pub const EthernetFrame = struct {
-    header: EthernetHeader,
+    header: Header,
     ethercat_frame: EtherCATFrame,
     n_padding: u8,
 
     pub fn init(
-        header: EthernetHeader,
+        header: Header,
         ethercat_frame: EtherCATFrame,
     ) EthernetFrame {
-        const length: usize = @divExact(@bitSizeOf(EthernetHeader), 8) + ethercat_frame.getLength();
+        const length: usize = @divExact(@bitSizeOf(Header), 8) + ethercat_frame.getLength();
         const n_pad: u8 = @intCast(min_frame_length -| length);
 
         return EthernetFrame{
@@ -383,7 +374,7 @@ pub const EthernetFrame = struct {
         var fbs_reading = std.io.fixedBufferStream(received);
         const reader = fbs_reading.reader();
 
-        const ethernet_header = EthernetHeader{
+        const ethernet_header = Header{
             .dest_mac = try reader.readInt(u48, big),
             .src_mac = try reader.readInt(u48, big),
             .ether_type = @enumFromInt(try reader.readInt(u16, big)),
@@ -391,7 +382,7 @@ pub const EthernetFrame = struct {
         if (ethernet_header.ether_type != .ETHERCAT) {
             return error.NotAnEtherCATFrame;
         }
-        const ethercat_header = try wire.packFromECatReader(EtherCATHeader, reader);
+        const ethercat_header = try wire.packFromECatReader(EtherCATFrame.Header, reader);
         const bytes_remaining = try fbs_reading.getEndPos() - try fbs_reading.getPos();
         const bytes_total = try fbs_reading.getEndPos();
         if (bytes_total < min_frame_length) {
@@ -437,7 +428,7 @@ pub const EthernetFrame = struct {
     pub fn identifyFromBuffer(buf: []const u8) !u8 {
         var fbs = std.io.fixedBufferStream(buf);
         const reader = fbs.reader();
-        const ethernet_header = EthernetHeader{
+        const ethernet_header = Header{
             .dest_mac = try reader.readInt(u48, big),
             .src_mac = try reader.readInt(u48, big),
             .ether_type = @enumFromInt(try reader.readInt(u16, big)),
@@ -445,7 +436,7 @@ pub const EthernetFrame = struct {
         if (ethernet_header.ether_type != .ETHERCAT) {
             return error.NotAnEtherCATFrame;
         }
-        const ethercat_header = try wire.packFromECatReader(EtherCATHeader, reader);
+        const ethercat_header = try wire.packFromECatReader(EtherCATFrame.Header, reader);
         const bytes_remaining = try fbs.getEndPos() - try fbs.getPos();
         const bytes_total = try fbs.getEndPos();
         if (bytes_total < min_frame_length) {
@@ -461,6 +452,15 @@ pub const EthernetFrame = struct {
         const datagram_header = try wire.packFromECatReader(Datagram.Header, reader);
         return datagram_header.idx;
     }
+
+    /// Ethernet Header
+    ///
+    /// Ref: IEC 61158-4-12:2019 5.3.1
+    pub const Header = packed struct(u112) {
+        dest_mac: u48,
+        src_mac: u48,
+        ether_type: EtherType,
+    };
 };
 
 test "ethernet frame serialization" {
@@ -550,7 +550,7 @@ test "ethernet frame serialization / deserialization" {
 /// Constructed of 1500 payload and 14 byte header.
 pub const max_frame_length = 1514;
 comptime {
-    assert(max_frame_length == @divExact(@bitSizeOf(EthernetHeader), 8) + 1500);
+    assert(max_frame_length == @divExact(@bitSizeOf(EthernetFrame.Header), 8) + 1500);
 }
 pub const min_frame_length = 60;
 

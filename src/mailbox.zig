@@ -348,8 +348,8 @@ pub const max_size = 1486;
 // Derivation of max_size:
 comptime {
     assert(max_size == telegram.max_frame_length - // 1514
-        @divExact(@bitSizeOf(telegram.EthernetHeader), 8) - // u112
-        @divExact(@bitSizeOf(telegram.EtherCATHeader), 8) - // u16
+        @divExact(@bitSizeOf(telegram.EthernetFrame.Header), 8) - // u112
+        @divExact(@bitSizeOf(telegram.EtherCATFrame.Header), 8) - // u16
         @divExact(@bitSizeOf(telegram.Datagram.Header), 8) - // u80
         @divExact(@bitSizeOf(u16), 8)); // wkc
 }

@@ -19,12 +19,6 @@ pub fn main() !void {
         else => |scoped_err| return scoped_err,
     };
 
-    // try std.json.stringify(
-    //     parsed_args,
-    //     .{ .whitespace = .indent_2 },
-    //     std.io.getStdOut().writer(),
-    // );
-
     switch (parsed_args.command) {
         .scan => |scan_args| {
             var raw_socket = try gcat.nic.RawSocket.init(scan_args.ifname);

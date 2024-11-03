@@ -64,7 +64,7 @@ const eni = gcat.ENI{
 pub fn main() !void {
     var raw_socket = try gcat.nic.RawSocket.init("enx00e04c68191a");
     defer raw_socket.deinit();
-    var port = gcat.nic.Port.init(raw_socket.networkAdapter());
+    var port = gcat.nic.Port.init(raw_socket.networkAdapter(), .{});
     try port.ping(10000);
 
     var main_device = try gcat.MainDevice.init(

@@ -30,7 +30,7 @@ pub fn main() !void {
             var raw_socket = try gcat.nic.RawSocket.init(scan_args.ifname);
             defer raw_socket.deinit();
 
-            var port = gcat.nic.Port.init(raw_socket.networkAdapter());
+            var port = gcat.nic.Port.init(raw_socket.networkAdapter(), .{});
 
             try scan(
                 &port,

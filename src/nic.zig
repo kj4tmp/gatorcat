@@ -9,10 +9,6 @@ const ns_per_us = std.time.ns_per_us;
 const telegram = @import("telegram.zig");
 const commands = @import("commands.zig");
 
-const ETH_P_ETHERCAT = @intFromEnum(telegram.EtherType.ETHERCAT);
-const MAC_BROADCAST: u48 = 0xffff_ffff_ffff;
-const MAC_SOURCE: u48 = 0xAAAA_AAAA_AAAA;
-
 const FrameStatus = enum {
     /// available to be claimed
     available,
@@ -31,11 +27,15 @@ pub const Port = struct {
     recv_frames_status: [max_frames]FrameStatus = [_]FrameStatus{FrameStatus.available} ** max_frames,
     last_used_idx: u8 = 0,
     network_adapter: NetworkAdapter,
+    settings: Settings,
 
-    pub const max_frames: u9 = 256;
+    pub const Settings = struct {
+        source_mac_address: u48 = 0xffff_ffff_ffff,
+        dest_mac_address: u48 = 0xAAAA_AAAA_AAAA,
+    };
 
-    pub fn init(network_adapter: NetworkAdapter) Port {
-        return Port{ .network_adapter = network_adapter };
+    pub fn init(network_adapter: NetworkAdapter, settings: Settings) Port {
+        return Port{ .network_adapter = network_adapter, .settings = settings };
     }
 
     /// claim transaction
@@ -63,7 +63,11 @@ pub const Port = struct {
         self.recv_frames[idx] = recv_frame_ptr;
 
         var frame = telegram.EthernetFrame.init(
-            Port.get_ethernet_header(),
+            .{
+                .dest_mac = self.settings.dest_mac_address,
+                .src_mac = self.settings.dest_mac_address,
+                .ether_type = .ETHERCAT,
+            },
             send_frame.*,
         );
 
@@ -168,14 +172,6 @@ pub const Port = struct {
         }
     }
 
-    pub fn get_ethernet_header() telegram.EthernetHeader {
-        return telegram.EthernetHeader{
-            .dest_mac = MAC_BROADCAST,
-            .src_mac = MAC_SOURCE,
-            .ether_type = .ETHERCAT,
-        };
-    }
-
     pub const SendRecvError = error{
         TransactionContention,
         RecvTimeout,
@@ -222,6 +218,8 @@ pub const Port = struct {
     pub fn ping(self: *Port, timeout_us: u32) !void {
         _ = try commands.nop(self, timeout_us);
     }
+
+    pub const max_frames: u9 = 256;
 };
 
 /// Interface for networking hardware
@@ -255,6 +253,7 @@ pub const RawSocket = struct {
         ifname: []const u8,
     ) !RawSocket {
         assert(ifname.len <= std.posix.IFNAMESIZE - 1); // ifname too long
+        const ETH_P_ETHERCAT = @intFromEnum(telegram.EtherType.ETHERCAT);
         const socket: std.posix.socket_t = try std.posix.socket(
             std.posix.AF.PACKET,
             std.posix.SOCK.RAW,

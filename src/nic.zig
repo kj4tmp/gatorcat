@@ -77,8 +77,8 @@ pub const Port = struct {
         };
         const out = out_buf[0..n_bytes];
 
-        // TODO: handle partial write error
-        _ = self.network_adapter.write(out) catch return error.LinkError;
+        // TODO: handle partial send error
+        _ = self.network_adapter.send(out) catch return error.LinkError;
         {
             self.recv_frames_status_mutex.lock();
             defer self.recv_frames_status_mutex.unlock();
@@ -121,25 +121,25 @@ pub const Port = struct {
 
     fn recv_frame(self: *Port) !void {
         var buf: [telegram.max_frame_length]u8 = undefined;
-        var n_bytes_read: usize = 0;
+        var n_bytes_recv: usize = 0;
 
-        n_bytes_read = self.network_adapter.read(&buf) catch |err| switch (err) {
+        n_bytes_recv = self.network_adapter.recv(&buf) catch |err| switch (err) {
             error.WouldBlock => return error.FrameNotFound,
             else => {
                 std.log.err("Socket error: {}", .{err});
                 return error.LinkError;
             },
         };
-        if (n_bytes_read == 0) return;
+        if (n_bytes_recv == 0) return;
 
-        const bytes_read: []const u8 = buf[0..n_bytes_read];
-        const recv_frame_idx = telegram.EthernetFrame.identifyFromBuffer(bytes_read) catch return error.InvalidFrame;
+        const bytes_recv: []const u8 = buf[0..n_bytes_recv];
+        const recv_frame_idx = telegram.EthernetFrame.identifyFromBuffer(bytes_recv) catch return error.InvalidFrame;
 
         switch (self.recv_frames_status[recv_frame_idx]) {
             .in_use_receivable => {
                 self.recv_frames_status_mutex.lock();
                 defer self.recv_frames_status_mutex.unlock();
-                const frame_res = telegram.EthernetFrame.deserialize(bytes_read);
+                const frame_res = telegram.EthernetFrame.deserialize(bytes_recv);
                 if (frame_res) |frame| {
                     if (frame.ethercat_frame.isCurrupted(self.recv_frames[recv_frame_idx])) {
                         self.recv_frames_status[recv_frame_idx] = FrameStatus.in_use_currupted;
@@ -228,25 +228,25 @@ pub const NetworkAdapter = struct {
     vtable: *const VTable,
 
     pub const VTable = struct {
-        write: *const fn (ctx: *anyopaque, data: []const u8) anyerror!usize,
-        read: *const fn (ctx: *anyopaque, out: []u8) anyerror!usize,
+        send: *const fn (ctx: *anyopaque, data: []const u8) anyerror!usize,
+        recv: *const fn (ctx: *anyopaque, out: []u8) anyerror!usize,
     };
 
     /// warning: implementation must be thread-safe
-    pub fn write(self: NetworkAdapter, data: []const u8) anyerror!usize {
-        return try self.vtable.write(self.ptr, data);
+    pub fn send(self: NetworkAdapter, data: []const u8) anyerror!usize {
+        return try self.vtable.send(self.ptr, data);
     }
 
     /// warning: implementation must be thread-safe
-    pub fn read(self: NetworkAdapter, out: []u8) anyerror!usize {
-        return try self.vtable.read(self.ptr, out);
+    pub fn recv(self: NetworkAdapter, out: []u8) anyerror!usize {
+        return try self.vtable.recv(self.ptr, out);
     }
 };
 
 /// Raw socket implementation for NetworkAdapter
 pub const RawSocket = struct {
-    write_mutex: Mutex = .{},
-    read_mutex: Mutex = .{},
+    send_mutex: Mutex = .{},
+    recv_mutex: Mutex = .{},
     socket: std.posix.socket_t,
 
     pub fn init(
@@ -332,24 +332,24 @@ pub const RawSocket = struct {
         std.posix.close(self.socket);
     }
 
-    pub fn write(ctx: *anyopaque, bytes: []const u8) std.posix.WriteError!usize {
+    pub fn send(ctx: *anyopaque, bytes: []const u8) std.posix.WriteError!usize {
         const self: *RawSocket = @ptrCast(@alignCast(ctx));
-        self.write_mutex.lock();
-        defer self.write_mutex.unlock();
+        self.send_mutex.lock();
+        defer self.send_mutex.unlock();
         return try std.posix.write(self.socket, bytes);
     }
 
-    pub fn read(ctx: *anyopaque, out: []u8) std.posix.ReadError!usize {
+    pub fn recv(ctx: *anyopaque, out: []u8) std.posix.ReadError!usize {
         const self: *RawSocket = @ptrCast(@alignCast(ctx));
-        self.read_mutex.lock();
-        defer self.read_mutex.unlock();
+        self.recv_mutex.lock();
+        defer self.recv_mutex.unlock();
         return try std.posix.read(self.socket, out);
     }
 
     pub fn networkAdapter(self: *RawSocket) NetworkAdapter {
         return NetworkAdapter{
             .ptr = self,
-            .vtable = &.{ .write = write, .read = read },
+            .vtable = &.{ .send = send, .recv = recv },
         };
     }
 };

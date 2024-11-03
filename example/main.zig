@@ -12,9 +12,6 @@ const beckhoff_EL3048 = gcat.sii.SubDeviceIdentity{ .vendor_id = 0x2, .product_c
 const beckhoff_EL7041_1000 = gcat.sii.SubDeviceIdentity{ .vendor_id = 0x2, .product_code = 0x1b813052, .revision_number = 0x1503e8 };
 const beckhoff_EL2008 = gcat.sii.SubDeviceIdentity{ .vendor_id = 0x2, .product_code = 0x7d83052, .revision_number = 0x100000 };
 
-var subdevices: [255]gcat.SubDevice = undefined;
-var process_image = std.mem.zeroes([255]u8);
-
 const eni = gcat.ENI{
     .subdevices = &.{
         .{
@@ -66,6 +63,11 @@ pub fn main() !void {
     defer raw_socket.deinit();
     var port = gcat.nic.Port.init(raw_socket.networkAdapter(), .{});
     try port.ping(10000);
+
+    // Since the ENI is known at comptime for this example,
+    // we can construct exact stack usage here.
+    var subdevices: [eni.subdevices.len]gcat.SubDevice = undefined;
+    var process_image = std.mem.zeroes([eni.processImageSize()]u8);
 
     var main_device = try gcat.MainDevice.init(
         &port,

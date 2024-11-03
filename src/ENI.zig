@@ -13,6 +13,20 @@ const ENI = @This();
 
 subdevices: []const SubDeviceConfiguration,
 
+/// get the size of the process image in bytes
+pub fn processImageSize(self: *const ENI) u32 {
+    if (self.subdevices.len == 0) return 0;
+
+    // each subdevices will be given a byte aligned area for inputs
+    // and a byte aligned area for outputs.
+    var bytes_used: u32 = 0;
+    for (self.subdevices) |subdevice| {
+        bytes_used += (subdevice.inputs_bit_length + 7) / 8;
+        bytes_used += (subdevice.outputs_bit_length + 7) / 8;
+    }
+    return bytes_used;
+}
+
 pub const SubDeviceConfiguration = struct {
     /// identity
     identity: sii.SubDeviceIdentity,

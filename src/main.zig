@@ -25,6 +25,7 @@ pub fn main() !void {
             defer raw_socket.deinit();
 
             var port = gcat.nic.Port.init(raw_socket.networkAdapter(), .{});
+            try port.ping(scan_args.recv_timeout_us);
 
             try scan(
                 &port,

@@ -45,9 +45,10 @@ fn sendDatagram(
 
 /// No operation.
 /// The subdevice ignores the command.
-pub fn nop(port: *nic.Port, timeout_us: u32) !u16 {
+pub fn nop(port: *nic.Port, timeout_us: u32) !void {
     var data: [1]u8 = .{0};
-    return try sendDatagram(
+    // wkc can be ignored on NOP, it is always zero
+    _ = try sendDatagram(
         port,
         telegram.Command.NOP,
         0,

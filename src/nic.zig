@@ -218,7 +218,7 @@ pub const Port = struct {
 
     /// send and recv a no-op to quickly check if port works and are connected
     pub fn ping(self: *Port, timeout_us: u32) !void {
-        _ = try commands.nop(self, timeout_us);
+        try commands.nop(self, timeout_us);
     }
 
     pub const max_frames: u9 = 256;

@@ -56,7 +56,7 @@ pub fn setALState(
     recv_timeout_us: u32,
 ) !void {
     // TODO: consider not using the ack bit
-    const station_address: u16 = self.prior_info.station_address;
+    const station_address: u16 = stationAddressFromRingPos(self.prior_info.ring_position);
 
     const wkc = try commands.fpwrPack(
         port,
@@ -149,7 +149,7 @@ pub fn transitionIP(
 ) !void {
     _ = self.runtime_info.pi orelse return error.InvalidRuntimeInfo;
 
-    const station_address = self.prior_info.station_address;
+    const station_address = stationAddressFromRingPos(self.prior_info.ring_position);
     // check subdevice identity
     const info = try sii.readSIIFP_ps(
         port,
@@ -334,7 +334,7 @@ pub fn transitionPS(
     // Ref: IEC 61158-5-12:2019 6.1.1.1
 
     // TODO: does it say somewhere that if CoE supported the PDOs MUST be in the CoE?
-    const station_address = self.prior_info.station_address;
+    const station_address = stationAddressFromRingPos(self.prior_info.ring_position);
 
     try self.doStartupParameters(port, .PS, recv_timeout_us);
 
@@ -427,7 +427,7 @@ pub fn doStartupParameters(
     for (parameters) |parameter| {
         // TODO: support reads?
         if (parameter.transition == transition) {
-            std.log.info("station address: 0x{x}, doing startup parameter: {}", .{ self.prior_info.station_address, parameter });
+            std.log.info("station address: 0x{x}, doing startup parameter: {}", .{ stationAddressFromRingPos(self.prior_info.ring_position), parameter });
 
             try self.sdoWrite(
                 port,
@@ -457,7 +457,7 @@ pub fn sdoWrite(
 
     return try coe.sdoWrite(
         port,
-        self.prior_info.station_address,
+        stationAddressFromRingPos(self.prior_info.ring_position),
         index,
         subindex,
         complete_access,
@@ -485,7 +485,7 @@ pub fn sdoRead(
 
     return try coe.sdoRead(
         port,
-        self.prior_info.station_address,
+        stationAddressFromRingPos(self.prior_info.ring_position),
         index,
         subindex,
         complete_access,
@@ -496,6 +496,34 @@ pub fn sdoRead(
         this_coe.config,
         null,
     );
+}
+
+/// Calcuate the auto increment address of a subdevice
+/// for commands which use position addressing.
+///
+/// The position parameter is the the subdevice's position
+/// in the ethercat bus. 0 is the first subdevice.
+pub fn autoincAddressFromRingPos(ring_position: u16) u16 {
+    var rval: u16 = 0;
+    rval -%= ring_position;
+    return rval;
+}
+
+test "autoincAddressFromRingPos" {
+    try std.testing.expectEqual(@as(u16, 0), autoincAddressFromRingPos(0));
+    try std.testing.expectEqual(@as(u16, 65535), autoincAddressFromRingPos(1));
+    try std.testing.expectEqual(@as(u16, 65534), autoincAddressFromRingPos(2));
+    try std.testing.expectEqual(@as(u16, 65533), autoincAddressFromRingPos(3));
+    try std.testing.expectEqual(@as(u16, 65532), autoincAddressFromRingPos(4));
+}
+
+/// Calcuate the station address of a subdevice
+/// for commands which use station addressing.
+///
+/// The position parameter is the subdevice's position
+/// in the ethercat bus. 0 is the first subdevice.
+pub fn stationAddressFromRingPos(position: u16) u16 {
+    return 0x1000 +% position;
 }
 
 test {

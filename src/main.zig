@@ -94,7 +94,7 @@ fn scan(
             port,
             recv_timeout_us,
             eeprom_timeout_us,
-            gcat.MainDevice.calc_station_addr(@intCast(position)),
+            gcat.SubDevice.stationAddressFromRingPos(@intCast(position)),
         );
     } else {
         for (0..num_subdevices) |i| {
@@ -104,7 +104,7 @@ fn scan(
                 port,
                 recv_timeout_us,
                 eeprom_timeout_us,
-                gcat.MainDevice.calc_station_addr(@intCast(i)),
+                gcat.SubDevice.stationAddressFromRingPos(@intCast(i)),
             );
         }
     }
@@ -123,8 +123,8 @@ fn printBusSummary(
     try writer.print("---------------------------------------------------------------------------------\n", .{});
     for (0..num_subdevices) |i| {
         const ring_position: u16 = @intCast(i);
-        const autoinc_address: u16 = gcat.MainDevice.calc_autoinc_addr(ring_position);
-        const station_address: u16 = gcat.MainDevice.calc_station_addr(ring_position);
+        const autoinc_address: u16 = gcat.SubDevice.autoincAddressFromRingPos(ring_position);
+        const station_address: u16 = gcat.SubDevice.stationAddressFromRingPos(ring_position);
 
         const info = try gcat.sii.readSubdeviceInfoCompact(
             port,
@@ -168,8 +168,8 @@ fn printSubdeviceDetails(
     eeprom_timeout_us: u32,
     ring_position: u16,
 ) !void {
-    const autoinc_address: u16 = gcat.MainDevice.calc_autoinc_addr(ring_position);
-    const station_address: u16 = gcat.MainDevice.calc_station_addr(ring_position);
+    const autoinc_address: u16 = gcat.SubDevice.autoincAddressFromRingPos(ring_position);
+    const station_address: u16 = gcat.SubDevice.stationAddressFromRingPos(ring_position);
 
     const info = try gcat.sii.readSubdeviceInfoCompact(
         port,

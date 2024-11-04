@@ -9,6 +9,7 @@ const commands = @import("commands.zig");
 const MainDevice = @import("MainDevice.zig");
 const esc = @import("esc.zig");
 const wire = @import("wire.zig");
+const SubDevice = @import("SubDevice.zig");
 
 const Scanner = @This();
 
@@ -236,6 +237,6 @@ pub fn broadcastALStatusCheck(
 
 pub fn assignStationAddresses(self: *const Scanner, subdevice_count: u16) !void {
     for (0..subdevice_count) |i| {
-        try MainDevice.assignStationAddress(self.port, MainDevice.calc_station_addr(@intCast(i)), @intCast(i), self.settings.recv_timeout_us);
+        try MainDevice.assignStationAddress(self.port, SubDevice.stationAddressFromRingPos(@intCast(i)), @intCast(i), self.settings.recv_timeout_us);
     }
 }

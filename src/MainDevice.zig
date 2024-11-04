@@ -256,7 +256,7 @@ pub fn busPREOP(self: *MainDevice) !void {
     for (self.subdevices[0..self.eni.subdevices.len], self.eni.subdevices) |*subdevice, subdevice_config| {
         try assignStationAddress(
             self.port,
-            subdevice_config.station_address,
+            SubDevice.stationAddressFromRingPos(subdevice_config.ring_position),
             subdevice_config.ring_position,
             self.settings.recv_timeout_us,
         );
@@ -506,7 +506,7 @@ pub fn expectedProcessDataWkc(self: *MainDevice) u16 {
 
 /// Assign configured station address.
 pub fn assignStationAddress(port: *nic.Port, station_address: u16, ring_position: u16, recv_timeout_us: u32) !void {
-    const autoinc_address = calc_autoinc_addr(ring_position);
+    const autoinc_address = SubDevice.autoincAddressFromRingPos(ring_position);
     try commands.apwrPackWkc(
         port,
         esc.ConfiguredStationAddressRegister{
@@ -519,34 +519,6 @@ pub fn assignStationAddress(port: *nic.Port, station_address: u16, ring_position
         recv_timeout_us,
         1,
     );
-}
-
-/// Calcuate the auto increment address of a subdevice
-/// for commands which use position addressing.
-///
-/// The position parameter is the the subdevice's position
-/// in the ethercat bus. 0 is the first subdevice.
-pub fn calc_autoinc_addr(ring_position: u16) u16 {
-    var rval: u16 = 0;
-    rval -%= ring_position;
-    return rval;
-}
-
-test "calc_autoinc_addr" {
-    try std.testing.expectEqual(@as(u16, 0), calc_autoinc_addr(0));
-    try std.testing.expectEqual(@as(u16, 65535), calc_autoinc_addr(1));
-    try std.testing.expectEqual(@as(u16, 65534), calc_autoinc_addr(2));
-    try std.testing.expectEqual(@as(u16, 65533), calc_autoinc_addr(3));
-    try std.testing.expectEqual(@as(u16, 65532), calc_autoinc_addr(4));
-}
-
-/// Calcuate the station address of a subdevice
-/// for commands which use station addressing.
-///
-/// The position parameter is the subdevice's position
-/// in the ethercat bus. 0 is the first subdevice.
-pub fn calc_station_addr(position: u16) u16 {
-    return 0x1000 +% position;
 }
 
 test {

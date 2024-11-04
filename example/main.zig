@@ -16,12 +16,10 @@ const eni = gcat.ENI{
     .subdevices = &.{
         .{
             .identity = beckhoff_EK1100,
-            .station_address = 0x1000,
             .ring_position = 0,
         },
         .{
             .identity = beckhoff_EL3314,
-            .station_address = 0x1001,
             .ring_position = 1,
             .coe_startup_parameters = &.{
                 .{
@@ -38,7 +36,6 @@ const eni = gcat.ENI{
         },
         .{
             .identity = beckhoff_EL3048,
-            .station_address = 0x1002,
             .ring_position = 2,
             .inputs_bit_length = 256,
         },
@@ -80,7 +77,6 @@ const eni = gcat.ENI{
         //},
         .{
             .identity = beckhoff_EL2008,
-            .station_address = 0x1003,
             .ring_position = 3,
             .outputs_bit_length = 8,
         },

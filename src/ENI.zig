@@ -49,9 +49,6 @@ pub const SubDeviceConfiguration = struct {
     /// identity
     identity: sii.SubDeviceIdentity,
 
-    /// unique station address
-    /// TODO: figure out how to remove this / auto-assign it?
-    station_address: u16,
     /// zero-indexed position in the ethercat ring.
     /// first subdevice is 0, next is 1, etc.
     ring_position: u16,

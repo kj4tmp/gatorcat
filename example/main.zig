@@ -42,17 +42,46 @@ const eni = gcat.ENI{
             .ring_position = 2,
             .inputs_bit_length = 256,
         },
-        .{
-            .identity = beckhoff_EL7041_1000,
-            .station_address = 0x1003,
-            .ring_position = 3,
-            .inputs_bit_length = 64,
-            .outputs_bit_length = 64,
-        },
+        // .{
+        //     .identity = beckhoff_EL7041_1000,
+        //     .station_address = 0x1003,
+        //     .ring_position = 3,
+        //     .inputs_bit_length = 64,
+        //     .outputs_bit_length = 64,
+        //     .coe_startup_parameters = &.{
+        //         .{
+        //             .transition = .PS,
+        //             .direction = .write,
+        //             .index = 0x1c12,
+        //             .subindex = 0x0,
+        //             .complete_access = true,
+        //             .data = &.{ 0x03, 0x00, 0x00, 0x16, 0x02, 0x16, 0x04, 0x16, 0x03, 0x00, 0x00, 0x16, 0x02, 0x16, 0x04, 0x16 },
+        //             .timeout_us = 10_000,
+        //         },
+        //         .{
+        //             .transition = .PS,
+        //             .direction = .write,
+        //             .index = 0x1c12,
+        //             .subindex = 0x0,
+        //             .complete_access = true,
+        //             .data = &.{ 0x03, 0x00, 0x00, 0x16, 0x02, 0x16, 0x04, 0x16, 0x03, 0x00, 0x00, 0x16, 0x02, 0x16, 0x04, 0x16 },
+        //             .timeout_us = 10_000,
+        //         },
+        //         .{
+        //             .transition = .PS,
+        //             .direction = .write,
+        //             .index = 0x1c13,
+        //             .subindex = 0x0,
+        //             .complete_access = true,
+        //             .data = &.{ 0x02, 0x00, 0x00, 0x1a, 0x03, 0x1a },
+        //             .timeout_us = 10_000,
+        //         },
+        //     },
+        //},
         .{
             .identity = beckhoff_EL2008,
-            .station_address = 0x1004,
-            .ring_position = 4,
+            .station_address = 0x1003,
+            .ring_position = 3,
             .outputs_bit_length = 8,
         },
     },
@@ -88,6 +117,7 @@ pub fn main() !void {
     var timer2 = try std.time.Timer.start();
     var timer3 = try std.time.Timer.start();
     var timer4 = try std.time.Timer.start();
+    var timer5 = try std.time.Timer.start();
     var frame_count: u32 = 0;
 
     while (true) {
@@ -97,11 +127,11 @@ pub fn main() !void {
                 std.log.warn("recv timeout", .{});
                 continue;
             },
-            // error.Wkc => {
-            //     std.log.warn("wkc error", .{});
-            //     continue;
-            // },
-            error.Wkc,
+            error.Wkc => {
+                std.log.warn("wkc error", .{});
+                continue;
+            },
+            // error.Wkc,
             error.LinkError,
             error.CurruptedFrame,
             error.Overflow,
@@ -132,13 +162,18 @@ pub fn main() !void {
         if (timer2.read() > std.time.ns_per_s * 0.1) {
             timer2.reset();
             // make the lights flash on the EL2008
-            subdevices[4].runtime_info.pi.?.outputs[0] *%= 2;
-            if (subdevices[4].runtime_info.pi.?.outputs[0] == 0) {
-                subdevices[4].runtime_info.pi.?.outputs[0] = 1;
+            subdevices[3].runtime_info.pi.?.outputs[0] *%= 2;
+            if (subdevices[3].runtime_info.pi.?.outputs[0] == 0) {
+                subdevices[3].runtime_info.pi.?.outputs[0] = 1;
             }
         }
 
         timer3.reset();
+
+        if (timer5.read() > std.time.ns_per_s * 5) {
+            timer5.reset();
+            try subdevices[0].setALState(&port, .SAFEOP, 10000, 10000);
+        }
     }
 }
 

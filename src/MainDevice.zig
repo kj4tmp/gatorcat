@@ -292,8 +292,7 @@ pub fn busPREOP(self: *MainDevice) !void {
 
 pub fn busSAFEOP(self: *MainDevice) !void {
     // perform PS tasks for each subdevice
-    for (self.subdevices[0..self.eni.subdevices.len], self.eni.subdevices) |*subdevice, subdevice_config| {
-        _ = subdevice_config;
+    for (self.subdevices[0..self.eni.subdevices.len]) |*subdevice| {
 
         // TODO: assert non-overlapping FMMU configuration
         try subdevice.transitionPS(
@@ -303,6 +302,9 @@ pub fn busSAFEOP(self: *MainDevice) !void {
             subdevice.runtime_info.pi.?.inputs_area.start_addr,
             subdevice.runtime_info.pi.?.outputs_area.start_addr,
         );
+    }
+
+    for (self.subdevices[0..self.eni.subdevices.len]) |*subdevice| {
         try subdevice.setALState(
             self.port,
             .SAFEOP,
@@ -327,7 +329,7 @@ pub fn busOP(self: *MainDevice) !void {
             self.settings.recv_timeout_us,
         );
     }
-    for (0..100000) |_| _ = self.sendRecvCyclicFrames() catch |err| switch (err) {
+    for (0..100) |_| _ = self.sendRecvCyclicFrames() catch |err| switch (err) {
         error.NotAllSubdevicesInOP, error.RecvTimeout => {},
         error.Wkc => {},
         // TODO: revise this error handling?
@@ -454,19 +456,21 @@ pub fn sendRecvCyclicFrames(self: *MainDevice) !u16 {
         }
     }
     if (wkc != self.expectedProcessDataWkc()) {
-        // std.log.err("wkc error, expected: {}, actual: {}", .{ self.expectedProcessDataWkc(), wkc });
+        std.log.err("wkc error, expected: {}, actual: {}", .{ self.expectedProcessDataWkc(), wkc });
         return error.Wkc;
     }
 
     // copy data to process image now that we know wkc is correct
     // telegram.EtherCATFrame.isCurrupted protects against memory
     // curruption
-    assert(wkc != self.expectedProcessDataWkc());
+    assert(wkc == self.expectedProcessDataWkc());
     for (self.frames[0..used_frames]) |*frame| {
         for (frame.datagrams().slice()) |*dgram| {
             switch (dgram.header.command) {
                 .LRD => {
-                    @memcpy(self.process_image[dgram.header.address..], dgram.data);
+                    const start = dgram.header.address;
+                    const end_exclusive = dgram.header.address + dgram.data.len;
+                    @memcpy(self.process_image[start..end_exclusive], dgram.data);
                 },
                 // no need to copy to outputs
                 .BRD, .LWR => {},

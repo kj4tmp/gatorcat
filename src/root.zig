@@ -9,6 +9,7 @@ pub const ENI = @import("ENI.zig");
 pub const sii = @import("sii.zig");
 pub const commands = @import("commands.zig");
 pub const Scanner = @import("Scanner.zig");
+pub const telegram = @import("telegram.zig");
 
 test {
     std.testing.refAllDecls(@This());

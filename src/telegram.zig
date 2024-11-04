@@ -134,15 +134,20 @@ pub const Datagram = struct {
         };
     }
 
-    fn getLength(self: Datagram) usize {
+    pub fn getLength(self: Datagram) u11 {
         return self.header.length +
             @divExact(@bitSizeOf(Header), 8) +
             @divExact(@bitSizeOf(u16), 8);
     }
 
+    /// max length of datagram data field
     pub const max_data_length = EtherCATFrame.max_datagrams_length -
         @divExact(@bitSizeOf(Header), 8) -
-        @divExact(@bitSizeOf(u16), 8);
+        @divExact(@bitSizeOf(u16), 8); // wkc
+
+    /// number of bytes required when there is no data.
+    pub const data_overhead = @divExact(@bitSizeOf(Header), 8) +
+        @divExact(@bitSizeOf(u16), 8); // wkc
 
     /// Datagram Header
     ///
@@ -179,14 +184,14 @@ pub const Datagram = struct {
 /// Ref: IEC 61158-4-12:2019 5.3.3
 pub const EtherCATFrame = struct {
     header: Header,
-    portable_datagrams: std.BoundedArray(PortableDatagram, max_datagrams),
-    data_store: [Datagram.max_data_length]u8,
+    portable_datagrams: std.BoundedArray(PortableDatagram, max_datagrams) = .{},
+    data_store: [Datagram.max_data_length]u8 = undefined,
 
-    pub fn init(dgrams: []Datagram) !EtherCATFrame {
+    pub fn init(dgrams: []const Datagram) !EtherCATFrame {
         assert(dgrams.len != 0); // no datagrams
         assert(dgrams.len <= 15); // too many datagrams
         for (dgrams) |datagram| {
-            assert(datagram.data.len > 0);
+            assert(datagram.data.len > 0); // zero length datagrams are not supported
         }
 
         var header_length: u11 = 0;
@@ -197,11 +202,16 @@ pub const EtherCATFrame = struct {
 
         for (dgrams) |datagram| {
             header_length += @intCast(datagram.getLength());
+            const start_pos = try fbs.getPos();
             try writer.writeAll(datagram.data);
+            const end_pos = try fbs.getPos();
+            assert(start_pos < end_pos);
+            assert(start_pos <= data_store.len);
+            assert(end_pos <= data_store.len);
             try portable_datagrams.append(PortableDatagram{
                 .header = datagram.header,
-                .data_start = @intCast(try fbs.getPos() - datagram.data.len),
-                .data_end = @intCast(try fbs.getPos()),
+                .data_start = @intCast(start_pos),
+                .data_end = @intCast(end_pos),
                 .wkc = datagram.wkc,
             });
         }
@@ -277,21 +287,31 @@ pub const EtherCATFrame = struct {
         return false;
     }
 
-    const max_datagrams_length = max_frame_length -
+    pub const max_datagrams_length = max_frame_length -
         @divExact(@bitSizeOf(EthernetFrame.Header), 8) -
         @divExact(@bitSizeOf(Header), 8);
 
-    const max_datagrams = 15;
+    pub const max_datagrams = 15;
 
     /// Stack portable storage of a datagram.
     /// This struct is packed only for reducing its size.
-    const PortableDatagram = packed struct(u128) {
+    pub const PortableDatagram = packed struct(u128) {
         header: Datagram.Header,
         /// inclusive start of datagram data in parent data
         data_start: u16,
         /// exclusive end of datagram data in parent data
         data_end: u16,
         wkc: u16,
+
+        pub fn init(dgram: Datagram, data_start: u16) PortableDatagram {
+            assert(dgram.data.len > 0);
+            return PortableDatagram{
+                .header = dgram.header,
+                .data_start = data_start,
+                .data_end = data_start + @as(u16, @intCast(dgram.data.len)),
+                .wkc = dgram.wkc,
+            };
+        }
     };
 
     /// EtherCAT Header

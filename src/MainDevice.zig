@@ -10,6 +10,7 @@ const sii = @import("sii.zig");
 const SubDevice = @import("SubDevice.zig");
 const ENI = @import("ENI.zig");
 const pdi = @import("pdi.zig");
+const FrameBuilder = @import("FrameBuilder.zig");
 
 const MainDevice = @This();
 
@@ -18,6 +19,7 @@ settings: Settings,
 eni: *const ENI,
 subdevices: []SubDevice,
 process_image: []u8,
+frames: []telegram.EtherCATFrame,
 
 pub const Settings = struct {
     recv_timeout_us: u32 = 2000,
@@ -30,6 +32,7 @@ pub fn init(
     eni: *const ENI,
     subdevices: []SubDevice,
     process_image: []u8,
+    frames: []telegram.EtherCATFrame,
 ) !MainDevice {
     assert(eni.subdevices.len < 65537); // too many subdevices
 
@@ -43,6 +46,7 @@ pub fn init(
         .eni = eni,
         .subdevices = subdevices,
         .process_image = process_image,
+        .frames = frames,
     };
 }
 
@@ -316,7 +320,6 @@ pub fn busOP(self: *MainDevice) !void {
             self.port,
             self.settings.recv_timeout_us,
         );
-        for (0..10) |_| _ = try self.sendCyclicFrame();
         try subdevice.setALState(
             self.port,
             .OP,
@@ -324,10 +327,177 @@ pub fn busOP(self: *MainDevice) !void {
             self.settings.recv_timeout_us,
         );
     }
+    for (0..100000) |_| _ = self.sendRecvCyclicFrames() catch |err| switch (err) {
+        error.NotAllSubdevicesInOP, error.RecvTimeout => {},
+        error.Wkc => {},
+        // TODO: revise this error handling?
+        error.LinkError,
+        error.Overflow,
+        error.NoSpaceLeft,
+
+        error.FrameSerializationFailure,
+        error.CurruptedFrame,
+        error.EndOfStream,
+        error.ProcessImageTooLarge,
+        error.NotEnoughFrames,
+        error.NoTransactionAvailable,
+        error.TopologyChanged,
+        => |err2| return err2,
+    };
 }
 
-pub fn sendCyclicFrame(self: *MainDevice) !u16 {
-    return try commands.lrw(self.port, 0, self.process_image, self.settings.recv_timeout_us);
+/// returns process data wkc
+pub fn sendRecvCyclicFrames(self: *MainDevice) !u16 {
+    // emit the following datagrams (packed into frames):
+    // 1. brd (1 datagram) on AL Status Register
+    // 2. lrd (as many datagrams as needed for input process data)
+    // 3. lrw (as many datagrams as needed for output process data)
+
+    // TODO: implement frame re-cycling upon receive to allow extremely large process data?
+    // consume inputs
+    var input_bytes_remaining = self.eni.processImageInputsSize();
+    var output_bytes_remaining = self.eni.processImageOutputsSize();
+    var logical_addr: u32 = 0;
+
+    var used_frames: u9 = 0;
+    build_frames: for (0..257) |i| {
+        if (i == 256) return error.ProcessImageTooLarge;
+
+        var builder = FrameBuilder{};
+        if (i == 0) {
+            try builder.appendBrdPack(
+                esc.ALStatusRegister,
+                .{
+                    .autoinc_address = 0,
+                    .offset = @intFromEnum(esc.RegisterMap.AL_status),
+                },
+            );
+        }
+
+        // append input datagrams
+        if (input_bytes_remaining > 0 and builder.datagramDataSpaceRemaining() > 0) {
+            const bytes_to_consume = @min(input_bytes_remaining, builder.datagramDataSpaceRemaining());
+            const start = logical_addr;
+            const end_exclusive = logical_addr + bytes_to_consume;
+            try builder.appendLrd(logical_addr, self.process_image[start..end_exclusive]);
+            input_bytes_remaining -= bytes_to_consume;
+            logical_addr += bytes_to_consume;
+        }
+
+        // append output datagrams
+        if (input_bytes_remaining == 0 and
+            output_bytes_remaining > 0 and
+            builder.datagramDataSpaceRemaining() > 0)
+        {
+            const bytes_to_consume = @min(output_bytes_remaining, builder.datagramDataSpaceRemaining());
+            const start = logical_addr;
+            const end_exclusive = logical_addr + bytes_to_consume;
+            try builder.appendLwr(logical_addr, self.process_image[start..end_exclusive]);
+            output_bytes_remaining -= bytes_to_consume;
+            logical_addr += bytes_to_consume;
+        }
+
+        if (i > self.frames.len - 1) return error.NotEnoughFrames;
+        self.frames[i] = builder.dumpFrame();
+        used_frames += 1;
+
+        if (input_bytes_remaining == 0 and output_bytes_remaining == 0) break :build_frames;
+    }
+    assert(input_bytes_remaining == 0);
+    assert(output_bytes_remaining == 0);
+
+    // send muliple frames in flight
+    var transactions = std.BoundedArray(u8, 256){};
+    defer {
+        for (transactions.slice()) |transaction| {
+            self.port.release_transaction(transaction);
+        }
+    }
+    for (self.frames[0..used_frames]) |*frame| {
+        const transaction_idx = try self.port.claim_transaction();
+        transactions.append(transaction_idx) catch |err| switch (err) {
+            error.Overflow => {
+                self.port.release_transaction(transaction_idx);
+                return error.Overflow;
+            },
+        };
+        try self.port.send_transaction(transaction_idx, frame, frame);
+    }
+
+    // gather transactions (subject to recv timeout)
+    var timer = std.time.Timer.start() catch @panic("timer not supported");
+    recv: while (timer.read() < @as(u64, self.settings.recv_timeout_us) * std.time.ns_per_us) {
+        if (transactions.len == 0) break :recv;
+        const transaction = transactions.pop();
+        if (try self.port.continue_transaction(transaction)) {
+            self.port.release_transaction(transaction);
+        } else {
+            try transactions.append(transaction);
+        }
+    } else {
+        return error.RecvTimeout;
+    }
+
+    // TODO: use individual datagram WKC's
+    // check wkc
+    var wkc: u16 = 0;
+    for (self.frames[0..used_frames]) |*frame| {
+        for (frame.portable_datagrams.slice()) |*dgram| {
+            switch (dgram.header.command) {
+                .LRD, .LWR => {
+                    wkc +|= dgram.wkc;
+                    // std.debug.print("command: {}, wkc: {}\n", .{ command, dgram.wkc });
+                },
+                .BRD => {},
+                else => unreachable,
+            }
+        }
+    }
+    if (wkc != self.expectedProcessDataWkc()) {
+        // std.log.err("wkc error, expected: {}, actual: {}", .{ self.expectedProcessDataWkc(), wkc });
+        return error.Wkc;
+    }
+
+    // copy data to process image now that we know wkc is correct
+    // telegram.EtherCATFrame.isCurrupted protects against memory
+    // curruption
+    assert(wkc != self.expectedProcessDataWkc());
+    for (self.frames[0..used_frames]) |*frame| {
+        for (frame.datagrams().slice()) |*dgram| {
+            switch (dgram.header.command) {
+                .LRD => {
+                    @memcpy(self.process_image[dgram.header.address..], dgram.data);
+                },
+                // no need to copy to outputs
+                .BRD, .LWR => {},
+                else => unreachable,
+            }
+        }
+    }
+
+    // check subdevice states
+    assert(self.frames[0].portable_datagrams.slice()[0].header.command == .BRD);
+    const state_check_dgram: telegram.Datagram = self.frames[0].datagrams().slice()[0];
+    if (state_check_dgram.wkc != self.eni.subdevices.len) {
+        return error.TopologyChanged;
+    }
+    var fbs = std.io.fixedBufferStream(state_check_dgram.data);
+    const reader = fbs.reader();
+    const al_status = try wire.packFromECatReader(esc.ALStatusRegister, reader);
+    if (al_status.state != .OP) return error.NotAllSubdevicesInOP;
+
+    return wkc;
+}
+
+pub fn expectedProcessDataWkc(self: *MainDevice) u16 {
+    // the subdevices are expected to increment the wkc once on each LRD
+    // and once on each LWR if they have process data
+    var wkc: u16 = 0;
+    for (self.eni.subdevices) |subdevice| {
+        if (subdevice.outputs_bit_length > 0) wkc += 1;
+        if (subdevice.inputs_bit_length > 0) wkc += 1;
+    }
+    return wkc;
 }
 
 /// Assign configured station address.

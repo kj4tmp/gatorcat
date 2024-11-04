@@ -68,6 +68,7 @@ pub fn main() !void {
     // we can construct exact stack usage here.
     var subdevices: [eni.subdevices.len]gcat.SubDevice = undefined;
     var process_image = std.mem.zeroes([eni.processImageSize()]u8);
+    var frames: [256]gcat.telegram.EtherCATFrame = undefined;
 
     var main_device = try gcat.MainDevice.init(
         &port,
@@ -75,6 +76,7 @@ pub fn main() !void {
         &eni,
         &subdevices,
         &process_image,
+        &frames,
     );
 
     try main_device.busINIT();
@@ -90,12 +92,28 @@ pub fn main() !void {
 
     while (true) {
         timer4.reset();
-        const wkc = main_device.sendCyclicFrame() catch |err| switch (err) {
+        const wkc = main_device.sendRecvCyclicFrames() catch |err| switch (err) {
             error.RecvTimeout => {
                 std.log.warn("recv timeout", .{});
                 continue;
             },
-            error.LinkError, error.TransactionContention, error.CurruptedFrame => |err2| return err2,
+            // error.Wkc => {
+            //     std.log.warn("wkc error", .{});
+            //     continue;
+            // },
+            error.Wkc,
+            error.LinkError,
+            error.CurruptedFrame,
+            error.Overflow,
+            error.NoSpaceLeft,
+            error.FrameSerializationFailure,
+            error.EndOfStream,
+            error.NotAllSubdevicesInOP,
+            error.ProcessImageTooLarge,
+            error.NotEnoughFrames,
+            error.NoTransactionAvailable,
+            error.TopologyChanged,
+            => |err2| return err2,
         };
         const recv_us = timer4.read() / std.time.ns_per_us;
         frame_count += 1;

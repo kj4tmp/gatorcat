@@ -253,7 +253,7 @@ pub const EtherCATFrame = struct {
     /// when compared to an "original" frame.
     pub fn isCurrupted(self: *const EtherCATFrame, original: *const EtherCATFrame) bool {
         if (self.header != original.header) {
-            std.log.err("here", .{});
+            std.debug.print("here", .{});
             return true;
         }
         if (self.portable_datagrams.len != original.portable_datagrams.len) {

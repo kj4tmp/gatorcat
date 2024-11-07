@@ -2,12 +2,11 @@ const std = @import("std");
 const lossyCast = std.math.lossyCast;
 const Mutex = std.Thread.Mutex;
 const assert = std.debug.assert;
-
 const Timer = std.time.Timer;
 const ns_per_us = std.time.ns_per_us;
 
-const telegram = @import("telegram.zig");
 const commands = @import("commands.zig");
+const telegram = @import("telegram.zig");
 
 const FrameStatus = enum {
     /// available to be claimed
@@ -31,7 +30,7 @@ pub const Port = struct {
 
     pub const Settings = struct {
         source_mac_address: u48 = 0xffff_ffff_ffff,
-        dest_mac_address: u48 = 0xAAAA_AAAA_AAAA,
+        dest_mac_address: u48 = 0xABCD_EF12_3456,
     };
 
     pub fn init(network_adapter: NetworkAdapter, settings: Settings) Port {
@@ -65,7 +64,7 @@ pub const Port = struct {
         var frame = telegram.EthernetFrame.init(
             .{
                 .dest_mac = self.settings.dest_mac_address,
-                .src_mac = self.settings.dest_mac_address,
+                .src_mac = self.settings.source_mac_address,
                 .ether_type = .ETHERCAT,
             },
             send_frame.*,
@@ -382,6 +381,8 @@ const npcap = @cImport({
 var pcap_errbuf: [npcap.PCAP_ERRBUF_SIZE]u8 = [_]u8{0} ** npcap.PCAP_ERRBUF_SIZE;
 
 pub const WindowsRawSocket = struct {
+    send_mutex: Mutex = .{},
+    recv_mutex: Mutex = .{},
     socket: *npcap.struct_pcap,
 
     pub fn init(ifname: [:0]const u8) !WindowsRawSocket {
@@ -398,14 +399,31 @@ pub const WindowsRawSocket = struct {
     }
 
     pub fn send(ctx: *anyopaque, bytes: []const u8) std.posix.SendError!void {
-        _ = ctx;
-        _ = bytes;
+        const self: *WindowsRawSocket = @ptrCast(@alignCast(ctx));
+        self.send_mutex.lock();
+        defer self.send_mutex.unlock();
+        const result = npcap.pcap_sendpacket(self.socket, bytes.ptr, @intCast(bytes.len));
+        if (result == npcap.PCAP_ERROR) return error.NetworkSubsystemFailed;
     }
 
     pub fn recv(ctx: *anyopaque, out: []u8) std.posix.RecvFromError!usize {
-        _ = ctx;
-        _ = out;
-        return 0;
+        const self: *WindowsRawSocket = @ptrCast(@alignCast(ctx));
+        self.recv_mutex.lock();
+        defer self.recv_mutex.unlock();
+        var packet_header_ptr: [*c]npcap.pcap_pkthdr = undefined;
+        var packet_data_ptr: [*c]const u8 = undefined;
+        const result = npcap.pcap_next_ex(self.socket, &packet_header_ptr, &packet_data_ptr);
+        if (result == 0) return 0;
+        if (result != 1) return error.NetworkSubsystemFailed;
+        var fbs = std.io.fixedBufferStream(out);
+        const writer = fbs.writer();
+
+        const bytes_received = packet_header_ptr.*.len;
+        if (bytes_received == 0) return 0;
+        writer.writeAll(packet_data_ptr[0..bytes_received]) catch |err| switch (err) {
+            error.NoSpaceLeft => return @intCast(bytes_received),
+        };
+        return @intCast(bytes_received);
     }
 
     pub fn networkAdapter(self: *WindowsRawSocket) NetworkAdapter {

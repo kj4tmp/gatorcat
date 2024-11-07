@@ -46,3 +46,8 @@ GatorCAT is an EtherCAT maindevice written for the zig programming language.
   - [ ] nic
     - [ ] linux / XDP
   - [ ] timers
+
+## Windows Setup
+
+1. Run `getmac /fo csv /v` in command prompt
+2. ifname for npcap is of the format: `\Device\NPF_{538CF305-6539-480E-ACD9-BEE598E7AE8F}`

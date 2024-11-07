@@ -375,6 +375,51 @@ pub const RawSocket = struct {
     }
 };
 
+const npcap = @cImport({
+    @cInclude("pcap.h");
+});
+
+var pcap_errbuf: [npcap.PCAP_ERRBUF_SIZE]u8 = [_]u8{0} ** npcap.PCAP_ERRBUF_SIZE;
+
+pub const WindowsRawSocket = struct {
+    socket: *npcap.struct_pcap,
+
+    pub fn init(ifname: [:0]const u8) !WindowsRawSocket {
+        const socket = npcap.pcap_open(ifname, 65536, npcap.PCAP_OPENFLAG_PROMISCUOUS |
+            npcap.PCAP_OPENFLAG_MAX_RESPONSIVENESS |
+            npcap.PCAP_OPENFLAG_NOCAPTURE_LOCAL, -1, null, &pcap_errbuf) orelse {
+            std.log.err("Failed to open interface {s}, npcap error: {s}", .{ ifname, pcap_errbuf });
+            return error.FailedToOpenInterface;
+        };
+
+        return WindowsRawSocket{
+            .socket = socket,
+        };
+    }
+
+    pub fn send(ctx: *anyopaque, bytes: []const u8) std.posix.SendError!void {
+        _ = ctx;
+        _ = bytes;
+    }
+
+    pub fn recv(ctx: *anyopaque, out: []u8) std.posix.RecvFromError!usize {
+        _ = ctx;
+        _ = out;
+        return 0;
+    }
+
+    pub fn networkAdapter(self: *WindowsRawSocket) NetworkAdapter {
+        return NetworkAdapter{
+            .ptr = self,
+            .vtable = &.{ .send = send, .recv = recv },
+        };
+    }
+
+    pub fn deinit(self: WindowsRawSocket) void {
+        npcap.pcap_close(self.socket);
+    }
+};
+
 test {
     std.testing.refAllDecls(@This());
 }

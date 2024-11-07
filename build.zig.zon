@@ -7,6 +7,10 @@
             .url = "https://github.com/n0s4/flags/archive/refs/tags/v0.10.0.tar.gz",
             .hash = "12200d3243c5919d6ae3254f991bdf95956f349ccd6d3463f9beb5454d300a0f1e64",
         },
+        .npcap_sdk = .{
+            .url = "https://npcap.com/dist/npcap-sdk-1.13.zip",
+            .hash = "12206001b370bb70f9dc47c846df6ad82725e4491650472dc7037c5e027792ba207e",
+        },
     },
     .paths = .{
         "build.zig",

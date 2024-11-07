@@ -2,10 +2,11 @@ const std = @import("std");
 
 const flags = @import("flags");
 const gcat = @import("gatorcat");
+const builtin = @import("builtin");
 
-pub const std_options = .{
-    .log_level = .warn,
-};
+// pub const std_options = .{
+//     .log_level = .warn,
+// };
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -21,7 +22,11 @@ pub fn main() !void {
 
     switch (parsed_args.command) {
         .scan => |scan_args| {
-            var raw_socket = try gcat.nic.RawSocket.init(scan_args.ifname);
+            var raw_socket = switch (builtin.target.os.tag) {
+                .linux => try gcat.nic.RawSocket.init(scan_args.ifname),
+                .windows => try gcat.nic.WindowsRawSocket.init("eth0"),
+                else => @compileError("unsupported target os"),
+            };
             defer raw_socket.deinit();
 
             var port = gcat.nic.Port.init(raw_socket.networkAdapter(), .{});

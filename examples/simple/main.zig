@@ -2,7 +2,7 @@ const std = @import("std");
 
 const gcat = @import("gatorcat");
 
-pub const std_options = .{
+pub const std_options: std.Options = .{
     .log_level = .info,
 };
 
@@ -86,7 +86,7 @@ const eni = gcat.ENI{
 pub fn main() !void {
     var raw_socket = try gcat.nic.RawSocket.init("enx00e04c68191a");
     defer raw_socket.deinit();
-    var port = gcat.nic.Port.init(raw_socket.networkAdapter(), .{});
+    var port = gcat.Port.init(raw_socket.networkAdapter(), .{});
     try port.ping(10000);
 
     // Since the ENI is known at comptime for this example,

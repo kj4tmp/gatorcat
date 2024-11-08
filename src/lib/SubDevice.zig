@@ -13,6 +13,7 @@ const coe = @import("mailbox/coe.zig");
 const mailbox = @import("mailbox.zig");
 const ENI = @import("ENI.zig");
 const pdi = @import("pdi.zig");
+const Port = @import("Port.zig");
 
 runtime_info: RuntimeInfo = .{},
 prior_info: ENI.SubDeviceConfiguration,
@@ -50,7 +51,7 @@ const SubDevice = @This();
 
 pub fn setALState(
     self: *const SubDevice,
-    port: *nic.Port,
+    port: *Port,
     state: esc.ALStateControl,
     change_timeout_us: u32,
     recv_timeout_us: u32,
@@ -143,7 +144,7 @@ pub fn setALState(
 /// Ref: EtherCAT Device Protocol Poster
 pub fn transitionIP(
     self: *SubDevice,
-    port: *nic.Port,
+    port: *Port,
     recv_timeout_us: u32,
     eeprom_timeout_us: u32,
 ) !void {
@@ -322,7 +323,7 @@ pub fn transitionIP(
 /// Ref: EtherCAT Device Protocol Poster
 pub fn transitionPS(
     self: *SubDevice,
-    port: *nic.Port,
+    port: *Port,
     recv_timeout_us: u32,
     eeprom_timeout_us: u32,
     fmmu_inputs_start_addr: u32,
@@ -411,7 +412,7 @@ pub fn transitionPS(
 
 pub fn transitionSO(
     self: *SubDevice,
-    port: *nic.Port,
+    port: *Port,
     recv_timeout_us: u32,
 ) !void {
     try self.doStartupParameters(port, .SO, recv_timeout_us);
@@ -419,7 +420,7 @@ pub fn transitionSO(
 
 pub fn doStartupParameters(
     self: *SubDevice,
-    port: *nic.Port,
+    port: *Port,
     transition: ENI.Transition,
     recv_timeout_us: u32,
 ) !void {
@@ -444,7 +445,7 @@ pub fn doStartupParameters(
 
 pub fn sdoWrite(
     self: *SubDevice,
-    port: *nic.Port,
+    port: *Port,
     buf: []const u8,
     index: u16,
     subindex: u8,
@@ -472,7 +473,7 @@ pub fn sdoWrite(
 
 pub fn sdoRead(
     self: *SubDevice,
-    port: *nic.Port,
+    port: *Port,
     out: []u8,
     index: u16,
     subindex: u8,

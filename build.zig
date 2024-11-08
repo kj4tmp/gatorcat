@@ -5,8 +5,8 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
 
     // gatorcat module
-    const gatorcat_module = b.addModule("gatorcat", .{
-        .root_source_file = b.path("src/root.zig"),
+    const lib = b.addModule("gatorcat", .{
+        .root_source_file = b.path("src/lib/root.zig"),
     });
     // depend on the npcap sdk if we are building for windows
     switch (target.result.os.tag) {
@@ -16,20 +16,20 @@ pub fn build(b: *std.Build) void {
                 .optimize = optimize,
             });
             if (maybe_npcap_sdk) |npcap_sdk| {
-                gatorcat_module.addIncludePath(npcap_sdk.path("Include"));
+                lib.addIncludePath(npcap_sdk.path("Include"));
 
                 switch (target.result.cpu.arch) {
                     .x86 => {
-                        gatorcat_module.addObjectFile(npcap_sdk.path("Lib/wpcap.lib"));
-                        gatorcat_module.addObjectFile(npcap_sdk.path("Lib/Packet.lib"));
+                        lib.addObjectFile(npcap_sdk.path("Lib/wpcap.lib"));
+                        lib.addObjectFile(npcap_sdk.path("Lib/Packet.lib"));
                     },
                     .x86_64 => {
-                        gatorcat_module.addObjectFile(npcap_sdk.path("Lib/x64/wpcap.lib"));
-                        gatorcat_module.addObjectFile(npcap_sdk.path("Lib/x64/Packet.lib"));
+                        lib.addObjectFile(npcap_sdk.path("Lib/x64/wpcap.lib"));
+                        lib.addObjectFile(npcap_sdk.path("Lib/x64/Packet.lib"));
                     },
                     .aarch64 => {
-                        gatorcat_module.addObjectFile(npcap_sdk.path("Lib/ARM64/wpcap.lib"));
-                        gatorcat_module.addObjectFile(npcap_sdk.path("Lib/ARM64/Packet.lib"));
+                        lib.addObjectFile(npcap_sdk.path("Lib/ARM64/wpcap.lib"));
+                        lib.addObjectFile(npcap_sdk.path("Lib/ARM64/Packet.lib"));
                     },
                     else => {},
                 }
@@ -40,7 +40,7 @@ pub fn build(b: *std.Build) void {
 
     // gatorcat module unit tests
     const root_unit_tests = b.addTest(.{
-        .root_source_file = b.path("src/root.zig"),
+        .root_source_file = b.path("src/lib/root.zig"),
         .target = target,
         .optimize = optimize,
     });
@@ -49,20 +49,20 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_root_unit_tests.step);
 
     // CLI tool
-    const cli_tool = b.addExecutable(.{
+    const cli = b.addExecutable(.{
         .name = "gatorcat",
-        .root_source_file = b.path("src/main.zig"),
+        .root_source_file = b.path("src/cli/main.zig"),
         .target = target,
         .optimize = optimize,
     });
-    cli_tool.root_module.addImport("gatorcat", gatorcat_module);
+    cli.root_module.addImport("gatorcat", lib);
 
     // CLI tool dependencies
     const flags = b.dependency("flags", .{
         .target = target,
         .optimize = optimize,
     });
-    cli_tool.root_module.addImport("flags", flags.module("flags"));
+    cli.root_module.addImport("flags", flags.module("flags"));
     // depend on the npcap sdk if we are building for windows
     switch (target.result.os.tag) {
         .windows => {
@@ -71,21 +71,21 @@ pub fn build(b: *std.Build) void {
                 .optimize = optimize,
             });
             if (maybe_npcap_sdk) |npcap_sdk| {
-                cli_tool.addIncludePath(npcap_sdk.path("Include"));
-                cli_tool.linkLibC();
+                cli.addIncludePath(npcap_sdk.path("Include"));
+                cli.linkLibC();
 
                 switch (target.result.cpu.arch) {
                     .x86 => {
-                        cli_tool.addObjectFile(npcap_sdk.path("Lib/wpcap.lib"));
-                        cli_tool.addObjectFile(npcap_sdk.path("Lib/Packet.lib"));
+                        cli.addObjectFile(npcap_sdk.path("Lib/wpcap.lib"));
+                        cli.addObjectFile(npcap_sdk.path("Lib/Packet.lib"));
                     },
                     .x86_64 => {
-                        cli_tool.addObjectFile(npcap_sdk.path("Lib/x64/wpcap.lib"));
-                        cli_tool.addObjectFile(npcap_sdk.path("Lib/x64/Packet.lib"));
+                        cli.addObjectFile(npcap_sdk.path("Lib/x64/wpcap.lib"));
+                        cli.addObjectFile(npcap_sdk.path("Lib/x64/Packet.lib"));
                     },
                     .aarch64 => {
-                        cli_tool.addObjectFile(npcap_sdk.path("Lib/ARM64/wpcap.lib"));
-                        cli_tool.addObjectFile(npcap_sdk.path("Lib/ARM64/Packet.lib"));
+                        cli.addObjectFile(npcap_sdk.path("Lib/ARM64/wpcap.lib"));
+                        cli.addObjectFile(npcap_sdk.path("Lib/ARM64/Packet.lib"));
                     },
                     else => {},
                 }
@@ -93,18 +93,18 @@ pub fn build(b: *std.Build) void {
         },
         else => {},
     }
-    b.installArtifact(cli_tool);
+    b.installArtifact(cli);
 
     // example
-    const example_step = b.step("example", "Build example");
-    const example = b.addExecutable(.{
+    const examples_step = b.step("examples", "Build example");
+    const simple_example = b.addExecutable(.{
         .name = "example",
         .target = target,
         .optimize = optimize,
-        .root_source_file = b.path("example/main.zig"),
+        .root_source_file = b.path("examples/simple/main.zig"),
     });
-    example.root_module.addImport("gatorcat", gatorcat_module);
+    simple_example.root_module.addImport("gatorcat", lib);
     // using addInstallArtifact here so it only installs for the example step
-    const example_install = b.addInstallArtifact(example, .{});
-    example_step.dependOn(&example_install.step);
+    const example_install = b.addInstallArtifact(simple_example, .{});
+    examples_step.dependOn(&example_install.step);
 }

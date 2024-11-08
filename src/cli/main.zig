@@ -29,7 +29,7 @@ pub fn main() !void {
             };
             defer raw_socket.deinit();
 
-            var port = gcat.nic.Port.init(raw_socket.networkAdapter(), .{});
+            var port = gcat.Port.init(raw_socket.networkAdapter(), .{});
             try port.ping(scan_args.recv_timeout_us);
 
             try scan(
@@ -70,7 +70,7 @@ const Flags = struct {
 };
 
 fn scan(
-    port: *gcat.nic.Port,
+    port: *gcat.Port,
     recv_timeout_us: u32,
     eeprom_timeout_us: u32,
     INIT_timeout_us: u32,
@@ -117,7 +117,7 @@ fn scan(
 
 fn printBusSummary(
     writer: anytype,
-    port: *gcat.nic.Port,
+    port: *gcat.Port,
     recv_timeout_us: u32,
     eeprom_timeout_us: u32,
     num_subdevices: u16,
@@ -168,7 +168,7 @@ fn printBusSummary(
 
 fn printSubdeviceDetails(
     writer: anytype,
-    port: *gcat.nic.Port,
+    port: *gcat.Port,
     recv_timeout_us: u32,
     eeprom_timeout_us: u32,
     ring_position: u16,
@@ -293,7 +293,7 @@ fn printSubdeviceDetails(
 
 fn printSubdevicePDOs(
     writer: anytype,
-    port: *gcat.nic.Port,
+    port: *gcat.Port,
     recv_timeout_us: u32,
     eeprom_timeout_us: u32,
     station_address: u16,
@@ -357,7 +357,7 @@ fn printSubdevicePDOs(
 fn printPDOTable(
     writer: anytype,
     pdos: gcat.sii.PDOs,
-    port: *gcat.nic.Port,
+    port: *gcat.Port,
     station_address: u16,
     recv_timeout_us: u32,
     eeprom_timeout_us: u32,

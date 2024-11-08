@@ -8,12 +8,13 @@ const assert = std.debug.assert;
 const mailbox = @import("../mailbox.zig");
 const wire = @import("../wire.zig");
 const nic = @import("../nic.zig");
+const Port = @import("../Port.zig");
 
 pub const server = @import("coe/server.zig");
 pub const client = @import("coe/client.zig");
 
 pub fn sdoWrite(
-    port: *nic.Port,
+    port: *Port,
     station_address: u16,
     index: u16,
     subindex: u8,
@@ -171,7 +172,7 @@ pub fn sdoWrite(
 // TODO: diag mailbox content?
 /// Read a packed type from an SDO.
 pub fn sdoReadPack(
-    port: *nic.Port,
+    port: *Port,
     station_address: u16,
     index: u16,
     subindex: u8,
@@ -215,7 +216,7 @@ pub fn sdoReadPack(
 /// the beckhoff manuals.
 /// You should probably just use complete access = true, subindex 1.
 pub fn sdoRead(
-    port: *nic.Port,
+    port: *Port,
     station_address: u16,
     index: u16,
     subindex: u8,
@@ -672,7 +673,7 @@ pub const SMComm = enum(u8) {
 pub const SMComms = std.BoundedArray(SMComm, max_sm);
 
 pub fn readSMComms(
-    port: *nic.Port,
+    port: *Port,
     station_address: u16,
     recv_timeout_us: u32,
     mbx_timeout_us: u32,
@@ -728,7 +729,7 @@ pub fn isValidPDOIndex(index: u16) bool {
 pub const SMChannel = std.BoundedArray(u16, 254);
 
 pub fn readSMChannel(
-    port: *nic.Port,
+    port: *Port,
     station_address: u16,
     recv_timeout_us: u32,
     mbx_timeout_us: u32,
@@ -802,7 +803,7 @@ pub const SMSynchronization = struct {
 };
 
 pub fn readSMSync(
-    port: *nic.Port,
+    port: *Port,
     station_address: u16,
     recv_timeout_us: u32,
     mbx_timeout_us: u32,
@@ -926,7 +927,7 @@ pub const PDOMapping = struct {
 };
 
 pub fn readPDOMapping(
-    port: *nic.Port,
+    port: *Port,
     station_address: u16,
     recv_timeout_us: u32,
     mbx_timeout_us: u32,
@@ -977,7 +978,7 @@ pub fn readPDOMapping(
 // /
 // / The cnt is a synchronization primitive used in CoE.
 // pub fn readPDOAssignment(
-//     port: *nic.Port,
+//     port: *Port,
 //     station_address: u16,
 //     recv_timeout_us: u32,
 //     mbx_timeout_us: u32,

@@ -10,6 +10,7 @@ pub const sii = @import("sii.zig");
 pub const commands = @import("commands.zig");
 pub const Scanner = @import("Scanner.zig");
 pub const telegram = @import("telegram.zig");
+pub const Port = @import("Port.zig");
 
 test {
     std.testing.refAllDecls(@This());

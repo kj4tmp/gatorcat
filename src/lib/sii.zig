@@ -15,6 +15,7 @@ const wire = @import("wire.zig");
 const esc = @import("esc.zig");
 const commands = @import("commands.zig");
 const pdi = @import("pdi.zig");
+const Port = @import("Port.zig");
 
 pub const ParameterMap = enum(u16) {
     PDI_control = 0x0000,
@@ -402,17 +403,10 @@ pub fn escSMsFromSIISMs(sii_sms: []const SyncM) esc.SMRegister {
     return res;
 }
 
-// pub fn countPDOs(
-//     port: *nic.Port,
-//     station_address: u16,
-//     recv_timeout_us: u32,
-//     eeprom_timeout_us: u32,
-// ) void {}
-
 pub const SIIString = std.BoundedArray(u8, 255);
 
 pub fn readSIIString(
-    port: *nic.Port,
+    port: *Port,
     station_address: u16,
     index: u8,
     recv_timeout_us: u32,
@@ -467,7 +461,7 @@ pub const max_fmmu = 16;
 pub const FMMUCatagory = std.BoundedArray(FMMUFunction, max_fmmu);
 
 pub fn readFMMUCatagory(
-    port: *nic.Port,
+    port: *Port,
     station_address: u16,
     recv_timeout_us: u32,
     eeprom_timeout_us: u32,
@@ -519,7 +513,7 @@ pub const max_sm = 32;
 pub const SMCatagory = std.BoundedArray(SyncM, max_sm);
 
 pub fn readSMCatagory(
-    port: *nic.Port,
+    port: *Port,
     station_address: u16,
     recv_timeout_us: u32,
     eeprom_timeout_us: u32,
@@ -556,7 +550,7 @@ pub fn readSMCatagory(
     return res;
 }
 
-pub fn readGeneralCatagory(port: *nic.Port, station_address: u16, recv_timeout_us: u32, eeprom_timeout_us: u32) !?CatagoryGeneral {
+pub fn readGeneralCatagory(port: *Port, station_address: u16, recv_timeout_us: u32, eeprom_timeout_us: u32) !?CatagoryGeneral {
     const catagory = try findCatagoryFP(
         port,
         station_address,
@@ -688,7 +682,7 @@ pub fn pdoBitLength(pdos: []const PDO) u32 {
 ///
 /// Warning: this uses about 1 MB of stack memory.
 pub fn readPDOs(
-    port: *nic.Port,
+    port: *Port,
     station_address: u16,
     direction: pdi.Direction,
     recv_timeout_us: u32,
@@ -765,7 +759,7 @@ pub const FindCatagoryResult = struct {
 ///
 /// Returns null if catagory is not found.
 pub fn findCatagoryFP(
-    port: *nic.Port,
+    port: *Port,
     station_address: u16,
     catagory: CatagoryType,
     recv_timeout_us: u32,
@@ -805,7 +799,7 @@ pub fn findCatagoryFP(
 
 /// read a packed struct from SII, using station addressing
 pub fn readSIIFP_ps(
-    port: *nic.Port,
+    port: *Port,
     comptime T: type,
     station_address: u16,
     eeprom_address: u16,
@@ -826,7 +820,7 @@ pub fn readSIIFP_ps(
 }
 
 pub const SIIStream = struct {
-    port: *nic.Port,
+    port: *Port,
     station_address: u16,
     recv_timeout_us: u32,
     eeprom_timeout_us: u32,
@@ -836,7 +830,7 @@ pub const SIIStream = struct {
     remainder: u8 = 0,
 
     pub fn init(
-        port: *nic.Port,
+        port: *Port,
         station_address: u16,
         eeprom_address: u16,
         recv_timeout_us: u32,
@@ -918,7 +912,7 @@ pub const ReadSIIError = error{
 
 /// read 4 bytes from SII, using station addressing
 pub fn readSII4ByteFP(
-    port: *nic.Port,
+    port: *Port,
     station_address: u16,
     eeprom_address: u16,
     recv_timeout_us: u32,
@@ -1187,7 +1181,7 @@ test "overlapping sync managers non unique start addr" {
 }
 
 pub fn readSMPDOAssigns(
-    port: *nic.Port,
+    port: *Port,
     station_address: u16,
     recv_timeout_us: u32,
     eeprom_timeout_us: u32,
@@ -1290,7 +1284,7 @@ pub fn readSMPDOAssigns(
 ///
 /// Uses much less stack memory than readPDOs.
 pub fn readPDOBitLengths(
-    port: *nic.Port,
+    port: *Port,
     station_address: u16,
     direction: pdi.Direction,
     recv_timeout_us: u32,
@@ -1452,7 +1446,7 @@ pub const FMMUConfiguration = struct {
 };
 
 pub fn readSubdeviceInfoCompact(
-    port: *nic.Port,
+    port: *Port,
     station_address: u16,
     recv_timeout_us: u32,
     eeprom_timeout_us: u32,

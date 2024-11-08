@@ -10,13 +10,14 @@ const MainDevice = @import("MainDevice.zig");
 const esc = @import("esc.zig");
 const wire = @import("wire.zig");
 const SubDevice = @import("SubDevice.zig");
+const Port = @import("Port.zig");
 
 const Scanner = @This();
 
-port: *nic.Port,
+port: *Port,
 settings: MainDevice.Settings,
 
-pub fn init(port: *nic.Port, settings: MainDevice.Settings) Scanner {
+pub fn init(port: *Port, settings: MainDevice.Settings) Scanner {
     return Scanner{
         .port = port,
         .settings = settings,

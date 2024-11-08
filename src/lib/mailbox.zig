@@ -8,6 +8,7 @@ const nic = @import("nic.zig");
 const esc = @import("esc.zig");
 const telegram = @import("telegram.zig");
 const wire = @import("wire.zig");
+const Port = @import("Port.zig");
 
 pub const coe = @import("mailbox/coe.zig");
 
@@ -62,7 +63,7 @@ pub const Configuration = struct {
 /// specified.
 /// The mailbox configuration is checked against the provided parameters.
 pub fn writeMailboxOut(
-    port: *nic.Port,
+    port: *Port,
     station_address: u16,
     recv_timeout_us: u32,
     mbx_out: HalfConfiguration,
@@ -128,7 +129,7 @@ pub fn writeMailboxOut(
 }
 
 pub fn readMailboxInTimeout(
-    port: *nic.Port,
+    port: *Port,
     station_address: u16,
     recv_timeout_us: u32,
     mbx_in: HalfConfiguration,
@@ -160,7 +161,7 @@ pub fn readMailboxInTimeout(
 ///
 /// The mailbox configuration is checked against the provided parameters.
 pub fn readMailboxIn(
-    port: *nic.Port,
+    port: *Port,
     station_address: u16,
     recv_timeout_us: u32,
     mbx_in: HalfConfiguration,

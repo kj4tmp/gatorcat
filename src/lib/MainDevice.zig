@@ -11,10 +11,11 @@ const SubDevice = @import("SubDevice.zig");
 const ENI = @import("ENI.zig");
 const pdi = @import("pdi.zig");
 const FrameBuilder = @import("FrameBuilder.zig");
+const Port = @import("Port.zig");
 
 const MainDevice = @This();
 
-port: *nic.Port,
+port: *Port,
 settings: Settings,
 eni: *const ENI,
 subdevices: []SubDevice,
@@ -27,7 +28,7 @@ pub const Settings = struct {
 };
 
 pub fn init(
-    port: *nic.Port,
+    port: *Port,
     settings: Settings,
     eni: *const ENI,
     subdevices: []SubDevice,
@@ -505,7 +506,7 @@ pub fn expectedProcessDataWkc(self: *MainDevice) u16 {
 }
 
 /// Assign configured station address.
-pub fn assignStationAddress(port: *nic.Port, station_address: u16, ring_position: u16, recv_timeout_us: u32) !void {
+pub fn assignStationAddress(port: *Port, station_address: u16, ring_position: u16, recv_timeout_us: u32) !void {
     const autoinc_address = SubDevice.autoincAddressFromRingPos(ring_position);
     try commands.apwrPackWkc(
         port,

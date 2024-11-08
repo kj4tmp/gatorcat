@@ -84,10 +84,6 @@ fn datagramDataIsPacked(self: *const FrameBuilder) bool {
             last_dgram.data_start == last_dgram.data_end or // zero length datagrams are not supported
             this_dgram.data_start == this_dgram.data_end) // zero length datagrams are not supported
         {
-            for (self.frame.portable_datagrams.slice()) |dgram| {
-                std.debug.print("{any}\n", .{dgram});
-            }
-
             return false;
         }
     }

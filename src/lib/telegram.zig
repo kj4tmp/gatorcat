@@ -253,18 +253,15 @@ pub const EtherCATFrame = struct {
     /// when compared to an "original" frame.
     pub fn isCurrupted(self: *const EtherCATFrame, original: *const EtherCATFrame) bool {
         if (self.header != original.header) {
-            std.debug.print("here", .{});
             return true;
         }
         if (self.portable_datagrams.len != original.portable_datagrams.len) {
-            std.log.err("here2", .{});
             return true;
         }
 
         assert(self.portable_datagrams.len == original.portable_datagrams.len);
         for (self.portable_datagrams.slice(), original.portable_datagrams.slice(), 0..) |self_dgram, orig_dgram, i| {
             if (self_dgram.header.command != orig_dgram.header.command) {
-                std.log.err("here6", .{});
                 return true;
             }
             // address may be incremented depending on commands

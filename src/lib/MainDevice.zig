@@ -447,10 +447,7 @@ pub fn sendRecvCyclicFrames(self: *MainDevice) !u16 {
     for (self.frames[0..used_frames]) |*frame| {
         for (frame.portable_datagrams.slice()) |*dgram| {
             switch (dgram.header.command) {
-                .LRD, .LWR => {
-                    wkc +|= dgram.wkc;
-                    // std.debug.print("command: {}, wkc: {}\n", .{ command, dgram.wkc });
-                },
+                .LRD, .LWR => wkc +|= dgram.wkc,
                 .BRD => {},
                 else => unreachable,
             }

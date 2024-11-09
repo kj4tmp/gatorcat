@@ -64,7 +64,7 @@ pub fn init(
 ///
 /// Sets all subdevices to the INIT state.
 /// Puts the bus in a known good starting configuration.
-pub fn busINIT(self: *MainDevice) !void {
+pub fn busINIT(self: *MainDevice, change_timeout_us: u32) !void {
 
     // open all ports
     var wkc = try commands.bwrPack(
@@ -249,9 +249,11 @@ pub fn busINIT(self: *MainDevice) !void {
             self.settings.recv_timeout_us,
         );
     }
+
+    try self.broadcastStateChange(.INIT, change_timeout_us);
 }
 
-pub fn busPREOP(self: *MainDevice) !void {
+pub fn busPREOP(self: *MainDevice, change_timeout_us: u32) !void {
 
     // perform IP tasks for each subdevice
     for (self.subdevices[0..self.eni.subdevices.len], self.eni.subdevices) |*subdevice, subdevice_config| {
@@ -266,29 +268,9 @@ pub fn busPREOP(self: *MainDevice) !void {
             self.settings.recv_timeout_us,
             self.settings.eeprom_timeout_us,
         );
-        try subdevice.setALState(
-            self.port,
-            .PREOP,
-            30000,
-            self.settings.recv_timeout_us,
-        );
     }
 
-    // read state of subdevices
-    var state_check = wire.zerosFromPack(esc.ALStatusRegister);
-    _ = try commands.brd(
-        self.port,
-        .{
-            .autoinc_address = 0,
-            .offset = @intFromEnum(esc.RegisterMap.AL_status),
-        },
-        &state_check,
-        self.settings.recv_timeout_us,
-    );
-    const state_check_res = wire.packFromECat(esc.ALStatusRegister, state_check);
-    std.log.warn("state check: {}", .{state_check_res});
-
-    // return wkc;
+    try self.broadcastStateChange(.PREOP, change_timeout_us);
 }
 
 pub fn busSAFEOP(self: *MainDevice, change_timeout_us: u32) !void {
@@ -319,16 +301,6 @@ pub fn busSAFEOP(self: *MainDevice, change_timeout_us: u32) !void {
         self.settings.recv_timeout_us,
     );
     if (state_change_wkc != self.eni.subdevices.len) return error.Wkc;
-
-    // for (self.subdevices[0..self.eni.subdevices.len]) |*subdevice| {
-    //     try subdevice.setALState(
-    //         self.port,
-    //         .SAFEOP,
-    //         30000,
-    //         self.settings.recv_timeout_us,
-    //     );
-    // }
-
     var timer = std.time.Timer.start() catch @panic("timer not supported");
     while (timer.read() < @as(u64, change_timeout_us) * std.time.ns_per_us) {
         const result = try self.sendRecvCyclicFramesDiag();
@@ -342,12 +314,6 @@ pub fn busOP(self: *MainDevice, change_timeout_us: u32) !void {
 
         try subdevice.transitionSO(
             self.port,
-            self.settings.recv_timeout_us,
-        );
-        try subdevice.setALState(
-            self.port,
-            .OP,
-            30000,
             self.settings.recv_timeout_us,
         );
     }
@@ -366,24 +332,6 @@ pub fn busOP(self: *MainDevice, change_timeout_us: u32) !void {
         self.settings.recv_timeout_us,
     );
     if (state_change_wkc != self.eni.subdevices.len) return error.Wkc;
-
-    // for (0..100) |_| _ = self.sendRecvCyclicFrames() catch |err| switch (err) {
-    //     error.NotAllSubdevicesInOP, error.RecvTimeout => {},
-    //     error.Wkc => {},
-    //     // TODO: revise this error handling?
-    //     error.LinkError,
-    //     error.Overflow,
-    //     error.NoSpaceLeft,
-
-    //     error.FrameSerializationFailure,
-    //     error.CurruptedFrame,
-    //     error.EndOfStream,
-    //     error.ProcessImageTooLarge,
-    //     error.NotEnoughFrames,
-    //     error.NoTransactionAvailable,
-    //     error.TopologyChanged,
-    //     => |err2| return err2,
-    // };
 
     var timer = std.time.Timer.start() catch @panic("timer not supported");
     while (timer.read() < @as(u64, change_timeout_us) * std.time.ns_per_us) {
@@ -537,6 +485,68 @@ pub fn sendRecvCyclicFramesDiag(self: *MainDevice) !SendRecvFramesDiagResult {
         .brd_status_wkc = brd_status_wkc,
         .process_data_wkc = process_data_wkc,
     };
+}
+
+pub fn broadcastStateChange(self: *MainDevice, state: esc.ALStateControl, change_timeout_us: u32) !void {
+    const wkc = try commands.bwrPack(
+        self.port,
+        esc.ALControlRegister{
+            .state = state,
+            // simple subdevices will copy the ack bit
+            // into the AL status error bit.
+            //
+            // Ref: IEC 61158-6-12:2019 6.4.1.1
+            .ack = false,
+            .request_id = false,
+        },
+        .{
+            .autoinc_address = 0,
+            .offset = @intFromEnum(esc.RegisterMap.AL_control),
+        },
+        self.settings.recv_timeout_us,
+    );
+    if (wkc != self.eni.subdevices.len) return error.Wkc;
+
+    var timer = std.time.Timer.start() catch @panic("timer not supported");
+    while (timer.read() < @as(u64, change_timeout_us) * std.time.ns_per_us) {
+        const res = try commands.brdPack(
+            self.port,
+            esc.ALStatusRegister,
+            .{
+                .autoinc_address = 0,
+                .offset = @intFromEnum(esc.RegisterMap.AL_status),
+            },
+            self.settings.recv_timeout_us,
+        );
+        const brd_wkc = res.wkc;
+        const status = res.ps;
+        if (brd_wkc != self.eni.subdevices.len) return error.Wkc;
+
+        // we check if the actual state matches the requested
+        // state before checking the error bit becuase simple subdevices
+        // will just copy the ack bit to the error bit.
+        //
+        // Ref: IEC 61158-6-12:2019 6.4.1.1
+
+        const requested_int: u4 = @intFromEnum(state);
+        const actual_int: u4 = @intFromEnum(status.state);
+        if (actual_int == requested_int) {
+            std.log.warn(
+                "successful broadcast state change to {}, Status Code: {}.",
+                .{ status.state, status.status_code },
+            );
+            break;
+        }
+        if (status.err) {
+            std.log.err(
+                "broadcast state change refused to {}. Actual state: {}, Status Code: {}.",
+                .{ state, status.state, status.status_code },
+            );
+            return error.StateChangeRefused;
+        }
+    } else {
+        return error.StateChangeTimeout;
+    }
 }
 
 pub fn expectedProcessDataWkc(self: *MainDevice) u16 {

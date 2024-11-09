@@ -96,10 +96,10 @@ pub fn main() !void {
         &frames,
     );
 
-    try main_device.busINIT();
-    try main_device.busPREOP();
-    try main_device.busSAFEOP(100_000);
-    try main_device.busOP(100_000);
+    try main_device.busINIT(5_000_000);
+    try main_device.busPREOP(10_000_000);
+    try main_device.busSAFEOP(10_000_000);
+    try main_device.busOP(10_000_000);
 
     var timer = try std.time.Timer.start();
     var timer2 = try std.time.Timer.start();

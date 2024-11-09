@@ -80,10 +80,7 @@ pub fn setALState(
         return error.Wkc;
     }
 
-    var timer = Timer.start() catch |err| switch (err) {
-        error.TimerUnsupported => unreachable,
-    };
-
+    var timer = std.time.Timer.start() catch @panic("timer not supported");
     while (timer.read() < @as(u64, change_timeout_us) * ns_per_us) {
         const status = try commands.fprdPackWkc(
             port,

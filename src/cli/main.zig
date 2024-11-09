@@ -287,6 +287,40 @@ fn printSubdeviceDetails(
             .{ info.bootstrap_send_mbx_offset, info.bootstrap_send_mbx_size },
         );
     }
+    try writer.print("\n", .{});
+    if (cat_general) |general| {
+        try writer.print("SII Catagory General:\n", .{});
+        if (info.mbx_protocol.CoE) {
+            try writer.print("    CoE Details:\n", .{});
+            inline for (std.meta.fields(gcat.sii.CoEDetails)) |field| {
+                if (comptime std.mem.eql(u8, field.name, "reserved")) continue;
+                try writer.print("        {s:<26}  {:>5}\n", .{ field.name, @field(general.coe_details, field.name) });
+            }
+        }
+        if (info.mbx_protocol.FoE) {
+            try writer.print("    FoE Details:\n", .{});
+            inline for (std.meta.fields(gcat.sii.FoEDetails)) |field| {
+                if (comptime std.mem.eql(u8, field.name, "reserved")) continue;
+                try writer.print("        {s:<26}  {:>5}\n", .{ field.name, @field(general.foe_details, field.name) });
+            }
+        }
+        if (info.mbx_protocol.EoE) {
+            try writer.print("    EoE Details:\n", .{});
+            inline for (std.meta.fields(gcat.sii.EoEDetails)) |field| {
+                if (comptime std.mem.eql(u8, field.name, "reserved")) continue;
+                try writer.print("        {s:<26}  {:>5}\n", .{ field.name, @field(general.eoe_details, field.name) });
+            }
+        }
+        // flags
+        try writer.print("    Flags:\n", .{});
+        inline for (std.meta.fields(gcat.sii.Flags)) |field| {
+            if (comptime std.mem.eql(u8, field.name, "reserved")) continue;
+            try writer.print("        {s:<26}  {:>5}\n", .{ field.name, @field(general.flags, field.name) });
+        }
+        if (general.flags.identity_physical_memory) {
+            try writer.print("    ID Switch Phys Mem Addr: 0x{x}\n", .{general.physical_memory_address});
+        }
+    }
 
     try writer.print("\n", .{});
 }

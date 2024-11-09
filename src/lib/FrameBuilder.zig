@@ -75,6 +75,14 @@ pub fn appendLwr(
     try self.appendDatagram(telegram.Datagram.init(.LWR, @bitCast(address), false, data));
 }
 
+pub fn appendLrw(
+    self: *FrameBuilder,
+    address: telegram.LogicalAddress,
+    data: []u8,
+) !void {
+    try self.appendDatagram(telegram.Datagram.init(.LRW, @bitCast(address), false, data));
+}
+
 fn datagramDataIsPacked(self: *const FrameBuilder) bool {
     if (self.frame.portable_datagrams.len <= 1) return true;
     for (1..self.frame.portable_datagrams.len) |i| {

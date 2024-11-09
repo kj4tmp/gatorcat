@@ -39,47 +39,39 @@ const eni = gcat.ENI{
             .ring_position = 2,
             .inputs_bit_length = 256,
         },
+
+        .{
+            .identity = beckhoff_EL2008,
+            .ring_position = 3,
+            .outputs_bit_length = 8,
+        },
+
         // .{
         //     .identity = beckhoff_EL7041_1000,
-        //     .station_address = 0x1003,
-        //     .ring_position = 3,
+        //     .ring_position = 4,
         //     .inputs_bit_length = 64,
         //     .outputs_bit_length = 64,
         //     .coe_startup_parameters = &.{
         //         .{
         //             .transition = .PS,
         //             .direction = .write,
-        //             .index = 0x1c12,
+        //             .index = 0x1c12, // RxPDO Assign
         //             .subindex = 0x0,
         //             .complete_access = true,
-        //             .data = &.{ 0x03, 0x00, 0x00, 0x16, 0x02, 0x16, 0x04, 0x16, 0x03, 0x00, 0x00, 0x16, 0x02, 0x16, 0x04, 0x16 },
+        //             .data = &.{ 0x03, 0x00, 0x00, 0x16, 0x02, 0x16, 0x04, 0x16 },
         //             .timeout_us = 10_000,
         //         },
         //         .{
         //             .transition = .PS,
         //             .direction = .write,
-        //             .index = 0x1c12,
-        //             .subindex = 0x0,
-        //             .complete_access = true,
-        //             .data = &.{ 0x03, 0x00, 0x00, 0x16, 0x02, 0x16, 0x04, 0x16, 0x03, 0x00, 0x00, 0x16, 0x02, 0x16, 0x04, 0x16 },
-        //             .timeout_us = 10_000,
-        //         },
-        //         .{
-        //             .transition = .PS,
-        //             .direction = .write,
-        //             .index = 0x1c13,
+        //             .index = 0x1c13, // TxPDO Assign
         //             .subindex = 0x0,
         //             .complete_access = true,
         //             .data = &.{ 0x02, 0x00, 0x00, 0x1a, 0x03, 0x1a },
         //             .timeout_us = 10_000,
         //         },
         //     },
-        //},
-        .{
-            .identity = beckhoff_EL2008,
-            .ring_position = 3,
-            .outputs_bit_length = 8,
-        },
+        // },
     },
 };
 
@@ -106,8 +98,8 @@ pub fn main() !void {
 
     try main_device.busINIT();
     try main_device.busPREOP();
-    try main_device.busSAFEOP();
-    try main_device.busOP();
+    try main_device.busSAFEOP(100_000);
+    try main_device.busOP(100_000);
 
     var timer = try std.time.Timer.start();
     var timer2 = try std.time.Timer.start();

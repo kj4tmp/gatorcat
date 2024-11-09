@@ -291,7 +291,7 @@ pub fn busPREOP(self: *MainDevice) !void {
     // return wkc;
 }
 
-pub fn busSAFEOP(self: *MainDevice) !void {
+pub fn busSAFEOP(self: *MainDevice, change_timeout_us: u32) !void {
     // perform PS tasks for each subdevice
     for (self.subdevices[0..self.eni.subdevices.len]) |*subdevice| {
 
@@ -305,17 +305,38 @@ pub fn busSAFEOP(self: *MainDevice) !void {
         );
     }
 
-    for (self.subdevices[0..self.eni.subdevices.len]) |*subdevice| {
-        try subdevice.setALState(
-            self.port,
-            .SAFEOP,
-            30000,
-            self.settings.recv_timeout_us,
-        );
-    }
+    const state_change_wkc = try commands.bwrPack(
+        self.port,
+        esc.ALControlRegister{
+            .state = .SAFEOP,
+            .ack = false,
+            .request_id = false,
+        },
+        .{
+            .autoinc_address = 0,
+            .offset = @intFromEnum(esc.RegisterMap.AL_control),
+        },
+        self.settings.recv_timeout_us,
+    );
+    if (state_change_wkc != self.eni.subdevices.len) return error.Wkc;
+
+    // for (self.subdevices[0..self.eni.subdevices.len]) |*subdevice| {
+    //     try subdevice.setALState(
+    //         self.port,
+    //         .SAFEOP,
+    //         30000,
+    //         self.settings.recv_timeout_us,
+    //     );
+    // }
+
+    var timer = std.time.Timer.start() catch @panic("timer not supported");
+    while (timer.read() < @as(u64, change_timeout_us) * std.time.ns_per_us) {
+        const result = try self.sendRecvCyclicFramesDiag();
+        if (result.brd_status.state == .SAFEOP) break;
+    } else return error.StateChangeTimeout;
 }
 
-pub fn busOP(self: *MainDevice) !void {
+pub fn busOP(self: *MainDevice, change_timeout_us: u32) !void {
     for (self.subdevices[0..self.eni.subdevices.len], self.eni.subdevices) |*subdevice, subdevice_config| {
         _ = subdevice_config;
 
@@ -330,31 +351,61 @@ pub fn busOP(self: *MainDevice) !void {
             self.settings.recv_timeout_us,
         );
     }
-    for (0..100) |_| _ = self.sendRecvCyclicFrames() catch |err| switch (err) {
-        error.NotAllSubdevicesInOP, error.RecvTimeout => {},
-        error.Wkc => {},
-        // TODO: revise this error handling?
-        error.LinkError,
-        error.Overflow,
-        error.NoSpaceLeft,
 
-        error.FrameSerializationFailure,
-        error.CurruptedFrame,
-        error.EndOfStream,
-        error.ProcessImageTooLarge,
-        error.NotEnoughFrames,
-        error.NoTransactionAvailable,
-        error.TopologyChanged,
-        => |err2| return err2,
-    };
+    const state_change_wkc = try commands.bwrPack(
+        self.port,
+        esc.ALControlRegister{
+            .state = .OP,
+            .ack = false,
+            .request_id = false,
+        },
+        .{
+            .autoinc_address = 0,
+            .offset = @intFromEnum(esc.RegisterMap.AL_control),
+        },
+        self.settings.recv_timeout_us,
+    );
+    if (state_change_wkc != self.eni.subdevices.len) return error.Wkc;
+
+    // for (0..100) |_| _ = self.sendRecvCyclicFrames() catch |err| switch (err) {
+    //     error.NotAllSubdevicesInOP, error.RecvTimeout => {},
+    //     error.Wkc => {},
+    //     // TODO: revise this error handling?
+    //     error.LinkError,
+    //     error.Overflow,
+    //     error.NoSpaceLeft,
+
+    //     error.FrameSerializationFailure,
+    //     error.CurruptedFrame,
+    //     error.EndOfStream,
+    //     error.ProcessImageTooLarge,
+    //     error.NotEnoughFrames,
+    //     error.NoTransactionAvailable,
+    //     error.TopologyChanged,
+    //     => |err2| return err2,
+    // };
+
+    var timer = std.time.Timer.start() catch @panic("timer not supported");
+    while (timer.read() < @as(u64, change_timeout_us) * std.time.ns_per_us) {
+        const result = try self.sendRecvCyclicFramesDiag();
+        if (result.brd_status.state == .OP) break;
+    } else return error.StateChangeTimeout;
 }
 
-/// returns process data wkc
-pub fn sendRecvCyclicFrames(self: *MainDevice) !u16 {
-    // emit the following datagrams (packed into frames):
-    // 1. brd (1 datagram) on AL Status Register
-    // 2. lrd (as many datagrams as needed for input process data)
-    // 3. lrw (as many datagrams as needed for output process data)
+pub fn sendRecvCyclicFrames(self: *MainDevice) !void {
+    const result = try self.sendRecvCyclicFramesDiag();
+    if (result.brd_status_wkc != self.eni.subdevices.len) return error.TopologyChanged;
+    if (result.brd_status.state != .OP) return error.NotAllSubdevicesInOP;
+    if (result.process_data_wkc != self.expectedProcessDataWkc()) return error.Wkc;
+}
+
+pub const SendRecvFramesDiagResult = struct {
+    brd_status: esc.ALStatusRegister,
+    brd_status_wkc: u16,
+    process_data_wkc: u16,
+};
+
+pub fn sendRecvCyclicFramesDiag(self: *MainDevice) !SendRecvFramesDiagResult {
 
     // TODO: implement frame re-cycling upon receive to allow extremely large process data?
     // consume inputs
@@ -382,7 +433,7 @@ pub fn sendRecvCyclicFrames(self: *MainDevice) !u16 {
             const bytes_to_consume = @min(input_bytes_remaining, builder.datagramDataSpaceRemaining());
             const start = logical_addr;
             const end_exclusive = logical_addr + bytes_to_consume;
-            try builder.appendLrd(logical_addr, self.process_image[start..end_exclusive]);
+            try builder.appendLrw(logical_addr, self.process_image[start..end_exclusive]);
             input_bytes_remaining -= bytes_to_consume;
             logical_addr += bytes_to_consume;
         }
@@ -395,7 +446,7 @@ pub fn sendRecvCyclicFrames(self: *MainDevice) !u16 {
             const bytes_to_consume = @min(output_bytes_remaining, builder.datagramDataSpaceRemaining());
             const start = logical_addr;
             const end_exclusive = logical_addr + bytes_to_consume;
-            try builder.appendLwr(logical_addr, self.process_image[start..end_exclusive]);
+            try builder.appendLrw(logical_addr, self.process_image[start..end_exclusive]);
             output_bytes_remaining -= bytes_to_consume;
             logical_addr += bytes_to_consume;
         }
@@ -442,37 +493,34 @@ pub fn sendRecvCyclicFrames(self: *MainDevice) !u16 {
     }
 
     // TODO: use individual datagram WKC's
-    // check wkc
-    var wkc: u16 = 0;
+    var process_data_wkc: u16 = 0;
     for (self.frames[0..used_frames]) |*frame| {
         for (frame.portable_datagrams.slice()) |*dgram| {
             switch (dgram.header.command) {
-                .LRD, .LWR => wkc +|= dgram.wkc,
+                .LRD, .LWR, .LRW => process_data_wkc +|= dgram.wkc,
                 .BRD => {},
                 else => unreachable,
             }
         }
     }
-    if (wkc != self.expectedProcessDataWkc()) {
-        std.log.err("wkc error, expected: {}, actual: {}", .{ self.expectedProcessDataWkc(), wkc });
-        return error.Wkc;
-    }
 
     // copy data to process image now that we know wkc is correct
     // telegram.EtherCATFrame.isCurrupted protects against memory
     // curruption
-    assert(wkc == self.expectedProcessDataWkc());
-    for (self.frames[0..used_frames]) |*frame| {
-        for (frame.datagrams().slice()) |*dgram| {
-            switch (dgram.header.command) {
-                .LRD => {
-                    const start = dgram.header.address;
-                    const end_exclusive = dgram.header.address + dgram.data.len;
-                    @memcpy(self.process_image[start..end_exclusive], dgram.data);
-                },
-                // no need to copy to outputs
-                .BRD, .LWR => {},
-                else => unreachable,
+    // don't touch process data unless wkc is correct
+    if (process_data_wkc == self.expectedProcessDataWkc()) {
+        for (self.frames[0..used_frames]) |*frame| {
+            for (frame.datagrams().slice()) |*dgram| {
+                switch (dgram.header.command) {
+                    .LRD, .LRW => {
+                        const start = dgram.header.address;
+                        const end_exclusive = dgram.header.address + dgram.data.len;
+                        @memcpy(self.process_image[start..end_exclusive], dgram.data);
+                    },
+                    // no need to copy to outputs
+                    .BRD, .LWR => {},
+                    else => unreachable,
+                }
             }
         }
     }
@@ -480,23 +528,21 @@ pub fn sendRecvCyclicFrames(self: *MainDevice) !u16 {
     // check subdevice states
     assert(self.frames[0].portable_datagrams.slice()[0].header.command == .BRD);
     const state_check_dgram: telegram.Datagram = self.frames[0].datagrams().slice()[0];
-    if (state_check_dgram.wkc != self.eni.subdevices.len) {
-        return error.TopologyChanged;
-    }
+    const brd_status_wkc = state_check_dgram.wkc;
     var fbs = std.io.fixedBufferStream(state_check_dgram.data);
     const reader = fbs.reader();
     const al_status = try wire.packFromECatReader(esc.ALStatusRegister, reader);
-    if (al_status.state != .OP) return error.NotAllSubdevicesInOP;
-
-    return wkc;
+    return SendRecvFramesDiagResult{
+        .brd_status = al_status,
+        .brd_status_wkc = brd_status_wkc,
+        .process_data_wkc = process_data_wkc,
+    };
 }
 
 pub fn expectedProcessDataWkc(self: *MainDevice) u16 {
-    // the subdevices are expected to increment the wkc once on each LRD
-    // and once on each LWR if they have process data
     var wkc: u16 = 0;
     for (self.eni.subdevices) |subdevice| {
-        if (subdevice.outputs_bit_length > 0) wkc += 1;
+        if (subdevice.outputs_bit_length > 0) wkc += 2;
         if (subdevice.inputs_bit_length > 0) wkc += 1;
     }
     return wkc;

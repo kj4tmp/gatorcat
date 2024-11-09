@@ -20,10 +20,10 @@ GatorCAT is an EtherCAT maindevice written for the zig programming language.
 - [x] multiple datagrams per frame
 - [x] topology monitoring
 - [x] NIC interface / vtable
-- [ ] windows support via npcap
+- [x] windows support via npcap
 - [ ] docs
-- [ ] re-organize examples
-- [ ] re-organize multi-platform code
+- [x] re-organize examples
+- [x] re-organize multi-platform code
 
 ## TODOs
 

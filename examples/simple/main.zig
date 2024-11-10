@@ -22,7 +22,7 @@ pub fn main() !void {
 
     var main_device = try gcat.MainDevice.init(
         &port,
-        .{},
+        .{ .recv_timeout_us = 3000, .eeprom_timeout_us = 10_000 },
         &subdevices,
         &process_image,
         &frames,

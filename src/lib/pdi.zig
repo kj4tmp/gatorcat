@@ -29,8 +29,8 @@ pub fn partitionProcessImage(image: []u8, subdevices: []SubDevice) !void {
     // and a byte aligned area for outputs.
     var bytes_used: u32 = 0;
     for (subdevices) |subdevice| {
-        bytes_used += (subdevice.prior_info.inputs_bit_length + 7) / 8;
-        bytes_used += (subdevice.prior_info.outputs_bit_length + 7) / 8;
+        bytes_used += (subdevice.config.inputs_bit_length + 7) / 8;
+        bytes_used += (subdevice.config.outputs_bit_length + 7) / 8;
     }
     if (image.len < bytes_used) return error.ProcessImageTooSmall;
 
@@ -41,10 +41,10 @@ pub fn partitionProcessImage(image: []u8, subdevices: []SubDevice) !void {
     // subdevices without inputs will receive empty slice
     var last_byte_used: u32 = 0;
     for (subdevices) |*subdevice| {
-        const inputs_byte_size: u32 = (subdevice.prior_info.inputs_bit_length + 7) / 8;
+        const inputs_byte_size: u32 = (subdevice.config.inputs_bit_length + 7) / 8;
         const pi = SubDevice.RuntimeInfo.ProcessImage{
             .inputs = image[last_byte_used .. last_byte_used + inputs_byte_size],
-            .inputs_area = .{ .start_addr = last_byte_used, .bit_length = subdevice.prior_info.inputs_bit_length },
+            .inputs_area = .{ .start_addr = last_byte_used, .bit_length = subdevice.config.inputs_bit_length },
             // to be assigned in the next for loop
             .outputs = undefined,
             .outputs_area = undefined,
@@ -55,9 +55,9 @@ pub fn partitionProcessImage(image: []u8, subdevices: []SubDevice) !void {
     // assign regions for outputs
     // subdevices without outputs will receive empty slice
     for (subdevices) |*subdevice| {
-        const outputs_byte_size: u32 = (subdevice.prior_info.outputs_bit_length + 7) / 8;
+        const outputs_byte_size: u32 = (subdevice.config.outputs_bit_length + 7) / 8;
         subdevice.runtime_info.pi.?.outputs = image[last_byte_used .. last_byte_used + outputs_byte_size];
-        subdevice.runtime_info.pi.?.outputs_area = .{ .start_addr = last_byte_used, .bit_length = subdevice.prior_info.outputs_bit_length };
+        subdevice.runtime_info.pi.?.outputs_area = .{ .start_addr = last_byte_used, .bit_length = subdevice.config.outputs_bit_length };
         last_byte_used += outputs_byte_size;
     }
 
@@ -71,4 +71,40 @@ pub fn partitionProcessImage(image: []u8, subdevices: []SubDevice) !void {
         // having the same start addr is allowed if len == 0;
         assert(prev_start + prev_len <= this_start);
     }
+}
+
+/// get the size of the process image in bytes
+pub fn processImageSize(subdevices: []const SubDevice) u32 {
+    return processImageInputsSize(subdevices) + processImageOutputsSize(subdevices);
+}
+
+pub fn processImageInputsSize(subdevices: []const SubDevice) u32 {
+    if (subdevices.len == 0) return 0;
+
+    // each subdevices will be given a byte aligned area for inputs
+    // and a byte aligned area for outputs.
+    var bytes_used: u32 = 0;
+    for (subdevices) |subdevice| {
+        bytes_used += (subdevice.config.inputs_bit_length + 7) / 8;
+    }
+    return bytes_used;
+}
+pub fn processImageOutputsSize(subdevices: []const SubDevice) u32 {
+    if (subdevices.len == 0) return 0;
+
+    // each subdevices will be given a byte aligned area for inputs
+    // and a byte aligned area for outputs.
+    var bytes_used: u32 = 0;
+    for (subdevices) |subdevice| {
+        bytes_used += (subdevice.config.outputs_bit_length + 7) / 8;
+    }
+    return bytes_used;
+}
+
+pub fn processImageOutputsLogicalStartAddr(subdevices: []const SubDevice) u32 {
+    return 0 + processImageInputsSize(subdevices);
+}
+
+test {
+    std.testing.refAllDecls(@This());
 }

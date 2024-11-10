@@ -2,77 +2,10 @@ const std = @import("std");
 
 const gcat = @import("gatorcat");
 
+const eni = @import("network_config.zig").eni;
+
 pub const std_options: std.Options = .{
     .log_level = .info,
-};
-
-const beckhoff_EK1100 = gcat.sii.SubDeviceIdentity{ .vendor_id = 0x2, .product_code = 0x44c2c52, .revision_number = 0x110000 };
-const beckhoff_EL3314 = gcat.sii.SubDeviceIdentity{ .vendor_id = 0x2, .product_code = 0xcf23052, .revision_number = 0x120000 };
-const beckhoff_EL3048 = gcat.sii.SubDeviceIdentity{ .vendor_id = 0x2, .product_code = 0xbe83052, .revision_number = 0x130000 };
-const beckhoff_EL7041_1000 = gcat.sii.SubDeviceIdentity{ .vendor_id = 0x2, .product_code = 0x1b813052, .revision_number = 0x1503e8 };
-const beckhoff_EL2008 = gcat.sii.SubDeviceIdentity{ .vendor_id = 0x2, .product_code = 0x7d83052, .revision_number = 0x100000 };
-
-const eni = gcat.ENI{
-    .subdevices = &.{
-        .{
-            .identity = beckhoff_EK1100,
-            .ring_position = 0,
-        },
-        .{
-            .identity = beckhoff_EL3314,
-            .ring_position = 1,
-            .coe_startup_parameters = &.{
-                .{
-                    .transition = .PS,
-                    .direction = .write,
-                    .index = 0x8000,
-                    .subindex = 0x2,
-                    .complete_access = false,
-                    .data = &.{2},
-                    .timeout_us = 10_000,
-                },
-            },
-            .inputs_bit_length = 128,
-        },
-        .{
-            .identity = beckhoff_EL3048,
-            .ring_position = 2,
-            .inputs_bit_length = 256,
-        },
-
-        .{
-            .identity = beckhoff_EL2008,
-            .ring_position = 3,
-            .outputs_bit_length = 8,
-        },
-
-        .{
-            .identity = beckhoff_EL7041_1000,
-            .ring_position = 4,
-            .inputs_bit_length = 64,
-            .outputs_bit_length = 64,
-            .coe_startup_parameters = &.{
-                .{
-                    .transition = .PS,
-                    .direction = .write,
-                    .index = 0x1c12, // RxPDO Assign
-                    .subindex = 0x0,
-                    .complete_access = true,
-                    .data = &.{ 0x03, 0x00, 0x00, 0x16, 0x02, 0x16, 0x04, 0x16 },
-                    .timeout_us = 10_000,
-                },
-                .{
-                    .transition = .PS,
-                    .direction = .write,
-                    .index = 0x1c13, // TxPDO Assign
-                    .subindex = 0x0,
-                    .complete_access = true,
-                    .data = &.{ 0x02, 0x00, 0x00, 0x1a, 0x03, 0x1a },
-                    .timeout_us = 10_000,
-                },
-            },
-        },
-    },
 };
 
 pub fn main() !void {
@@ -83,14 +16,13 @@ pub fn main() !void {
 
     // Since the ENI is known at comptime for this example,
     // we can construct exact stack usage here.
-    var subdevices: [eni.subdevices.len]gcat.SubDevice = undefined;
-    var process_image = std.mem.zeroes([eni.processImageSize()]u8);
+    var subdevices: [eni.subdevices.len]gcat.SubDevice = gcat.subdevicesFromENI(eni);
+    var process_image = std.mem.zeroes([gcat.pdi.processImageSize(&gcat.subdevicesFromENI(eni))]u8);
     var frames: [256]gcat.telegram.EtherCATFrame = undefined;
 
     var main_device = try gcat.MainDevice.init(
         &port,
         .{},
-        &eni,
         &subdevices,
         &process_image,
         &frames,

@@ -15,18 +15,24 @@ const ENI = @import("ENI.zig");
 const pdi = @import("pdi.zig");
 const Port = @import("Port.zig");
 
-runtime_info: RuntimeInfo = .{},
-prior_info: ENI.SubDeviceConfiguration,
+runtime_info: RuntimeInfo,
+config: ENI.SubDeviceConfiguration,
 
-pub fn init(prior_info: ENI.SubDeviceConfiguration) SubDevice {
+pub fn init(config: ENI.SubDeviceConfiguration, ring_position: u16) SubDevice {
     return SubDevice{
-        .prior_info = prior_info,
+        .config = config,
+        .runtime_info = RuntimeInfo{
+            .ring_position = ring_position,
+        },
     };
 }
 
 // info gathered at runtime from bus,
 // will be filled in when available
 pub const RuntimeInfo = struct {
+    /// position in the ethercat ring. 0 is first subdevice, 1 is second, etc.
+    ring_position: u16,
+
     /// CoE information, null if CoE not supported
     coe: ?CoE = null,
 
@@ -57,7 +63,7 @@ pub fn setALState(
     recv_timeout_us: u32,
 ) !void {
     // TODO: consider not using the ack bit
-    const station_address: u16 = stationAddressFromRingPos(self.prior_info.ring_position);
+    const station_address: u16 = stationAddressFromRingPos(self.runtime_info.ring_position);
 
     const wkc = try commands.fpwrPack(
         port,
@@ -147,7 +153,7 @@ pub fn transitionIP(
 ) !void {
     _ = self.runtime_info.pi orelse return error.InvalidRuntimeInfo;
 
-    const station_address = stationAddressFromRingPos(self.prior_info.ring_position);
+    const station_address = stationAddressFromRingPos(self.runtime_info.ring_position);
     // check subdevice identity
     const info = try sii.readSIIFP_ps(
         port,
@@ -158,9 +164,9 @@ pub fn transitionIP(
         eeprom_timeout_us,
     );
 
-    if (info.vendor_id != self.prior_info.identity.vendor_id or
-        info.product_code != self.prior_info.identity.product_code or
-        info.revision_number != self.prior_info.identity.revision_number)
+    if (info.vendor_id != self.config.identity.vendor_id or
+        info.product_code != self.config.identity.product_code or
+        info.revision_number != self.config.identity.revision_number)
     {
         std.log.err(
             "Identified subdevice: vendor id: 0x{x}, product code: 0x{x}, revision: 0x{x}, expected vendor id: 0x{x}, product code: 0x{x}, revision: 0x{x}",
@@ -168,9 +174,9 @@ pub fn transitionIP(
                 info.vendor_id,
                 info.product_code,
                 info.revision_number,
-                self.prior_info.identity.vendor_id,
-                self.prior_info.identity.product_code,
-                self.prior_info.identity.revision_number,
+                self.config.identity.vendor_id,
+                self.config.identity.product_code,
+                self.config.identity.revision_number,
             },
         );
         return error.UnexpectedSubDevice;
@@ -216,7 +222,7 @@ pub fn transitionIP(
     // configure sync managers.
     // during the IP transition, we should configure the mailbox sync managers.
     var sms = std.mem.zeroes(esc.SMRegister);
-    switch (self.prior_info.auto_config) {
+    switch (self.config.auto_config) {
         .none => {},
         .sii => {
             // If mailbox is supported:
@@ -332,19 +338,19 @@ pub fn transitionPS(
     // Ref: IEC 61158-5-12:2019 6.1.1.1
 
     // TODO: does it say somewhere that if CoE supported the PDOs MUST be in the CoE?
-    const station_address = stationAddressFromRingPos(self.prior_info.ring_position);
+    const station_address = stationAddressFromRingPos(self.runtime_info.ring_position);
 
     try self.doStartupParameters(port, .PS, recv_timeout_us);
 
-    switch (self.prior_info.auto_config) {
+    switch (self.config.auto_config) {
         .none => {},
         .sii => {
             // the entire SM configuration was already written from the SII as part of the IP transition.
             // we do not need to modify it here.
 
             var min_fmmu_required: u8 = 0;
-            if (self.prior_info.inputs_bit_length > 0) min_fmmu_required += 1;
-            if (self.prior_info.outputs_bit_length > 0) min_fmmu_required += 1;
+            if (self.config.inputs_bit_length > 0) min_fmmu_required += 1;
+            if (self.config.outputs_bit_length > 0) min_fmmu_required += 1;
 
             const fmmus = try sii.readFMMUCatagory(
                 port,
@@ -363,17 +369,17 @@ pub fn transitionPS(
 
             const totals = sm_assigns.totalBitLengths();
 
-            if (totals.inputs_bit_length != self.prior_info.inputs_bit_length) {
+            if (totals.inputs_bit_length != self.config.inputs_bit_length) {
                 std.log.err(
                     "station addr: 0x{x}, expected inputs bit length: {}, got {}",
-                    .{ station_address, self.prior_info.inputs_bit_length, totals.inputs_bit_length },
+                    .{ station_address, self.config.inputs_bit_length, totals.inputs_bit_length },
                 );
                 return error.InvalidInputsBitLength;
             }
-            if (totals.outputs_bit_length != self.prior_info.outputs_bit_length) {
+            if (totals.outputs_bit_length != self.config.outputs_bit_length) {
                 std.log.err(
                     "station addr: 0x{x}, expected outputs bit length: {}, got {}",
-                    .{ station_address, self.prior_info.outputs_bit_length, totals.outputs_bit_length },
+                    .{ station_address, self.config.outputs_bit_length, totals.outputs_bit_length },
                 );
                 return error.InvalidOutputsBitLength;
             }
@@ -421,11 +427,11 @@ pub fn doStartupParameters(
     transition: ENI.Transition,
     recv_timeout_us: u32,
 ) !void {
-    const parameters = self.prior_info.coe_startup_parameters orelse return;
+    const parameters = self.config.coe_startup_parameters orelse return;
     for (parameters) |parameter| {
         // TODO: support reads?
         if (parameter.transition == transition) {
-            std.log.info("station address: 0x{x}, doing startup parameter: {}", .{ stationAddressFromRingPos(self.prior_info.ring_position), parameter });
+            std.log.info("station address: 0x{x}, doing startup parameter: {}", .{ stationAddressFromRingPos(self.runtime_info.ring_position), parameter });
 
             try self.sdoWrite(
                 port,
@@ -455,7 +461,7 @@ pub fn sdoWrite(
 
     return try coe.sdoWrite(
         port,
-        stationAddressFromRingPos(self.prior_info.ring_position),
+        stationAddressFromRingPos(self.runtime_info.ring_position),
         index,
         subindex,
         complete_access,
@@ -483,7 +489,7 @@ pub fn sdoRead(
 
     return try coe.sdoRead(
         port,
-        stationAddressFromRingPos(self.prior_info.ring_position),
+        stationAddressFromRingPos(self.runtime_info.ring_position),
         index,
         subindex,
         complete_access,

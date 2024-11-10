@@ -11,47 +11,12 @@ const sii = @import("sii.zig");
 
 const ENI = @This();
 
+/// Subdevices in the order they appear in the ethercat ring (index 0 is first subdevice).
 subdevices: []const SubDeviceConfiguration,
-
-/// get the size of the process image in bytes
-pub fn processImageSize(self: *const ENI) u32 {
-    return self.processImageInputsSize() + self.processImageOutputsSize();
-}
-
-pub fn processImageInputsSize(self: *const ENI) u32 {
-    if (self.subdevices.len == 0) return 0;
-
-    // each subdevices will be given a byte aligned area for inputs
-    // and a byte aligned area for outputs.
-    var bytes_used: u32 = 0;
-    for (self.subdevices) |subdevice| {
-        bytes_used += (subdevice.inputs_bit_length + 7) / 8;
-    }
-    return bytes_used;
-}
-pub fn processImageOutputsSize(self: *const ENI) u32 {
-    if (self.subdevices.len == 0) return 0;
-
-    // each subdevices will be given a byte aligned area for inputs
-    // and a byte aligned area for outputs.
-    var bytes_used: u32 = 0;
-    for (self.subdevices) |subdevice| {
-        bytes_used += (subdevice.outputs_bit_length + 7) / 8;
-    }
-    return bytes_used;
-}
-
-pub fn processImageOutputsLogicalStartAddr(self: *const ENI) u32 {
-    return 0 + self.processImageInputsSize();
-}
 
 pub const SubDeviceConfiguration = struct {
     /// identity
     identity: sii.SubDeviceIdentity,
-
-    /// zero-indexed position in the ethercat ring.
-    /// first subdevice is 0, next is 1, etc.
-    ring_position: u16,
 
     /// Process image
     inputs_bit_length: u32 = 0,

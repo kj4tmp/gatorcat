@@ -17,7 +17,6 @@ const MainDevice = @This();
 
 port: *Port,
 settings: Settings,
-eni: *const ENI,
 subdevices: []SubDevice,
 process_image: []u8,
 frames: []telegram.EtherCATFrame,
@@ -30,35 +29,19 @@ pub const Settings = struct {
 pub fn init(
     port: *Port,
     settings: Settings,
-    eni: *const ENI,
     subdevices: []SubDevice,
     process_image: []u8,
     frames: []telegram.EtherCATFrame,
 ) !MainDevice {
-    assert(eni.subdevices.len < 65537); // too many subdevices
-
-    for (subdevices[0..eni.subdevices.len], eni.subdevices) |*subdevice, subdevice_config| {
-        subdevice.* = SubDevice.init(subdevice_config);
-    }
-    try pdi.partitionProcessImage(process_image, subdevices[0..eni.subdevices.len]);
+    try pdi.partitionProcessImage(process_image, subdevices);
     return MainDevice{
         .port = port,
         .settings = settings,
-        .eni = eni,
         .subdevices = subdevices,
         .process_image = process_image,
         .frames = frames,
     };
 }
-
-// pub fn validateENI(eni: *const ENI, pi_byte_length: usize) !void {
-//     if (pi_byte_length > std.math.maxInt(u32)) return error.ProcessImageTooBig;
-
-//     var pi_size_inputs_bytes: u32 = 0;
-//     var pi_size_outputs_bytes: u32 = 0;
-
-//     for (eni.subdevices) |subdevice| {}
-// }
 
 /// Initialize the ethercat bus.
 ///
@@ -226,8 +209,8 @@ pub fn busINIT(self: *MainDevice, change_timeout_us: u32) !void {
         self.settings.recv_timeout_us,
     );
     std.log.info("detected {} subdevices", .{wkc});
-    if (wkc != self.eni.subdevices.len) {
-        std.log.err("Found {} subdevices, expected {}.", .{ wkc, self.eni.subdevices.len });
+    if (wkc != self.subdevices.len) {
+        std.log.err("Found {} subdevices, expected {}.", .{ wkc, self.subdevices.len });
         return error.WrongNumberOfSubDevices;
     }
 
@@ -256,11 +239,11 @@ pub fn busINIT(self: *MainDevice, change_timeout_us: u32) !void {
 pub fn busPREOP(self: *MainDevice, change_timeout_us: u32) !void {
 
     // perform IP tasks for each subdevice
-    for (self.subdevices[0..self.eni.subdevices.len], self.eni.subdevices) |*subdevice, subdevice_config| {
+    for (self.subdevices) |*subdevice| {
         try assignStationAddress(
             self.port,
-            SubDevice.stationAddressFromRingPos(subdevice_config.ring_position),
-            subdevice_config.ring_position,
+            SubDevice.stationAddressFromRingPos(subdevice.runtime_info.ring_position),
+            subdevice.runtime_info.ring_position,
             self.settings.recv_timeout_us,
         );
         try subdevice.transitionIP(
@@ -275,7 +258,7 @@ pub fn busPREOP(self: *MainDevice, change_timeout_us: u32) !void {
 
 pub fn busSAFEOP(self: *MainDevice, change_timeout_us: u32) !void {
     // perform PS tasks for each subdevice
-    for (self.subdevices[0..self.eni.subdevices.len]) |*subdevice| {
+    for (self.subdevices) |*subdevice| {
 
         // TODO: assert non-overlapping FMMU configuration
         try subdevice.transitionPS(
@@ -300,7 +283,7 @@ pub fn busSAFEOP(self: *MainDevice, change_timeout_us: u32) !void {
         },
         self.settings.recv_timeout_us,
     );
-    if (state_change_wkc != self.eni.subdevices.len) return error.Wkc;
+    if (state_change_wkc != self.subdevices.len) return error.Wkc;
     var timer = std.time.Timer.start() catch @panic("timer not supported");
     while (timer.read() < @as(u64, change_timeout_us) * std.time.ns_per_us) {
         const result = try self.sendRecvCyclicFramesDiag();
@@ -309,9 +292,7 @@ pub fn busSAFEOP(self: *MainDevice, change_timeout_us: u32) !void {
 }
 
 pub fn busOP(self: *MainDevice, change_timeout_us: u32) !void {
-    for (self.subdevices[0..self.eni.subdevices.len], self.eni.subdevices) |*subdevice, subdevice_config| {
-        _ = subdevice_config;
-
+    for (self.subdevices) |*subdevice| {
         try subdevice.transitionSO(
             self.port,
             self.settings.recv_timeout_us,
@@ -331,7 +312,7 @@ pub fn busOP(self: *MainDevice, change_timeout_us: u32) !void {
         },
         self.settings.recv_timeout_us,
     );
-    if (state_change_wkc != self.eni.subdevices.len) return error.Wkc;
+    if (state_change_wkc != self.subdevices.len) return error.Wkc;
 
     var timer = std.time.Timer.start() catch @panic("timer not supported");
     while (timer.read() < @as(u64, change_timeout_us) * std.time.ns_per_us) {
@@ -342,23 +323,22 @@ pub fn busOP(self: *MainDevice, change_timeout_us: u32) !void {
 
 pub fn sendRecvCyclicFrames(self: *MainDevice) !void {
     const result = try self.sendRecvCyclicFramesDiag();
-    if (result.brd_status_wkc != self.eni.subdevices.len) return error.TopologyChanged;
+    if (result.brd_status_wkc != self.subdevices.len) return error.TopologyChanged;
     if (result.brd_status.state != .OP) return error.NotAllSubdevicesInOP;
     if (result.process_data_wkc != self.expectedProcessDataWkc()) return error.Wkc;
 }
 
-pub const SendRecvFramesDiagResult = struct {
+pub const SendRecvCyclicFramesDiagResult = struct {
     brd_status: esc.ALStatusRegister,
     brd_status_wkc: u16,
     process_data_wkc: u16,
 };
 
-pub fn sendRecvCyclicFramesDiag(self: *MainDevice) !SendRecvFramesDiagResult {
+pub fn sendRecvCyclicFramesDiag(self: *MainDevice) !SendRecvCyclicFramesDiagResult {
 
     // TODO: implement frame re-cycling upon receive to allow extremely large process data?
-    // consume inputs
-    var input_bytes_remaining = self.eni.processImageInputsSize();
-    var output_bytes_remaining = self.eni.processImageOutputsSize();
+    var input_bytes_remaining = pdi.processImageInputsSize(self.subdevices);
+    var output_bytes_remaining = pdi.processImageOutputsSize(self.subdevices);
     var logical_addr: u32 = 0;
 
     var used_frames: u9 = 0;
@@ -480,7 +460,7 @@ pub fn sendRecvCyclicFramesDiag(self: *MainDevice) !SendRecvFramesDiagResult {
     var fbs = std.io.fixedBufferStream(state_check_dgram.data);
     const reader = fbs.reader();
     const al_status = try wire.packFromECatReader(esc.ALStatusRegister, reader);
-    return SendRecvFramesDiagResult{
+    return SendRecvCyclicFramesDiagResult{
         .brd_status = al_status,
         .brd_status_wkc = brd_status_wkc,
         .process_data_wkc = process_data_wkc,
@@ -505,7 +485,7 @@ pub fn broadcastStateChange(self: *MainDevice, state: esc.ALStateControl, change
         },
         self.settings.recv_timeout_us,
     );
-    if (wkc != self.eni.subdevices.len) return error.Wkc;
+    if (wkc != self.subdevices.len) return error.Wkc;
 
     var timer = std.time.Timer.start() catch @panic("timer not supported");
     while (timer.read() < @as(u64, change_timeout_us) * std.time.ns_per_us) {
@@ -520,7 +500,7 @@ pub fn broadcastStateChange(self: *MainDevice, state: esc.ALStateControl, change
         );
         const brd_wkc = res.wkc;
         const status = res.ps;
-        if (brd_wkc != self.eni.subdevices.len) return error.Wkc;
+        if (brd_wkc != self.subdevices.len) return error.Wkc;
 
         // we check if the actual state matches the requested
         // state before checking the error bit becuase simple subdevices
@@ -551,9 +531,9 @@ pub fn broadcastStateChange(self: *MainDevice, state: esc.ALStateControl, change
 
 pub fn expectedProcessDataWkc(self: *MainDevice) u16 {
     var wkc: u16 = 0;
-    for (self.eni.subdevices) |subdevice| {
-        if (subdevice.outputs_bit_length > 0) wkc += 2;
-        if (subdevice.inputs_bit_length > 0) wkc += 1;
+    for (self.subdevices) |subdevice| {
+        if (subdevice.config.outputs_bit_length > 0) wkc += 2;
+        if (subdevice.config.inputs_bit_length > 0) wkc += 1;
     }
     return wkc;
 }

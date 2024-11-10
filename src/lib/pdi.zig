@@ -8,6 +8,7 @@ const std = @import("std");
 const assert = std.debug.assert;
 
 const SubDevice = @import("SubDevice.zig");
+const ENI = @import("ENI.zig");
 
 pub const Direction = enum {
     /// subdevice writes data to image
@@ -71,6 +72,19 @@ pub fn partitionProcessImage(image: []u8, subdevices: []SubDevice) !void {
         // having the same start addr is allowed if len == 0;
         assert(prev_start + prev_len <= this_start);
     }
+}
+
+pub fn processImageSizeFromENI(eni: ENI) u32 {
+    if (eni.subdevices.len == 0) return 0;
+
+    // each subdevices will be given a byte aligned area for inputs
+    // and a byte aligned area for outputs.
+    var bytes_used: u32 = 0;
+    for (eni.subdevices) |subdevice_config| {
+        bytes_used += (subdevice_config.inputs_bit_length + 7) / 8;
+        bytes_used += (subdevice_config.outputs_bit_length + 7) / 8;
+    }
+    return bytes_used;
 }
 
 /// get the size of the process image in bytes

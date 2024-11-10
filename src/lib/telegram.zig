@@ -321,6 +321,8 @@ pub const EtherCATFrame = struct {
         /// ESC's only support EtherCAT commands (0x1)
         type: u4 = 0x1,
     };
+
+    pub const empty = EtherCATFrame{ .header = .{ .length = 0 } };
 };
 
 pub const EtherType = enum(u16) {

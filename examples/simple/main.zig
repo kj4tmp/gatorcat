@@ -16,9 +16,9 @@ pub fn main() !void {
 
     // Since the ENI is known at comptime for this example,
     // we can construct exact stack usage here.
-    var subdevices: [eni.subdevices.len]gcat.SubDevice = gcat.subdevicesFromENI(eni);
-    var process_image = std.mem.zeroes([gcat.pdi.processImageSize(&gcat.subdevicesFromENI(eni))]u8);
-    var frames: [256]gcat.telegram.EtherCATFrame = undefined;
+    var subdevices = gcat.subdevicesFromENI(eni);
+    var process_image = std.mem.zeroes([gcat.pdi.processImageSizeFromENI(eni)]u8);
+    var frames: [256]gcat.telegram.EtherCATFrame = .{gcat.telegram.EtherCATFrame.empty} ** 256;
 
     var main_device = try gcat.MainDevice.init(
         &port,

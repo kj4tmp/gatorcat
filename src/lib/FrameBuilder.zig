@@ -6,13 +6,14 @@ const wire = @import("wire.zig");
 
 const FrameBuilder = @This();
 
-frame: telegram.EtherCATFrame = .{ .header = .{ .length = 0 } },
+frame: telegram.EtherCATFrame = telegram.EtherCATFrame.empty,
 
 pub fn reset(self: *FrameBuilder) void {
     self.* = FrameBuilder{};
 }
 
 pub fn dumpFrame(self: *FrameBuilder) telegram.EtherCATFrame {
+    assert(self.frame.portable_datagrams.len > 0);
     return self.frame;
 }
 

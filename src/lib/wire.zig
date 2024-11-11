@@ -2,6 +2,7 @@
 
 const std = @import("std");
 const assert = std.debug.assert;
+
 const native_endian = @import("builtin").target.cpu.arch.endian();
 
 pub fn packedSize(comptime T: type) comptime_int {
@@ -163,6 +164,14 @@ pub fn packFromECat(comptime T: type, ecat_bytes: [@divExact(@bitSizeOf(T), 8)]u
         },
     }
     unreachable;
+}
+
+pub fn packFromECatSlice(comptime T: type, ecat_bytes: []const u8) T {
+    comptime assert(isECatPackable(T));
+    assert(ecat_bytes.len == @divExact(@bitSizeOf(T), 8));
+    var bytes: [@divExact(@bitSizeOf(T), 8)]u8 = undefined;
+    @memcpy(&bytes, ecat_bytes);
+    return packFromECat(T, bytes);
 }
 
 test "packFromECat" {

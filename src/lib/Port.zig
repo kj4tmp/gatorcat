@@ -1,9 +1,9 @@
 const std = @import("std");
 const assert = std.debug.assert;
 
-const telegram = @import("telegram.zig");
-const nic = @import("nic.zig");
 const commands = @import("commands.zig");
+const nic = @import("nic.zig");
+const telegram = @import("telegram.zig");
 
 const Port = @This();
 
@@ -57,8 +57,10 @@ pub fn send_transaction(self: *Port, idx: u8, send_frame: *const telegram.EtherC
     );
 
     var out_buf: [telegram.max_frame_length]u8 = undefined;
+
+    // type system guarantees frames will serialize
     const n_bytes = frame.serialize(idx, &out_buf) catch |err| switch (err) {
-        error.NoSpaceLeft => return error.FrameSerializationFailure,
+        error.NoSpaceLeft => unreachable,
     };
     const out = out_buf[0..n_bytes];
 

@@ -47,7 +47,7 @@ pub fn appendBrd(
     self: *FrameBuilder,
     address: telegram.PositionAddress,
     data: []u8,
-) !void {
+) error{NoSpaceLeft}!void {
     try self.appendDatagram(telegram.Datagram.init(.BRD, @bitCast(address), false, data));
 }
 
@@ -55,7 +55,7 @@ pub fn appendBrdPack(
     self: *FrameBuilder,
     comptime packed_type: type,
     address: telegram.PositionAddress,
-) !void {
+) error{NoSpaceLeft}!void {
     var data = wire.zerosFromPack(packed_type);
     try self.appendBrd(address, &data);
 }
@@ -64,7 +64,7 @@ pub fn appendLrd(
     self: *FrameBuilder,
     address: telegram.LogicalAddress,
     data: []u8,
-) !void {
+) error{NoSpaceLeft}!void {
     try self.appendDatagram(telegram.Datagram.init(.LRD, @bitCast(address), false, data));
 }
 
@@ -72,7 +72,7 @@ pub fn appendLwr(
     self: *FrameBuilder,
     address: telegram.LogicalAddress,
     data: []u8,
-) !void {
+) error{NoSpaceLeft}!void {
     try self.appendDatagram(telegram.Datagram.init(.LWR, @bitCast(address), false, data));
 }
 
@@ -80,7 +80,7 @@ pub fn appendLrw(
     self: *FrameBuilder,
     address: telegram.LogicalAddress,
     data: []u8,
-) !void {
+) error{NoSpaceLeft}!void {
     try self.appendDatagram(telegram.Datagram.init(.LRW, @bitCast(address), false, data));
 }
 

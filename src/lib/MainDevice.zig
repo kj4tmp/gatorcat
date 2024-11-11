@@ -1,17 +1,17 @@
 const std = @import("std");
 const assert = std.debug.assert;
 
-const nic = @import("nic.zig");
-const wire = @import("wire.zig");
-const telegram = @import("telegram.zig");
 const commands = @import("commands.zig");
+const ENI = @import("ENI.zig");
 const esc = @import("esc.zig");
+const FrameBuilder = @import("FrameBuilder.zig");
+const nic = @import("nic.zig");
+const pdi = @import("pdi.zig");
+const Port = @import("Port.zig");
 const sii = @import("sii.zig");
 const SubDevice = @import("SubDevice.zig");
-const ENI = @import("ENI.zig");
-const pdi = @import("pdi.zig");
-const FrameBuilder = @import("FrameBuilder.zig");
-const Port = @import("Port.zig");
+const telegram = @import("telegram.zig");
+const wire = @import("wire.zig");
 
 const MainDevice = @This();
 
@@ -33,7 +33,6 @@ pub fn init(
     process_image: []u8,
     frames: []telegram.EtherCATFrame,
 ) !MainDevice {
-    try pdi.partitionProcessImage(process_image, subdevices);
     return MainDevice{
         .port = port,
         .settings = settings,
@@ -265,8 +264,8 @@ pub fn busSAFEOP(self: *MainDevice, change_timeout_us: u32) !void {
             self.port,
             self.settings.recv_timeout_us,
             self.settings.eeprom_timeout_us,
-            subdevice.runtime_info.pi.?.inputs_area.start_addr,
-            subdevice.runtime_info.pi.?.outputs_area.start_addr,
+            subdevice.runtime_info.pi.inputs_area.start_addr,
+            subdevice.runtime_info.pi.outputs_area.start_addr,
         );
     }
 
@@ -334,7 +333,18 @@ pub const SendRecvCyclicFramesDiagResult = struct {
     process_data_wkc: u16,
 };
 
-pub fn sendRecvCyclicFramesDiag(self: *MainDevice) !SendRecvCyclicFramesDiagResult {
+pub const SendRecvCycleFramesDiagError = error{
+    LinkError,
+    CurruptedFrame,
+    NotAllSubdevicesInOP,
+    ProcessImageTooLarge,
+    NotEnoughFrames,
+    NoTransactionAvailable,
+    TopologyChanged,
+    RecvTimeout,
+};
+
+pub fn sendRecvCyclicFramesDiag(self: *MainDevice) SendRecvCycleFramesDiagError!SendRecvCyclicFramesDiagResult {
 
     // TODO: implement frame re-cycling upon receive to allow extremely large process data?
     var input_bytes_remaining = pdi.processImageInputsSize(self.subdevices);
@@ -347,13 +357,15 @@ pub fn sendRecvCyclicFramesDiag(self: *MainDevice) !SendRecvCyclicFramesDiagResu
 
         var builder = FrameBuilder{};
         if (i == 0) {
-            try builder.appendBrdPack(
+            builder.appendBrdPack(
                 esc.ALStatusRegister,
                 .{
                     .autoinc_address = 0,
                     .offset = @intFromEnum(esc.RegisterMap.AL_status),
                 },
-            );
+            ) catch |err| switch (err) {
+                error.NoSpaceLeft => unreachable,
+            };
         }
 
         // append input datagrams
@@ -361,7 +373,10 @@ pub fn sendRecvCyclicFramesDiag(self: *MainDevice) !SendRecvCyclicFramesDiagResu
             const bytes_to_consume = @min(input_bytes_remaining, builder.datagramDataSpaceRemaining());
             const start = logical_addr;
             const end_exclusive = logical_addr + bytes_to_consume;
-            try builder.appendLrw(logical_addr, self.process_image[start..end_exclusive]);
+
+            builder.appendLrw(logical_addr, self.process_image[start..end_exclusive]) catch |err| switch (err) {
+                error.NoSpaceLeft => unreachable,
+            };
             input_bytes_remaining -= bytes_to_consume;
             logical_addr += bytes_to_consume;
         }
@@ -374,7 +389,9 @@ pub fn sendRecvCyclicFramesDiag(self: *MainDevice) !SendRecvCyclicFramesDiagResu
             const bytes_to_consume = @min(output_bytes_remaining, builder.datagramDataSpaceRemaining());
             const start = logical_addr;
             const end_exclusive = logical_addr + bytes_to_consume;
-            try builder.appendLrw(logical_addr, self.process_image[start..end_exclusive]);
+            builder.appendLrw(logical_addr, self.process_image[start..end_exclusive]) catch |err| switch (err) {
+                error.NoSpaceLeft => unreachable,
+            };
             output_bytes_remaining -= bytes_to_consume;
             logical_addr += bytes_to_consume;
         }
@@ -395,13 +412,12 @@ pub fn sendRecvCyclicFramesDiag(self: *MainDevice) !SendRecvCyclicFramesDiagResu
             self.port.release_transaction(transaction);
         }
     }
+    assert(used_frames <= transactions.len);
     for (self.frames[0..used_frames]) |*frame| {
         const transaction_idx = try self.port.claim_transaction();
+
         transactions.append(transaction_idx) catch |err| switch (err) {
-            error.Overflow => {
-                self.port.release_transaction(transaction_idx);
-                return error.Overflow;
-            },
+            error.Overflow => unreachable,
         };
         try self.port.send_transaction(transaction_idx, frame, frame);
     }
@@ -414,7 +430,9 @@ pub fn sendRecvCyclicFramesDiag(self: *MainDevice) !SendRecvCyclicFramesDiagResu
         if (try self.port.continue_transaction(transaction)) {
             self.port.release_transaction(transaction);
         } else {
-            try transactions.append(transaction);
+            transactions.append(transaction) catch |err| switch (err) {
+                error.Overflow => unreachable,
+            };
         }
     } else {
         return error.RecvTimeout;
@@ -457,9 +475,7 @@ pub fn sendRecvCyclicFramesDiag(self: *MainDevice) !SendRecvCyclicFramesDiagResu
     assert(self.frames[0].portable_datagrams.slice()[0].header.command == .BRD);
     const state_check_dgram: telegram.Datagram = self.frames[0].datagrams().slice()[0];
     const brd_status_wkc = state_check_dgram.wkc;
-    var fbs = std.io.fixedBufferStream(state_check_dgram.data);
-    const reader = fbs.reader();
-    const al_status = try wire.packFromECatReader(esc.ALStatusRegister, reader);
+    const al_status = wire.packFromECatSlice(esc.ALStatusRegister, state_check_dgram.data);
     return SendRecvCyclicFramesDiagResult{
         .brd_status = al_status,
         .brd_status_wkc = brd_status_wkc,

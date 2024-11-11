@@ -7,6 +7,7 @@
 //!
 //! The ENI is constant, and will never be modified by the MainDevice.
 const std = @import("std");
+
 const sii = @import("sii.zig");
 
 const ENI = @This();
@@ -74,6 +75,28 @@ pub const Transition = enum {
     /// SAFEOP -> SAFEOP
     SS,
 };
+
+pub const ProcessImageStats = struct {
+    input_bytes: u32,
+    output_bytes: u32,
+};
+
+pub fn processImageSize(self: *const ENI) u32 {
+    const stats = self.processImageStats();
+    return stats.input_bytes + stats.output_bytes;
+}
+
+pub fn processImageStats(self: *const ENI) ProcessImageStats {
+    // each subdevices will be given a byte aligned area for inputs
+    // and a byte aligned area for outputs.
+    var input_bytes: u32 = 0;
+    var output_bytes: u32 = 0;
+    for (self.subdevices) |subdevice_config| {
+        input_bytes += (subdevice_config.inputs_bit_length + 7) / 8;
+        output_bytes += (subdevice_config.outputs_bit_length + 7) / 8;
+    }
+    return ProcessImageStats{ .input_bytes = input_bytes, .output_bytes = output_bytes };
+}
 
 test {
     std.testing.refAllDecls(@This());

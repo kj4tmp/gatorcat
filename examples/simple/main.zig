@@ -1,4 +1,5 @@
 const std = @import("std");
+const assert = std.debug.assert;
 
 const gcat = @import("gatorcat");
 
@@ -16,14 +17,17 @@ pub fn main() !void {
 
     // Since the ENI is known at comptime for this example,
     // we can construct exact stack usage here.
-    var subdevices = gcat.subdevicesFromENI(eni);
-    var process_image = std.mem.zeroes([gcat.pdi.processImageSizeFromENI(eni)]u8);
+    var subdevices: [eni.subdevices.len]gcat.SubDevice = undefined;
+    var process_image = std.mem.zeroes([eni.processImageSize()]u8);
+    const used_subdevices = try gcat.initSubdevicesFromENI(eni, &subdevices, &process_image);
+    assert(used_subdevices.len == subdevices.len);
+
     var frames: [256]gcat.telegram.EtherCATFrame = .{gcat.telegram.EtherCATFrame.empty} ** 256;
 
     var main_device = try gcat.MainDevice.init(
         &port,
         .{ .recv_timeout_us = 3000, .eeprom_timeout_us = 10_000 },
-        &subdevices,
+        used_subdevices,
         &process_image,
         &frames,
     );
@@ -33,17 +37,26 @@ pub fn main() !void {
     try main_device.busSAFEOP(10_000_000);
     try main_device.busOP(10_000_000);
 
-    var timer = try std.time.Timer.start();
-    var timer2 = try std.time.Timer.start();
-    var timer3 = try std.time.Timer.start();
-    var timer4 = try std.time.Timer.start();
-    var timer5 = try std.time.Timer.start();
+    var print_timer = try std.time.Timer.start();
+    var blink_timer = try std.time.Timer.start();
+    var kill_timer = try std.time.Timer.start();
     var wkc_error_timer = try std.time.Timer.start();
-    var frame_count: u32 = 0;
+    var cycle_count: u32 = 0;
+
+    const el3314 = &subdevices[1];
+    const el7041 = &subdevices[4];
+
+    var temps = el3314.packFromInputProcessData(EL3314ProcessData);
+    const motor_control = EL7041Outputs.enabled;
 
     while (true) {
-        timer4.reset();
-        const wkc = main_device.sendRecvCyclicFrames() catch |err| switch (err) {
+
+        // input and output mapping
+        temps = el3314.packFromInputProcessData(EL3314ProcessData);
+        el7041.packToOutputProcessData(motor_control);
+
+        // exchange process data
+        main_device.sendRecvCyclicFrames() catch |err| switch (err) {
             error.RecvTimeout => {
                 std.log.warn("recv timeout", .{});
                 continue;
@@ -57,10 +70,6 @@ pub fn main() !void {
             // error.Wkc,
             error.LinkError,
             error.CurruptedFrame,
-            error.Overflow,
-            error.NoSpaceLeft,
-            error.FrameSerializationFailure,
-            error.EndOfStream,
             error.NotAllSubdevicesInOP,
             error.ProcessImageTooLarge,
             error.NotEnoughFrames,
@@ -68,38 +77,25 @@ pub fn main() !void {
             error.TopologyChanged,
             => |err2| return err2,
         };
-        const recv_us = timer4.read() / std.time.ns_per_us;
-        frame_count += 1;
+        cycle_count += 1;
 
-        // std.time.sleep(std.time.ns_per_ms * 1);
-
-        if (timer.read() > std.time.ns_per_s * 1) {
-            timer.reset();
-            std.log.warn("wkc: {}, recv_us: {}, timer3: {}, frames/s: {}", .{ wkc, recv_us, timer3.read() / std.time.ns_per_us, frame_count });
-            var fbs2 = std.io.fixedBufferStream(subdevices[1].runtime_info.pi.?.inputs);
-            const reader2 = fbs2.reader();
-            std.log.warn("el3314: {}", .{(try gcat.wire.packFromECatReader(EL3314ProcessData, reader2)).ch1});
-            frame_count = 0;
-
-            // write to el7041
-            var fb3 = std.io.fixedBufferStream(subdevices[4].runtime_info.pi.?.outputs);
-            const writer3 = fb3.writer();
-            try gcat.wire.eCatFromPackToWriter(EL7041Outputs.enabled, writer3);
+        // do application
+        if (print_timer.read() > std.time.ns_per_s * 1) {
+            print_timer.reset();
+            std.log.warn("frames/s: {}", .{cycle_count});
+            std.log.warn("temps: {}", .{temps});
+            cycle_count = 0;
         }
-
-        if (timer2.read() > std.time.ns_per_s * 0.1) {
-            timer2.reset();
+        if (blink_timer.read() > std.time.ns_per_s * 0.1) {
+            blink_timer.reset();
             // make the lights flash on the EL2008
-            subdevices[3].runtime_info.pi.?.outputs[0] *%= 2;
-            if (subdevices[3].runtime_info.pi.?.outputs[0] == 0) {
-                subdevices[3].runtime_info.pi.?.outputs[0] = 1;
+            subdevices[3].runtime_info.pi.outputs[0] *%= 2;
+            if (subdevices[3].runtime_info.pi.outputs[0] == 0) {
+                subdevices[3].runtime_info.pi.outputs[0] = 1;
             }
         }
-
-        timer3.reset();
-
-        if (timer5.read() > std.time.ns_per_s * 5) {
-            timer5.reset();
+        if (kill_timer.read() > std.time.ns_per_s * 5) {
+            kill_timer.reset();
             try subdevices[0].setALState(&port, .SAFEOP, 10000, 10000);
         }
     }

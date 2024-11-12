@@ -6,7 +6,7 @@ const gcat = @import("gatorcat");
 const eni = @import("network_config.zig").eni;
 
 pub const std_options: std.Options = .{
-    .log_level = .warn,
+    .log_level = .info,
 };
 
 pub fn main() !void {
@@ -19,6 +19,7 @@ pub fn main() !void {
     // we can construct exact stack usage here.
     var subdevices: [eni.subdevices.len]gcat.SubDevice = undefined;
     var process_image = std.mem.zeroes([eni.processImageSize()]u8);
+    std.debug.print("PROCESS IMAGE SIZE: {}\n", .{eni.processImageSize()});
     const used_subdevices = try gcat.initSubdevicesFromENI(eni, &subdevices, &process_image);
     assert(used_subdevices.len == subdevices.len);
     var frames: [gcat.MainDevice.frameCount(@intCast(process_image.len))]gcat.telegram.EtherCATFrame = @splat(gcat.telegram.EtherCATFrame.empty);
@@ -36,6 +37,9 @@ pub fn main() !void {
     try main_device.busSAFEOP(10_000_000);
     try main_device.busOP(10_000_000);
 
+    std.debug.print("EL2008 PROCESS IMAGE: {}\n", .{subdevices[3].runtime_info.pi});
+    std.debug.print("EL7041 PROCESS IMAGE: {}\n", .{subdevices[4].runtime_info.pi});
+
     var print_timer = try std.time.Timer.start();
     var blink_timer = try std.time.Timer.start();
     var kill_timer = try std.time.Timer.start();
@@ -48,7 +52,7 @@ pub fn main() !void {
     const el7041 = &subdevices[4];
 
     var temps = el3314.packFromInputProcessData(EL3314ProcessData);
-    const motor_control = EL7041Outputs.enabled;
+    var motor_control = EL7041Outputs.zero;
     var motor_status = std.mem.zeroes(EL7041Inputs);
 
     while (true) {
@@ -78,6 +82,7 @@ pub fn main() !void {
             wkc_error_timer.reset();
             std.log.err("process data wkc wrong: {}, expected: {}", .{ diag.process_data_wkc, main_device.expectedProcessDataWkc() });
         }
+        if (diag.process_data_wkc == main_device.expectedProcessDataWkc()) std.debug.print("SUCCESS!!!!!!!!!!!!!!\n", .{});
         cycle_count += 1;
 
         // do application
@@ -86,7 +91,10 @@ pub fn main() !void {
             std.log.warn("frames/s: {}", .{cycle_count});
             std.log.warn("temps: {}", .{temps});
             std.log.warn("motor_status: {}", .{motor_status});
+            std.debug.print("EL2008 PROCESS IMAGE: {}\n", .{subdevices[3].runtime_info.pi});
+            std.debug.print("EL7041 PROCESS IMAGE: {}\n", .{subdevices[4].runtime_info.pi});
             cycle_count = 0;
+            motor_control.control_reset = !motor_control.control_reset;
         }
         if (blink_timer.read() > std.time.ns_per_s * 0.1) {
             blink_timer.reset();
@@ -135,13 +143,13 @@ const EL7041Outputs = packed struct(u64) {
     reserved2: u13 = 0,
     velocity: i16,
 
-    const enabled = EL7041Outputs{
-        .control_enable = true,
+    const zero = EL7041Outputs{
+        .control_enable = false,
         .control_enable_latch_c = false,
         .control_enable_latch_extern_neg_edge = false,
         .control_enable_latch_extern_pos_edge = false,
-        .control_reduce_torque = true,
-        .control_reset = true,
+        .control_reduce_torque = false,
+        .control_reset = false,
         .control_set_counter = false,
         .set_counter_value = 0,
         .velocity = 0,

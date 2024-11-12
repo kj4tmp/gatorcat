@@ -41,9 +41,9 @@ pub fn initSubdevicesFromENI(eni: ENI, subdevices: []SubDevice, process_image: [
         const outputs_byte_size: u32 = (subdevice_config.outputs_bit_length + 7) / 8;
         const pi = SubDevice.ProcessImage{
             .inputs = process_image[last_input_byte_idx .. last_input_byte_idx + inputs_byte_size],
-            .inputs_area = .{ .start_addr = last_input_byte_idx, .bit_length = subdevice.config.inputs_bit_length },
+            .inputs_area = .{ .start_addr = last_input_byte_idx, .bit_length = subdevice_config.inputs_bit_length },
             .outputs = process_image[last_output_byte_idx .. last_output_byte_idx + outputs_byte_size],
-            .outputs_area = .{ .start_addr = last_output_byte_idx, .bit_length = subdevice.config.outputs_bit_length },
+            .outputs_area = .{ .start_addr = last_output_byte_idx, .bit_length = subdevice_config.outputs_bit_length },
         };
         last_input_byte_idx += inputs_byte_size;
         last_output_byte_idx += outputs_byte_size;
@@ -57,8 +57,19 @@ pub fn initSubdevicesFromENI(eni: ENI, subdevices: []SubDevice, process_image: [
     // TODO: check slices too
     for (1..subdevices.len) |i| {
         const this_start = subdevices[i].runtime_info.pi.inputs_area.start_addr;
+        assert(this_start <= process_image.len);
         const prev_start = subdevices[i - 1].runtime_info.pi.inputs_area.start_addr;
+        assert(prev_start <= process_image.len);
         const prev_len = subdevices[i - 1].runtime_info.pi.inputs.len;
+        // having the same start addr is allowed if len == 0;
+        assert(prev_start + prev_len <= this_start);
+    }
+    for (1..subdevices.len) |i| {
+        const this_start = subdevices[i].runtime_info.pi.outputs_area.start_addr;
+        assert(this_start <= process_image.len);
+        const prev_start = subdevices[i - 1].runtime_info.pi.outputs_area.start_addr;
+        assert(prev_start <= process_image.len);
+        const prev_len = subdevices[i - 1].runtime_info.pi.outputs.len;
         // having the same start addr is allowed if len == 0;
         assert(prev_start + prev_len <= this_start);
     }

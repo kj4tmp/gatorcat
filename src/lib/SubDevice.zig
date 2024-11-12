@@ -263,6 +263,7 @@ pub fn transitionIP(
                 recv_timeout_us,
                 eeprom_timeout_us,
             );
+
             // apparently the SII doesnt set the sync managers to the correct
             // length for you...
             const sm_assigns = try sii.readSMPDOAssigns(
@@ -273,13 +274,18 @@ pub fn transitionIP(
             );
 
             if (maybe_sii_sms) |*sii_sms| {
+                std.log.info("station addr: 0x{x}, sm config: {any}", .{ station_address, sii_sms.slice() });
                 for (sm_assigns.data.slice()) |sm_assign| {
                     sii_sms.slice()[sm_assign.sm_idx].length = sm_assign.pdo_byte_length;
+                    std.log.info("station addr: 0x{x}, sm assign: {}", .{ station_address, sii_sms.slice()[sm_assign.sm_idx] });
+                    std.log.info("station addr: 0x{x}, sm control byte: {}", .{ station_address, sii_sms.slice()[sm_assign.sm_idx].control });
+                    std.log.info("station addr: 0x{x}, sm control byte: {}", .{ station_address, @as(u8, @bitCast(sii_sms.slice()[sm_assign.sm_idx].control)) });
                 }
                 sms = sii.escSMsFromSIISMs(sii_sms.slice());
             }
         },
     }
+
     // write SM configuration to subdevice
     try commands.fpwrPackWkc(
         port,

@@ -21,8 +21,7 @@ pub fn main() !void {
     var process_image = std.mem.zeroes([eni.processImageSize()]u8);
     const used_subdevices = try gcat.initSubdevicesFromENI(eni, &subdevices, &process_image);
     assert(used_subdevices.len == subdevices.len);
-
-    var frames: [256]gcat.telegram.EtherCATFrame = .{gcat.telegram.EtherCATFrame.empty} ** 256;
+    var frames: [gcat.MainDevice.frameCount(@intCast(process_image.len))]gcat.telegram.EtherCATFrame = @splat(gcat.telegram.EtherCATFrame.empty);
 
     var main_device = try gcat.MainDevice.init(
         &port,
@@ -71,8 +70,6 @@ pub fn main() !void {
             error.LinkError,
             error.CurruptedFrame,
             error.NotAllSubdevicesInOP,
-            error.ProcessImageTooLarge,
-            error.NotEnoughFrames,
             error.NoTransactionAvailable,
             error.TopologyChanged,
             => |err2| return err2,

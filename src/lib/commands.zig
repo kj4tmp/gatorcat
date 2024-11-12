@@ -2,9 +2,9 @@ const std = @import("std");
 const assert = std.debug.assert;
 
 const nic = @import("nic.zig");
-const wire = @import("wire.zig");
-const telegram = @import("telegram.zig");
 const Port = @import("Port.zig");
+const telegram = @import("telegram.zig");
+const wire = @import("wire.zig");
 
 fn sendDatagram(
     port: *Port,
@@ -47,14 +47,16 @@ fn sendDatagram(
 
 /// No operation.
 /// The subdevice ignores the command.
-pub fn nop(port: *Port, timeout_us: u32) !void {
-    var data: [1]u8 = .{0};
+pub fn nop(port: *Port, data_size: u16, timeout_us: u32) !void {
+    assert(data_size <= telegram.Datagram.max_data_length);
+    assert(data_size > 0);
+    var zeros = std.mem.zeroes([telegram.Datagram.max_data_length]u8);
     // wkc can be ignored on NOP, it is always zero
     _ = try sendDatagram(
         port,
         telegram.Command.NOP,
         0,
-        &data,
+        zeros[0..data_size],
         timeout_us,
     );
 }

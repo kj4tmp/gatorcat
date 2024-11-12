@@ -33,6 +33,9 @@ pub fn init(
     process_image: []u8,
     frames: []telegram.EtherCATFrame,
 ) !MainDevice {
+    if (frameCount(@intCast(process_image.len)) < frames.len) return error.NotEnoughFrames;
+
+    assert(frameCount(@intCast(process_image.len)) <= frames.len);
     return MainDevice{
         .port = port,
         .settings = settings,
@@ -320,7 +323,13 @@ pub fn busOP(self: *MainDevice, change_timeout_us: u32) !void {
     } else return error.StateChangeTimeout;
 }
 
-pub fn sendRecvCyclicFrames(self: *MainDevice) !void {
+pub const SendRecvCyclicFramesError = SendRecvCycleFramesDiagError || error{
+    NotAllSubdevicesInOP,
+    TopologyChanged,
+    Wkc,
+};
+
+pub fn sendRecvCyclicFrames(self: *MainDevice) SendRecvCyclicFramesError!void {
     const result = try self.sendRecvCyclicFramesDiag();
     if (result.brd_status_wkc != self.subdevices.len) return error.TopologyChanged;
     if (result.brd_status.state != .OP) return error.NotAllSubdevicesInOP;
@@ -336,25 +345,51 @@ pub const SendRecvCyclicFramesDiagResult = struct {
 pub const SendRecvCycleFramesDiagError = error{
     LinkError,
     CurruptedFrame,
-    NotAllSubdevicesInOP,
-    ProcessImageTooLarge,
-    NotEnoughFrames,
     NoTransactionAvailable,
-    TopologyChanged,
     RecvTimeout,
 };
 
+/// returns number of frames required to exchange process data
+pub fn frameCount(process_image_size: u32) u32 {
+    var process_image_bytes_remaining = process_image_size;
+    var used_frames: u32 = 0;
+    const datagram_data_remaining_after_brd = 1468;
+    comptime assert(datagram_data_remaining_after_brd == blk: {
+        var builder = FrameBuilder{};
+        builder.appendBrdPack(
+            esc.ALStatusRegister,
+            .{
+                .autoinc_address = 0,
+                .offset = @intFromEnum(esc.RegisterMap.AL_status),
+            },
+        ) catch |err| switch (err) {
+            error.NoSpaceLeft => unreachable,
+        };
+
+        break :blk builder.datagramDataSpaceRemaining();
+    });
+    process_image_bytes_remaining -|= datagram_data_remaining_after_brd;
+    used_frames += 1;
+    if (process_image_bytes_remaining == 0) return used_frames;
+    // TODO: use divCeil?
+    const pure_lrw_frames = (process_image_bytes_remaining + telegram.Datagram.max_data_length - 1) / telegram.Datagram.max_data_length;
+    process_image_bytes_remaining -|= pure_lrw_frames * telegram.Datagram.max_data_length;
+    used_frames += pure_lrw_frames;
+    assert(process_image_bytes_remaining == 0);
+    return used_frames;
+}
+
+pub const max_frames_in_flight = std.math.maxInt(u8) + 1;
+
 pub fn sendRecvCyclicFramesDiag(self: *MainDevice) SendRecvCycleFramesDiagError!SendRecvCyclicFramesDiagResult {
+    assert(frameCount(@intCast(self.process_image.len)) <= self.frames.len);
 
     // TODO: implement frame re-cycling upon receive to allow extremely large process data?
-    var input_bytes_remaining = pdi.processImageInputsSize(self.subdevices);
-    var output_bytes_remaining = pdi.processImageOutputsSize(self.subdevices);
+    var process_image_bytes_remaining = self.process_image.len;
     var logical_addr: u32 = 0;
 
     var used_frames: u9 = 0;
-    build_frames: for (0..257) |i| {
-        if (i == 256) return error.ProcessImageTooLarge;
-
+    build_frames: for (0..max_frames_in_flight) |i| {
         var builder = FrameBuilder{};
         if (i == 0) {
             builder.appendBrdPack(
@@ -368,51 +403,37 @@ pub fn sendRecvCyclicFramesDiag(self: *MainDevice) SendRecvCycleFramesDiagError!
             };
         }
 
-        // append input datagrams
-        if (input_bytes_remaining > 0 and builder.datagramDataSpaceRemaining() > 0) {
-            const bytes_to_consume = @min(input_bytes_remaining, builder.datagramDataSpaceRemaining());
+        // append process data datagrams
+        if (process_image_bytes_remaining > 0 and builder.datagramDataSpaceRemaining() > 0) {
+            const bytes_to_consume = @min(process_image_bytes_remaining, builder.datagramDataSpaceRemaining());
             const start = logical_addr;
             const end_exclusive = logical_addr + bytes_to_consume;
 
             builder.appendLrw(logical_addr, self.process_image[start..end_exclusive]) catch |err| switch (err) {
                 error.NoSpaceLeft => unreachable,
             };
-            input_bytes_remaining -= bytes_to_consume;
+            process_image_bytes_remaining -= bytes_to_consume;
             logical_addr += bytes_to_consume;
         }
 
-        // append output datagrams
-        if (input_bytes_remaining == 0 and
-            output_bytes_remaining > 0 and
-            builder.datagramDataSpaceRemaining() > 0)
-        {
-            const bytes_to_consume = @min(output_bytes_remaining, builder.datagramDataSpaceRemaining());
-            const start = logical_addr;
-            const end_exclusive = logical_addr + bytes_to_consume;
-            builder.appendLrw(logical_addr, self.process_image[start..end_exclusive]) catch |err| switch (err) {
-                error.NoSpaceLeft => unreachable,
-            };
-            output_bytes_remaining -= bytes_to_consume;
-            logical_addr += bytes_to_consume;
-        }
-
-        if (i > self.frames.len - 1) return error.NotEnoughFrames;
+        assert(i < self.frames.len); // checked by frameCount on init
         self.frames[i] = builder.dumpFrame();
         used_frames += 1;
 
-        if (input_bytes_remaining == 0 and output_bytes_remaining == 0) break :build_frames;
-    }
-    assert(input_bytes_remaining == 0);
-    assert(output_bytes_remaining == 0);
+        if (process_image_bytes_remaining == 0) break :build_frames;
+    } else unreachable; // checked by frameCount on init
+    assert(process_image_bytes_remaining == 0);
+    assert(used_frames == frameCount(@intCast(self.process_image.len)));
 
     // send muliple frames in flight
-    var transactions = std.BoundedArray(u8, 256){};
+    var transactions = std.BoundedArray(u8, max_frames_in_flight){};
     defer {
         for (transactions.slice()) |transaction| {
             self.port.release_transaction(transaction);
         }
     }
-    assert(used_frames <= transactions.len);
+    assert(used_frames <= max_frames_in_flight);
+    assert(used_frames <= self.frames.len);
     for (self.frames[0..used_frames]) |*frame| {
         const transaction_idx = try self.port.claim_transaction();
 

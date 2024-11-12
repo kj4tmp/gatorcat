@@ -84,6 +84,17 @@ pub fn appendLrw(
     try self.appendDatagram(telegram.Datagram.init(.LRW, @bitCast(address), false, data));
 }
 
+pub fn appendNop(
+    self: *FrameBuilder,
+    address: telegram.LogicalAddress,
+    data_size: u16,
+) error{NoSpaceLeft}!void {
+    assert(data_size <= telegram.Datagram.max_data_length);
+    assert(data_size > 0);
+    var zeros = std.mem.zeroes([telegram.Datagram.max_data_length]u8);
+    try self.appendDatagram(telegram.Datagram.init(.NOP, @bitCast(address), false, zeros[0..data_size]));
+}
+
 fn datagramDataIsPacked(self: *const FrameBuilder) bool {
     if (self.frame.portable_datagrams.len <= 1) return true;
     for (1..self.frame.portable_datagrams.len) |i| {

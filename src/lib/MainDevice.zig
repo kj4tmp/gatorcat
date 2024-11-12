@@ -289,7 +289,8 @@ pub fn busSAFEOP(self: *MainDevice, change_timeout_us: u32) !void {
     var timer = std.time.Timer.start() catch @panic("timer not supported");
     while (timer.read() < @as(u64, change_timeout_us) * std.time.ns_per_us) {
         const result = try self.sendRecvCyclicFramesDiag();
-        if (result.brd_status.state == .SAFEOP) break;
+        if (result.brd_status_wkc != self.subdevices.len) return error.Wkc;
+        if (result.brd_status.state == .SAFEOP and result.brd_status_wkc == self.subdevices.len) break;
     } else return error.StateChangeTimeout;
 }
 
@@ -319,7 +320,11 @@ pub fn busOP(self: *MainDevice, change_timeout_us: u32) !void {
     var timer = std.time.Timer.start() catch @panic("timer not supported");
     while (timer.read() < @as(u64, change_timeout_us) * std.time.ns_per_us) {
         const result = try self.sendRecvCyclicFramesDiag();
-        if (result.brd_status.state == .OP) break;
+        if (result.brd_status_wkc != self.subdevices.len) return error.Wkc;
+        if (result.brd_status.state == .OP and result.brd_status_wkc == self.subdevices.len) {
+            std.log.warn("successfull state change to {}, status code: {}", .{ result.brd_status.state, result.brd_status.status_code });
+            break;
+        }
     } else return error.StateChangeTimeout;
 }
 
@@ -474,20 +479,19 @@ pub fn sendRecvCyclicFramesDiag(self: *MainDevice) SendRecvCycleFramesDiagError!
     // copy data to process image now that we know wkc is correct
     // telegram.EtherCATFrame.isCurrupted protects against memory
     // curruption
-    // don't touch process data unless wkc is correct
-    if (process_data_wkc == self.expectedProcessDataWkc()) {
-        for (self.frames[0..used_frames]) |*frame| {
-            for (frame.datagrams().slice()) |*dgram| {
-                switch (dgram.header.command) {
-                    .LRD, .LRW => {
-                        const start = dgram.header.address;
-                        const end_exclusive = dgram.header.address + dgram.data.len;
-                        @memcpy(self.process_image[start..end_exclusive], dgram.data);
-                    },
-                    // no need to copy to outputs
-                    .BRD, .LWR => {},
-                    else => unreachable,
-                }
+    // TODO: don't touch process data unless wkc is correct
+
+    for (self.frames[0..used_frames]) |*frame| {
+        for (frame.datagrams().slice()) |*dgram| {
+            switch (dgram.header.command) {
+                .LRD, .LRW => {
+                    const start = dgram.header.address;
+                    const end_exclusive = dgram.header.address + dgram.data.len;
+                    @memcpy(self.process_image[start..end_exclusive], dgram.data);
+                },
+                // no need to copy to outputs
+                .BRD, .LWR => {},
+                else => unreachable,
             }
         }
     }

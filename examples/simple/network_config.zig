@@ -59,6 +59,15 @@ const beckhoff_EL7041_1000 = gcat.ENI.SubDeviceConfiguration{
         .{
             .transition = .PS,
             .direction = .write,
+            .index = 0x1011,
+            .subindex = 0x01,
+            .complete_access = false,
+            .data = &.{ 0x6c, 0x6f, 0x61, 0x64 }, // restore default params
+            .timeout_us = 100_000,
+        },
+        .{
+            .transition = .PS,
+            .direction = .write,
             .index = 0x1c12, // RxPDO Assign
             .subindex = 0x0,
             .complete_access = true,

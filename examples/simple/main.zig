@@ -6,7 +6,7 @@ const gcat = @import("gatorcat");
 const eni = @import("network_config.zig").eni;
 
 pub const std_options: std.Options = .{
-    .log_level = .info,
+    .log_level = .warn,
 };
 
 pub fn main() !void {
@@ -42,38 +42,42 @@ pub fn main() !void {
     var wkc_error_timer = try std.time.Timer.start();
     var cycle_count: u32 = 0;
 
+    const ek1100 = &subdevices[0];
     const el3314 = &subdevices[1];
+    const el2008 = &subdevices[3];
     const el7041 = &subdevices[4];
 
     var temps = el3314.packFromInputProcessData(EL3314ProcessData);
     const motor_control = EL7041Outputs.enabled;
+    var motor_status = std.mem.zeroes(EL7041Inputs);
 
     while (true) {
 
         // input and output mapping
         temps = el3314.packFromInputProcessData(EL3314ProcessData);
+        motor_status = el7041.packFromInputProcessData(EL7041Inputs);
         el7041.packToOutputProcessData(motor_control);
 
         // exchange process data
-        main_device.sendRecvCyclicFrames() catch |err| switch (err) {
+        const diag = main_device.sendRecvCyclicFramesDiag() catch |err| switch (err) {
             error.RecvTimeout => {
                 std.log.warn("recv timeout", .{});
                 continue;
             },
-            error.Wkc => {
-                if (wkc_error_timer.read() > 1 * std.time.ns_per_s) {
-                    wkc_error_timer.reset();
-                    std.log.warn("wkc error", .{});
-                }
-            },
-            // error.Wkc,
             error.LinkError,
             error.CurruptedFrame,
-            error.NotAllSubdevicesInOP,
             error.NoTransactionAvailable,
-            error.TopologyChanged,
             => |err2| return err2,
         };
+        if (diag.brd_status_wkc != eni.subdevices.len) return error.TopologyChanged;
+        if (diag.brd_status.state != .OP) {
+            std.log.err("Not all subdevices in OP! brd status {}", .{diag.brd_status});
+            return error.NotAllSubdevicesInOP;
+        }
+        if (diag.process_data_wkc != main_device.expectedProcessDataWkc() and wkc_error_timer.read() > 1 * std.time.ns_per_s) {
+            wkc_error_timer.reset();
+            std.log.err("process data wkc wrong: {}, expected: {}", .{ diag.process_data_wkc, main_device.expectedProcessDataWkc() });
+        }
         cycle_count += 1;
 
         // do application
@@ -81,19 +85,20 @@ pub fn main() !void {
             print_timer.reset();
             std.log.warn("frames/s: {}", .{cycle_count});
             std.log.warn("temps: {}", .{temps});
+            std.log.warn("motor_status: {}", .{motor_status});
             cycle_count = 0;
         }
         if (blink_timer.read() > std.time.ns_per_s * 0.1) {
             blink_timer.reset();
             // make the lights flash on the EL2008
-            subdevices[3].runtime_info.pi.outputs[0] *%= 2;
-            if (subdevices[3].runtime_info.pi.outputs[0] == 0) {
-                subdevices[3].runtime_info.pi.outputs[0] = 1;
+            el2008.runtime_info.pi.outputs[0] *%= 2;
+            if (el2008.runtime_info.pi.outputs[0] == 0) {
+                el2008.runtime_info.pi.outputs[0] = 1;
             }
         }
-        if (kill_timer.read() > std.time.ns_per_s * 5) {
+        if (kill_timer.read() > std.time.ns_per_s * 100) {
             kill_timer.reset();
-            try subdevices[0].setALState(&port, .SAFEOP, 10000, 10000);
+            try ek1100.setALState(&port, .SAFEOP, 10000, 10000);
         }
     }
 }
@@ -136,9 +141,32 @@ const EL7041Outputs = packed struct(u64) {
         .control_enable_latch_extern_neg_edge = false,
         .control_enable_latch_extern_pos_edge = false,
         .control_reduce_torque = true,
-        .control_reset = false,
+        .control_reset = true,
         .control_set_counter = false,
         .set_counter_value = 0,
         .velocity = 0,
+    };
+};
+
+const EL7041Inputs = packed struct(u64) {
+    encoder_flags: u16,
+    encoder_value: u16,
+    encoder_latch_value: u16,
+    status: STMStatus,
+
+    const STMStatus = packed struct(u16) {
+        ready_to_enable: bool,
+        ready: bool,
+        warning: bool,
+        @"error": bool,
+        move_pos: bool,
+        move_neg: bool,
+        torque_reduced: bool,
+        reserved: u4 = 0,
+        dig_in_1: bool,
+        dig_in_2: bool,
+        sync_error: bool,
+        reserved2: u1 = 0,
+        tx_pdo_toggle: bool,
     };
 };

@@ -26,7 +26,7 @@ pub fn main() !void {
 
     var main_device = try gcat.MainDevice.init(
         &port,
-        .{ .recv_timeout_us = 3000, .eeprom_timeout_us = 10_000 },
+        .{ .recv_timeout_us = 4000, .eeprom_timeout_us = 10_000 },
         used_subdevices,
         &process_image,
         &frames,
@@ -48,8 +48,8 @@ pub fn main() !void {
 
     const ek1100 = &subdevices[0];
     const el3314 = &subdevices[1];
-    const el2008 = &subdevices[3];
-    const el7041 = &subdevices[4];
+    const el2008 = &subdevices[4];
+    const el7041 = &subdevices[3];
 
     var temps = el3314.packFromInputProcessData(EL3314ProcessData);
     var motor_control = EL7041Outputs.zero;

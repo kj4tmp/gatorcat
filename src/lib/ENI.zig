@@ -27,7 +27,7 @@ pub const SubDeviceConfiguration = struct {
     coe_startup_parameters: ?[]const CoEStartupParameter = null,
 
     /// Autoconfigure strategy
-    auto_config: enum { none, sii } = .sii,
+    auto_config: enum { none, sii, coe } = .sii,
 };
 
 pub const CoEStartupParameter = struct {

@@ -1,10 +1,17 @@
 const std = @import("std");
 const assert = std.debug.assert;
 
-const coe = @import("../coe.zig");
 const mailbox = @import("../../mailbox.zig");
 const wire = @import("../../wire.zig");
+const coe = @import("../coe.zig");
 const server = @import("server.zig");
+/// SDO Client Abort Transfer Request
+///
+/// The coding for abort transfer requests is identical between server
+/// and client.
+///
+/// Ref: IEC 61158-6-12:2019 5.6.2.7.1
+pub const Abort = server.Abort;
 
 /// Client Command Specifer
 ///
@@ -745,14 +752,6 @@ pub const Command = struct {
     status: u8,
     reply: []u8,
 };
-
-/// SDO Client Abort Transfer Request
-///
-/// The coding for abort transfer requests is identical between server
-/// and client.
-///
-/// Ref: IEC 61158-6-12:2019 5.6.2.7.1
-pub const Abort = server.Abort;
 
 test {
     std.testing.refAllDecls(@This());

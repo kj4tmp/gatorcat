@@ -5,7 +5,7 @@ const flags = @import("flags");
 const gcat = @import("gatorcat");
 
 pub const std_options: std.Options = .{
-    .log_level = .debug,
+    .log_level = .warn,
 };
 
 pub fn main() !void {
@@ -37,6 +37,8 @@ pub fn main() !void {
                 scan_args.recv_timeout_us,
                 scan_args.eeprom_timeout_us,
                 scan_args.INIT_timeout_us,
+                scan_args.PREOP_timeout_us,
+                scan_args.mbx_timeout_us,
                 scan_args.ring_position,
             );
         },
@@ -58,6 +60,8 @@ const Flags = struct {
             recv_timeout_us: u32 = 10_000,
             eeprom_timeout_us: u32 = 10_000,
             INIT_timeout_us: u32 = 5_000_000,
+            PREOP_timeout_us: u32 = 10_000_000,
+            mbx_timeout_us: u32 = 50_000,
             pub const descriptions = .{
                 .ifname = "Network interface to use for the bus scan.",
                 .recv_timeout_us = "Frame receive timeout in microseconds.",
@@ -74,6 +78,8 @@ fn scan(
     recv_timeout_us: u32,
     eeprom_timeout_us: u32,
     INIT_timeout_us: u32,
+    PREOP_timeout_us: u32,
+    mbx_timeout_us: u32,
     ring_position: ?u16,
 ) !void {
     var scanner = gcat.Scanner.init(port, .{ .eeprom_timeout_us = eeprom_timeout_us, .recv_timeout_us = recv_timeout_us });
@@ -94,23 +100,27 @@ fn scan(
     // detailed info on each subdevice
     if (ring_position) |position| {
         try printSubdeviceDetails(writer, port, recv_timeout_us, eeprom_timeout_us, @intCast(position));
-        try printSubdevicePDOs(
+        try printSubdeviceSIIPDOs(
             writer,
             port,
             recv_timeout_us,
             eeprom_timeout_us,
             gcat.SubDevice.stationAddressFromRingPos(@intCast(position)),
         );
+        var subdevice = try scanner.subdevicePREOP(PREOP_timeout_us, position);
+        try printSubdeviceCoePDOs(writer, port, recv_timeout_us, mbx_timeout_us, &subdevice);
     } else {
         for (0..num_subdevices) |i| {
             try printSubdeviceDetails(writer, port, recv_timeout_us, eeprom_timeout_us, @intCast(i));
-            try printSubdevicePDOs(
+            try printSubdeviceSIIPDOs(
                 writer,
                 port,
                 recv_timeout_us,
                 eeprom_timeout_us,
                 gcat.SubDevice.stationAddressFromRingPos(@intCast(i)),
             );
+            var subdevice = try scanner.subdevicePREOP(PREOP_timeout_us, @intCast(i));
+            try printSubdeviceCoePDOs(writer, port, recv_timeout_us, mbx_timeout_us, &subdevice);
         }
     }
 }
@@ -322,10 +332,35 @@ fn printSubdeviceDetails(
         }
     }
 
+    if (try gcat.sii.readSMCatagory(port, station_address, recv_timeout_us, eeprom_timeout_us)) |sm_catagory| {
+        try writer.print("SII Catagory Sync Managers:\n", .{});
+        for (sm_catagory.slice(), 0..) |sm, i| {
+            try writer.print("    SM Index: {}\n", .{i});
+            try writer.print("        type: {s}\n", .{std.enums.tagName(gcat.sii.SyncMType, sm.syncM_type) orelse "INVALID"});
+            try writer.print("        physical start addr: 0x{x}\n", .{sm.physical_start_address});
+            try writer.print("        length: {}\n", .{sm.length});
+            try writer.print("            control:\n", .{});
+            inline for (std.meta.fields(gcat.esc.SyncManagerControlRegister)) |field| {
+                if (comptime std.mem.eql(u8, field.name, "reserved")) continue;
+                try writer.print("                {s:<26}  {:<5}\n", .{ field.name, @field(sm.control, field.name) });
+            }
+            try writer.print("            status:\n", .{});
+            inline for (std.meta.fields(gcat.esc.SyncManagerActivateRegister)) |field| {
+                if (comptime std.mem.eql(u8, field.name, "reserved")) continue;
+                try writer.print("                {s:<26}  {:<5}\n", .{ field.name, @field(sm.status, field.name) });
+            }
+            try writer.print("            enable:\n", .{});
+            inline for (std.meta.fields(gcat.sii.EnableSyncMangager)) |field| {
+                if (comptime std.mem.eql(u8, field.name, "reserved")) continue;
+                try writer.print("                {s:<26}  {:<5}\n", .{ field.name, @field(sm.enable_sync_manager, field.name) });
+            }
+        }
+    }
+
     try writer.print("\n", .{});
 }
 
-fn printSubdevicePDOs(
+fn printSubdeviceSIIPDOs(
     writer: anytype,
     port: *gcat.Port,
     recv_timeout_us: u32,
@@ -349,10 +384,10 @@ fn printSubdevicePDOs(
     );
 
     if (output_pdos_bit_length == 0 and input_pdos_bit_length == 0) {
-        try writer.print("Process Data: None\n", .{});
+        try writer.print("SII Process Data Information: None\n", .{});
         return;
     } else {
-        try writer.print("Process Data:\n", .{});
+        try writer.print("SII Process Data Information:\n", .{});
     }
 
     try writer.print("    Inputs bit length:  {d:>5}\n", .{input_pdos_bit_length});
@@ -376,13 +411,13 @@ fn printSubdevicePDOs(
     );
 
     if (input_pdos.len != 0) {
-        try writer.print("Input PDOs:\n", .{});
+        try writer.print("SII Input PDOs:\n", .{});
         try printPDOTable(writer, input_pdos, port, station_address, recv_timeout_us, eeprom_timeout_us);
         try writer.print("\n", .{});
     }
 
     if (output_pdos.len != 0) {
-        try writer.print("Output PDOs:\n", .{});
+        try writer.print("SII Output PDOs:\n", .{});
         try printPDOTable(writer, output_pdos, port, station_address, recv_timeout_us, eeprom_timeout_us);
         try writer.print("\n", .{});
     }
@@ -419,4 +454,54 @@ fn printPDOTable(
             });
         }
     }
+}
+fn printSubdeviceCoePDOs(
+    writer: anytype,
+    port: *gcat.Port,
+    recv_timeout_us: u32,
+    mbx_timeout_us: u32,
+    subdevice: *gcat.SubDevice,
+) !void {
+    try writer.print("COE PDO Assignment:\n", .{});
+    const station_address = gcat.SubDevice.stationAddressFromRingPos(subdevice.runtime_info.ring_position);
+    const cnt = &subdevice.runtime_info.coe.?.cnt;
+    const mailbox_config = subdevice.runtime_info.coe.?.config;
+
+    const sm_comms = try gcat.mailbox.coe.readSMComms(port, station_address, recv_timeout_us, mbx_timeout_us, cnt, mailbox_config);
+
+    for (sm_comms.slice(), 0..) |sm_comm, sm_idx| {
+        try writer.print("    Sync Manager: {}, type: {s}\n", .{ sm_idx, std.enums.tagName(gcat.mailbox.coe.SMComm, sm_comm) orelse "Invalid SM Comm Type" });
+    }
+    try writer.print("PDO Index  SM Bits  Mapped Index\n", .{});
+    try writer.print("----------------------------------------------\n", .{});
+
+    for (sm_comms.slice(), 0..) |_, sm_idx| {
+        const sm_pdo_assignment = gcat.mailbox.coe.readSMChannel(port, station_address, recv_timeout_us, mbx_timeout_us, cnt, mailbox_config, @intCast(sm_idx)) catch |err| switch (err) {
+            error.Aborted => continue,
+            else => |err2| return err2,
+        };
+
+        for (sm_pdo_assignment.slice()) |pdo_index| {
+            const pdo_mapping = try gcat.mailbox.coe.readPDOMapping(port, station_address, recv_timeout_us, mbx_timeout_us, cnt, mailbox_config, pdo_index);
+            try writer.print("0x{x:04}    {d:>3}  {d:>3}  -\n", .{ pdo_index, sm_idx, pdo_mapping.bitLength() });
+            for (pdo_mapping.entries.slice()) |entry| {
+                if (entry.isGap()) {
+                    try writer.print("               {d:>3}  PADDING\n", .{entry.bit_length});
+                } else {
+                    try writer.print("               {d:>3}  0x{x:04}:{x:02}\n", .{ entry.bit_length, entry.index, entry.subindex });
+                }
+            }
+        }
+    }
+
+    // const mapping = try gcat.mailbox.coe.readPDOMapping(
+    //     port,
+    //     gcat.SubDevice.stationAddressFromRingPos(subdevice.runtime_info.ring_position),
+    //     recv_timeout_us,
+    //     mbx_timeout_us,
+    //     &subdevice.runtime_info.coe.?.cnt,
+    //     subdevice.runtime_info.coe.?.config,
+    //     0x1600,
+    // );
+    // try writer.print("mapping: {}\n", .{mapping});
 }

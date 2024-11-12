@@ -56,6 +56,22 @@ pub const RuntimeInfo = struct {
 
 const SubDevice = @This();
 
+pub fn getALStatus(
+    self: *const SubDevice,
+    port: *Port,
+    recv_timeout_us: u32,
+) !esc.ALStatusRegister {
+    // TODO: consider not using the ack bit
+    const station_address: u16 = stationAddressFromRingPos(self.runtime_info.ring_position);
+    return try commands.fprdPackWkc(
+        port,
+        esc.ALStatusRegister,
+        .{ .station_address = station_address, .offset = @intFromEnum(esc.RegisterMap.AL_status) },
+        recv_timeout_us,
+        1,
+    );
+}
+
 pub fn setALState(
     self: *const SubDevice,
     port: *Port,
@@ -223,7 +239,7 @@ pub fn transitionIP(
     var sms = std.mem.zeroes(esc.SMRegister);
     switch (self.config.auto_config) {
         .none => {},
-        .sii => {
+        .sii, .coe => {
             // If mailbox is supported:
             // SM0 should be used for Mailbox Out (from maindevice to subdevice)
             // SM1 should be used for Mailbox In (from subdevice to maindevice)
@@ -334,6 +350,7 @@ pub fn transitionPS(
     port: *Port,
     recv_timeout_us: u32,
     eeprom_timeout_us: u32,
+    mbx_timeout_us: u32,
     fmmu_inputs_start_addr: u32,
     fmmu_outputs_start_addr: u32,
 ) !void {
@@ -349,7 +366,7 @@ pub fn transitionPS(
 
     switch (self.config.auto_config) {
         .none => {},
-        .sii => {
+        .sii, .coe => |strat| {
             // the entire SM configuration was already written from the SII as part of the IP transition.
             // we do not need to modify it here.
 
@@ -365,12 +382,24 @@ pub fn transitionPS(
             );
             if (fmmus.len < min_fmmu_required) return error.NotEnoughFMMUs;
 
-            const sm_assigns = try sii.readSMPDOAssigns(
-                port,
-                station_address,
-                recv_timeout_us,
-                eeprom_timeout_us,
-            );
+            const sm_assigns = switch (strat) {
+                .sii => try sii.readSMPDOAssigns(
+                    port,
+                    station_address,
+                    recv_timeout_us,
+                    eeprom_timeout_us,
+                ),
+                .coe => try coe.readSMPDOAssigns(
+                    port,
+                    station_address,
+                    recv_timeout_us,
+                    eeprom_timeout_us,
+                    mbx_timeout_us,
+                    &self.runtime_info.coe.?.cnt,
+                    self.runtime_info.coe.?.config,
+                ),
+                .none => unreachable,
+            };
 
             const totals = sm_assigns.totalBitLengths();
 

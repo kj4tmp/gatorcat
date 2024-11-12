@@ -24,6 +24,7 @@ frames: []telegram.EtherCATFrame,
 pub const Settings = struct {
     recv_timeout_us: u32 = 2000,
     eeprom_timeout_us: u32 = 10000,
+    mbx_timeout_us: u32 = 50000,
 };
 
 pub fn init(
@@ -267,6 +268,7 @@ pub fn busSAFEOP(self: *MainDevice, change_timeout_us: u32) !void {
             self.port,
             self.settings.recv_timeout_us,
             self.settings.eeprom_timeout_us,
+            self.settings.mbx_timeout_us,
             subdevice.runtime_info.pi.inputs_area.start_addr,
             subdevice.runtime_info.pi.outputs_area.start_addr,
         );
@@ -289,10 +291,17 @@ pub fn busSAFEOP(self: *MainDevice, change_timeout_us: u32) !void {
     var timer = std.time.Timer.start() catch @panic("timer not supported");
     while (timer.read() < @as(u64, change_timeout_us) * std.time.ns_per_us) {
         const result = try self.sendRecvCyclicFramesDiag();
-        std.log.info("diag: {}", .{result});
         if (result.brd_status_wkc != self.subdevices.len) return error.Wkc;
         if (result.brd_status.state == .SAFEOP and result.brd_status_wkc == self.subdevices.len) break;
-    } else return error.StateChangeTimeout;
+    } else {
+        for (self.subdevices) |subdevice| {
+            const status = try subdevice.getALStatus(self.port, self.settings.recv_timeout_us);
+            if (status.state != .SAFEOP) {
+                std.log.err("station address: 0x{x} failed state transition, status: {}", .{ SubDevice.stationAddressFromRingPos(subdevice.runtime_info.ring_position), status });
+            }
+        }
+        return error.StateChangeTimeout;
+    }
 }
 
 pub fn busOP(self: *MainDevice, change_timeout_us: u32) !void {
@@ -321,7 +330,7 @@ pub fn busOP(self: *MainDevice, change_timeout_us: u32) !void {
     var timer = std.time.Timer.start() catch @panic("timer not supported");
     while (timer.read() < @as(u64, change_timeout_us) * std.time.ns_per_us) {
         const result = try self.sendRecvCyclicFramesDiag();
-        std.log.info("diag: {}", .{result});
+        // std.log.info("diag: {}", .{result});
         if (result.brd_status_wkc != self.subdevices.len) return error.Wkc;
         if (result.brd_status.state == .OP and result.brd_status_wkc == self.subdevices.len) {
             std.log.warn("successfull state change to {}, status code: {}", .{ result.brd_status.state, result.brd_status.status_code });

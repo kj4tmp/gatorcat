@@ -6,12 +6,12 @@ const ns_per_us = std.time.ns_per_us;
 const assert = std.debug.assert;
 
 const mailbox = @import("../mailbox.zig");
-const wire = @import("../wire.zig");
 const nic = @import("../nic.zig");
 const Port = @import("../Port.zig");
-
-pub const server = @import("coe/server.zig");
+const sii = @import("../sii.zig");
+const wire = @import("../wire.zig");
 pub const client = @import("coe/client.zig");
+pub const server = @import("coe/server.zig");
 
 pub fn sdoWrite(
     port: *Port,
@@ -972,102 +972,54 @@ pub fn readPDOMapping(
     return PDOMapping{ .entries = entries };
 }
 
-// TODO: use complete access when avaiable
-// TODO: add diag mailbox content?
-// / Read the PDO Assignment from the subdevice.
-// /
-// / The cnt is a synchronization primitive used in CoE.
-// pub fn readPDOAssignment(
-//     port: *Port,
-//     station_address: u16,
-//     recv_timeout_us: u32,
-//     mbx_timeout_us: u32,
-//     cnt: *Cnt,
-//     config: mailbox.Configuration,
-// ) !void {
-//     assert(config.isValid());
-//     // the sync manager communication type index is an array of sync manager
-//     // communication types. subindex 0 is the number of entries.
-//     const n_sm = try sdoReadPack(
-//         port,
-//         station_address,
-//         @intFromEnum(CommunicationAreaMap.sync_manager_communication_type),
-//         0,
-//         false,
-//         u8,
-//         recv_timeout_us,
-//         mbx_timeout_us,
-//         cnt.nextCnt(),
-//         config,
-//     );
-//     std.log.warn("n_sm: {}", .{n_sm});
+pub fn readSMPDOAssigns(
+    port: *Port,
+    station_address: u16,
+    recv_timeout_us: u32,
+    eeprom_timeout_us: u32,
+    mbx_timeout_us: u32,
+    cnt: *Cnt,
+    config: mailbox.Configuration,
+) !sii.SMPDOAssigns {
+    var res = sii.SMPDOAssigns{};
 
-//     if (n_sm > 32) return error.InvalidCoENumberOfSyncManagers;
+    const sm_catagory = try sii.readSMCatagory(
+        port,
+        station_address,
+        recv_timeout_us,
+        eeprom_timeout_us,
+    ) orelse return res;
+    const sync_managers = sm_catagory.slice();
 
-//     var sm_types = SMCommunicationTypes{};
+    for (sync_managers, 0..) |sm_config, sm_idx| {
+        switch (sm_config.syncM_type) {
+            .mailbox_in, .mailbox_out, .not_used_or_unknown => {},
+            _ => return error.InvalidEEPROM,
+            .process_data_inputs, .process_data_outputs => |direction| {
+                try res.addSyncManager(sm_config, @intCast(sm_idx));
 
-//     for (0..n_sm) |sm_idx| {
-//         try sm_types.append(try sdoReadPack(
-//             port,
-//             station_address,
-//             @intFromEnum(CommunicationAreaMap.sync_manager_communication_type),
-//             // the subindex of the CoE obeject is 1 + the sm_idx. (subindex 1 contains the data for SM0)
-//             @intCast(sm_idx + 1),
-//             false,
-//             SMCommunicationType,
-//             recv_timeout_us,
-//             mbx_timeout_us,
-//             cnt.nextCnt(),
-//             config,
-//         ));
-//     }
+                const sm_pdo_assignment = try mailbox.coe.readSMChannel(port, station_address, recv_timeout_us, mbx_timeout_us, cnt, config, @intCast(sm_idx));
 
-//     std.log.err("{any}", .{sm_types.slice()});
-//     std.log.err("size pdo mapping {}", .{@sizeOf(PDOMapping)});
-
-//     for (sm_types.slice(), 0..) |sm_type, sm_idx| {
-//         switch (sm_type) {
-//             // unused and mailbox sync managers don't have PDOs
-//             .unused => continue,
-//             .mailbox_in => continue,
-//             .mailbox_out => continue,
-//             .input => {},
-//             .output => {},
-//             _ => return error.InvalidCoESMType,
-//         }
-//         var entries = PDOMapping.Entries{};
-
-//         const n_pdos = try sdoReadPack(
-//             port,
-//             station_address,
-//             CommunicationAreaMap.sm_pdo_assignment(@intCast(sm_idx)),
-//             0,
-//             false,
-//             u8,
-//             recv_timeout_us,
-//             mbx_timeout_us,
-//             cnt.nextCnt(),
-//             config,
-//         );
-
-//         if (n_pdos > entries.capacity()) return error.InvalidCoENumberOfPDOs;
-
-//         for (0..n_pdos) |pdo_idx| {
-//             try entries.append(try sdoReadPack(
-//                 port,
-//                 station_address,
-//                 CommunicationAreaMap.sm_pdo_assignment(@intCast(sm_idx)),
-//                 @intCast(pdo_idx + 1),
-//                 false,
-//                 PDOMappingEntry,
-//                 recv_timeout_us,
-//                 mbx_timeout_us,
-//                 cnt.nextCnt(),
-//                 config,
-//             ));
-//         }
-//     }
-// }
+                for (sm_pdo_assignment.slice()) |pdo_index| {
+                    const pdo_mapping = try mailbox.coe.readPDOMapping(port, station_address, recv_timeout_us, mbx_timeout_us, cnt, config, pdo_index);
+                    for (pdo_mapping.entries.slice()) |entry| {
+                        try res.addPDOBitsToSM(
+                            entry.bit_length,
+                            @intCast(sm_idx),
+                            switch (direction) {
+                                .process_data_inputs => .input,
+                                .process_data_outputs => .output,
+                                else => unreachable,
+                            },
+                        );
+                    }
+                }
+            },
+        }
+    }
+    try res.sortAndVerifyNonOverlapping();
+    return res;
+}
 
 /// Basic Data Type Area
 ///

@@ -15,30 +15,25 @@ pub fn main() !void {
     var port = gcat.Port.init(raw_socket.networkAdapter(), .{});
     try port.ping(10000);
 
-    // Since the ENI is known at comptime for this example,
-    // we can construct exact stack usage here.
-    var subdevices: [eni.subdevices.len]gcat.SubDevice = undefined;
-    var process_image = std.mem.zeroes([eni.processImageSize()]u8);
-    std.debug.print("PROCESS IMAGE SIZE: {}\n", .{eni.processImageSize()});
-    const used_subdevices = try gcat.initSubdevicesFromENI(eni, &subdevices, &process_image);
-    assert(used_subdevices.len == subdevices.len);
-    var frames: [gcat.MainDevice.frameCount(@intCast(process_image.len))]gcat.telegram.EtherCATFrame = @splat(gcat.telegram.EtherCATFrame.empty);
+    const estimated_stack_usage = comptime gcat.MainDevice.estimateAllocSize(eni) + 8;
+    var stack_memory: [estimated_stack_usage]u8 = undefined;
+    var stack_fba = std.heap.FixedBufferAllocator.init(&stack_memory);
 
-    var main_device = try gcat.MainDevice.init(
+    var md = try gcat.MainDevice.init(
+        stack_fba.allocator(),
         &port,
         .{ .recv_timeout_us = 4000, .eeprom_timeout_us = 10_000 },
-        used_subdevices,
-        &process_image,
-        &frames,
+        eni,
     );
+    defer md.deinit(stack_fba.allocator());
 
-    try main_device.busINIT(5_000_000);
-    try main_device.busPREOP(10_000_000);
-    try main_device.busSAFEOP(10_000_000);
-    try main_device.busOP(10_000_000);
+    try md.busINIT(5_000_000);
+    try md.busPREOP(10_000_000);
+    try md.busSAFEOP(10_000_000);
+    try md.busOP(10_000_000);
 
-    std.debug.print("EL2008 PROCESS IMAGE: {}\n", .{subdevices[3].runtime_info.pi});
-    std.debug.print("EL7041 PROCESS IMAGE: {}\n", .{subdevices[4].runtime_info.pi});
+    std.debug.print("EL2008 PROCESS IMAGE: {}\n", .{md.subdevices[3].runtime_info.pi});
+    std.debug.print("EL7041 PROCESS IMAGE: {}\n", .{md.subdevices[4].runtime_info.pi});
 
     var print_timer = try std.time.Timer.start();
     var blink_timer = try std.time.Timer.start();
@@ -46,10 +41,10 @@ pub fn main() !void {
     var wkc_error_timer = try std.time.Timer.start();
     var cycle_count: u32 = 0;
 
-    const ek1100 = &subdevices[0];
-    const el3314 = &subdevices[1];
-    const el2008 = &subdevices[4];
-    const el7041 = &subdevices[3];
+    const ek1100 = &md.subdevices[0];
+    const el3314 = &md.subdevices[1];
+    const el2008 = &md.subdevices[4];
+    const el7041 = &md.subdevices[3];
 
     var temps = el3314.packFromInputProcessData(EL3314ProcessData);
     var motor_control = EL7041Outputs.zero;
@@ -63,7 +58,7 @@ pub fn main() !void {
         el7041.packToOutputProcessData(motor_control);
 
         // exchange process data
-        const diag = main_device.sendRecvCyclicFramesDiag() catch |err| switch (err) {
+        const diag = md.sendRecvCyclicFramesDiag() catch |err| switch (err) {
             error.RecvTimeout => {
                 std.log.warn("recv timeout", .{});
                 continue;
@@ -78,11 +73,11 @@ pub fn main() !void {
             std.log.err("Not all subdevices in OP! brd status {}", .{diag.brd_status});
             return error.NotAllSubdevicesInOP;
         }
-        if (diag.process_data_wkc != main_device.expectedProcessDataWkc() and wkc_error_timer.read() > 1 * std.time.ns_per_s) {
+        if (diag.process_data_wkc != md.expectedProcessDataWkc() and wkc_error_timer.read() > 1 * std.time.ns_per_s) {
             wkc_error_timer.reset();
-            std.log.err("process data wkc wrong: {}, expected: {}", .{ diag.process_data_wkc, main_device.expectedProcessDataWkc() });
+            std.log.err("process data wkc wrong: {}, expected: {}", .{ diag.process_data_wkc, md.expectedProcessDataWkc() });
         }
-        if (diag.process_data_wkc == main_device.expectedProcessDataWkc()) std.debug.print("SUCCESS!!!!!!!!!!!!!!\n", .{});
+        if (diag.process_data_wkc == md.expectedProcessDataWkc()) std.debug.print("SUCCESS!!!!!!!!!!!!!!\n", .{});
         cycle_count += 1;
 
         // do application
@@ -91,8 +86,8 @@ pub fn main() !void {
             std.log.warn("frames/s: {}", .{cycle_count});
             std.log.warn("temps: {}", .{temps});
             std.log.warn("motor_status: {}", .{motor_status});
-            std.debug.print("EL2008 PROCESS IMAGE: {}\n", .{subdevices[3].runtime_info.pi});
-            std.debug.print("EL7041 PROCESS IMAGE: {}\n", .{subdevices[4].runtime_info.pi});
+            std.debug.print("EL2008 PROCESS IMAGE: {}\n", .{md.subdevices[3].runtime_info.pi});
+            std.debug.print("EL7041 PROCESS IMAGE: {}\n", .{md.subdevices[4].runtime_info.pi});
             cycle_count = 0;
             motor_control.control_reset = !motor_control.control_reset;
         }

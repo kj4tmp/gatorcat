@@ -15,6 +15,8 @@ pub const SubDevice = @import("SubDevice.zig");
 pub const telegram = @import("telegram.zig");
 pub const wire = @import("wire.zig");
 
+const gcat = @This();
+
 /// initialize a slice of undefined subdevices using information from the ENI.
 /// Returns slice of subdevices that has been initialized.
 pub fn initSubdevicesFromENI(eni: ENI, subdevices: []SubDevice, process_image: []u8) ![]SubDevice {

@@ -103,9 +103,8 @@ pub const RawSocket = struct {
                 return error.nicError;
             },
         }
-        const IFF_PROMISC = 256;
-        const IFF_BROADCAST = 2;
-        ifr.ifru.flags = ifr.ifru.flags | IFF_BROADCAST | IFF_PROMISC;
+        ifr.ifru.flags.BROADCAST = true;
+        ifr.ifru.flags.PROMISC = true;
         rval = std.posix.errno(std.os.linux.ioctl(socket, std.os.linux.SIOCSIFFLAGS, @intFromPtr(&ifr)));
         switch (rval) {
             .SUCCESS => {},

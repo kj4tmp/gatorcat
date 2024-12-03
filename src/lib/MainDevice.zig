@@ -5,6 +5,7 @@ const commands = @import("commands.zig");
 const ENI = @import("ENI.zig");
 const esc = @import("esc.zig");
 const FrameBuilder = @import("FrameBuilder.zig");
+const gcat = @import("root.zig");
 const nic = @import("nic.zig");
 const pdi = @import("pdi.zig");
 const Port = @import("Port.zig");
@@ -27,7 +28,7 @@ pub const Settings = struct {
     mbx_timeout_us: u32 = 50000,
 };
 
-pub fn init(
+pub fn init2(
     port: *Port,
     settings: Settings,
     subdevices: []SubDevice,
@@ -44,6 +45,51 @@ pub fn init(
         .process_image = process_image,
         .frames = frames,
     };
+}
+
+pub fn init(
+    allocator: std.mem.Allocator,
+    port: *Port,
+    settings: Settings,
+    eni: ENI,
+) !MainDevice {
+    const process_image = try allocator.alloc(u8, eni.processImageSize());
+    errdefer allocator.free(process_image);
+    @memset(process_image, 0);
+
+    const frames = try allocator.alloc(telegram.EtherCATFrame, frameCount(eni.processImageSize()));
+    errdefer allocator.free(frames);
+    assert(frameCount(eni.processImageSize()) <= frames.len);
+    @memset(frames, telegram.EtherCATFrame.empty);
+
+    const subdevices = try allocator.alloc(SubDevice, eni.subdevices.len);
+    errdefer allocator.free(subdevices);
+    const initialized_subdevices = gcat.initSubdevicesFromENI(eni, subdevices, process_image) catch |err| switch (err) {
+        error.NotEnoughSubdevices => unreachable,
+        error.ProcessImageTooSmall => unreachable,
+    };
+    assert(subdevices.len == initialized_subdevices.len);
+
+    return MainDevice{
+        .port = port,
+        .settings = settings,
+        .subdevices = initialized_subdevices,
+        .process_image = process_image,
+        .frames = frames,
+    };
+}
+
+pub fn deinit(self: *MainDevice, allocator: std.mem.Allocator) void {
+    allocator.free(self.process_image);
+    allocator.free(self.frames);
+    allocator.free(self.subdevices);
+}
+
+/// returns minimum required size of allocated memory from the ENI
+pub fn estimateAllocSize(eni: ENI) usize {
+    return @sizeOf(u8) * eni.processImageSize() +
+        @sizeOf(telegram.EtherCATFrame) * frameCount(eni.processImageSize()) +
+        @sizeOf(SubDevice) * eni.subdevices.len;
 }
 
 /// Initialize the ethercat bus.
@@ -215,25 +261,6 @@ pub fn busINIT(self: *MainDevice, change_timeout_us: u32) !void {
     if (wkc != self.subdevices.len) {
         std.log.err("Found {} subdevices, expected {}.", .{ wkc, self.subdevices.len });
         return error.WrongNumberOfSubDevices;
-    }
-
-    wkc = 0;
-    // command INIT on all subdevices, twice
-    // SOEM does this...something about netX100
-    for (0..1) |_| {
-        wkc = try commands.bwrPack(
-            self.port,
-            esc.ALControlRegister{
-                .state = .INIT,
-                .ack = true, // ack errors
-                .request_id = false,
-            },
-            .{
-                .autoinc_address = 0,
-                .offset = @intFromEnum(esc.RegisterMap.AL_control),
-            },
-            self.settings.recv_timeout_us,
-        );
     }
 
     try self.broadcastStateChange(.INIT, change_timeout_us);

@@ -26,8 +26,22 @@ pub const SubDeviceConfiguration = struct {
     /// SDO startup parameters
     coe_startup_parameters: ?[]const CoEStartupParameter = null,
 
+    // process_data: ProcessData,
+
     /// Autoconfigure strategy
     auto_config: enum { none, sii, coe } = .sii,
+
+    // const ProcessData = struct {
+    //     inputs_bit_length: u32 = 0,
+    //     outputs_bit_length: u32 = 0,
+    //     auto_config: AutoConfig,
+
+    //     const AutoConfig = union(enum) {
+    //         none: void,
+    //         sii: void,
+    //         coe: void,
+    //     };
+    // };
 };
 
 pub const CoEStartupParameter = struct {

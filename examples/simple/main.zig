@@ -1,5 +1,6 @@
 const std = @import("std");
 const assert = std.debug.assert;
+const builtin = @import("builtin");
 
 const gcat = @import("gatorcat");
 
@@ -10,7 +11,11 @@ pub const std_options: std.Options = .{
 };
 
 pub fn main() !void {
-    var raw_socket = try gcat.nic.RawSocket.init("enx00e04c68191a");
+    var raw_socket = switch (builtin.target.os.tag) {
+        .linux => try gcat.nic.RawSocket.init("enx00e04c68191a"),
+        .windows => try gcat.nic.WindowsRawSocket.init("\\Device\\NPF_{538CF305-6539-480E-ACD9-BEE598E7AE8F}"),
+        else => @compileError("unsupported target os"),
+    };
     defer raw_socket.deinit();
     var port = gcat.Port.init(raw_socket.networkAdapter(), .{});
     try port.ping(10000);
@@ -22,7 +27,7 @@ pub fn main() !void {
     var md = try gcat.MainDevice.init(
         stack_fba.allocator(),
         &port,
-        .{ .recv_timeout_us = 4000, .eeprom_timeout_us = 10_000 },
+        .{ .recv_timeout_us = 20000, .eeprom_timeout_us = 10_000 },
         eni,
     );
     defer md.deinit(stack_fba.allocator());

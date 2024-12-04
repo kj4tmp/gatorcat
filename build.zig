@@ -107,4 +107,5 @@ pub fn build(b: *std.Build) void {
     // using addInstallArtifact here so it only installs for the example step
     const example_install = b.addInstallArtifact(simple_example, .{});
     examples_step.dependOn(&example_install.step);
+    if (target.result.os.tag == .windows) simple_example.linkLibC();
 }

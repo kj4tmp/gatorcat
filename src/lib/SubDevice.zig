@@ -290,7 +290,10 @@ pub fn transitionIP(
             );
 
             if (maybe_sii_sms) |*sii_sms| {
-                std.log.info("station addr: 0x{x}, sm config: {any}", .{ station_address, sii_sms.slice() });
+                for (sii_sms.slice(), 0..) |sm, sm_idx| {
+                    std.log.info("station addr: 0x{x}, sm {} config: {any}", .{ station_address, sm_idx, sm });
+                }
+
                 for (sm_assigns.data.slice()) |sm_assign| {
                     sii_sms.slice()[sm_assign.sm_idx].length = sm_assign.pdo_byte_length;
                     std.log.info("station addr: 0x{x}, sm assign: {}", .{ station_address, sii_sms.slice()[sm_assign.sm_idx] });

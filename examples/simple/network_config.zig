@@ -103,10 +103,11 @@ const beckhoff_EL7031_0030 = gcat.ENI.SubDeviceConfiguration{
         .product_code = 0x1b773052,
         .revision_number = 0x0010001e,
     },
-    .inputs_bit_length = 128,
+    .inputs_bit_length = 112,
     .outputs_bit_length = 64,
     .auto_config = .coe,
     .coe_startup_parameters = &.{
+        // restore default params
         .{
             .transition = .PS,
             .direction = .write,
@@ -121,26 +122,13 @@ const beckhoff_EL7031_0030 = gcat.ENI.SubDeviceConfiguration{
             .direction = .write,
             .index = 0x1c12, // RxPDO Assign
             .subindex = 0x0,
-            .complete_access = false,
-            .data = &.{0x00},
-            .timeout_us = 10_000,
-        },
-        .{
-            .transition = .PS,
-            .direction = .write,
-            .index = 0x1c12, // RxPDO Assign
-            .subindex = 0x0,
             .complete_access = true,
-            .data = &.{ 0x03, 0x00, 0x00, 0x16, 0x02, 0x16, 0x04, 0x16 },
-            .timeout_us = 10_000,
-        },
-        .{
-            .transition = .PS,
-            .direction = .write,
-            .index = 0x1c13, // TxPDO Assign
-            .subindex = 0x0,
-            .complete_access = false,
-            .data = &.{0x00},
+            .data = &.{
+                0x03, 0x00, // 3 PDOs
+                0x00, 0x16, // encoder control: 4 bytes
+                0x02, 0x16, // STM control: 2 bytes
+                0x04, 0x16, // STM velocity: 2 bytes
+            },
             .timeout_us = 10_000,
         },
         .{
@@ -149,7 +137,12 @@ const beckhoff_EL7031_0030 = gcat.ENI.SubDeviceConfiguration{
             .index = 0x1c13, // TxPDO Assign
             .subindex = 0x0,
             .complete_access = true,
-            .data = &.{ 0x04, 0x00, 0x00, 0x1a, 0x03, 0x1a, 0x0a, 0x1a, 0x0c, 0x1a },
+            .data = &.{
+                0x04, 0x00, // 4 PDOs
+                0x00, 0x1a, // encoder: 6 bytes
+                0x0a, 0x1a, // AI standard: 4 bytes
+                0x0c, 0x1a, // AI standard: 4 bytes
+            },
             .timeout_us = 10_000,
         },
     },

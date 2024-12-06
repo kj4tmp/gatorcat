@@ -95,7 +95,7 @@ pub fn build(b: *std.Build) void {
     }
     b.installArtifact(cli);
 
-    // example
+    // example: simple
     const examples_step = b.step("examples", "Build example");
     const simple_example = b.addExecutable(.{
         .name = "example",
@@ -108,4 +108,17 @@ pub fn build(b: *std.Build) void {
     const example_install = b.addInstallArtifact(simple_example, .{});
     examples_step.dependOn(&example_install.step);
     if (target.result.os.tag == .windows) simple_example.linkLibC();
+
+    // example: simple2
+    const simple2_example = b.addExecutable(.{
+        .name = "simple2",
+        .target = target,
+        .optimize = optimize,
+        .root_source_file = b.path("examples/simple2/main.zig"),
+    });
+    simple2_example.root_module.addImport("gatorcat", lib);
+    // using addInstallArtifact here so it only installs for the example step
+    const simple2_install = b.addInstallArtifact(simple2_example, .{});
+    examples_step.dependOn(&simple2_install.step);
+    if (target.result.os.tag == .windows) simple2_example.linkLibC();
 }

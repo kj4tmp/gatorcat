@@ -34,6 +34,24 @@ pub fn main() !void {
 
     try md.busINIT(5_000_000);
     try md.busPREOP(10_000_000);
-    try md.busSAFEOP(10_000_000);
+    md.busSAFEOP(10_000_000) catch |err| switch (err) {
+        error.StateChangeTimeout => {
+            std.debug.print(
+                "{any}",
+                .{
+                    try gcat.mailbox.readMailboxIn(
+                        &port,
+                        0x1001,
+                        10_000,
+                        .{
+                            .length = 128,
+                            .start_addr = 4224,
+                        },
+                    ),
+                },
+            );
+        },
+        else => |err2| return err2,
+    };
     try md.busOP(10_000_000);
 }

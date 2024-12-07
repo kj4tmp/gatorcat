@@ -282,6 +282,7 @@ pub fn transitionIP(
 
             // apparently the SII doesnt set the sync managers to the correct
             // length for you...
+            // and apparently the the PDOs are missing from the SII sometimes too???
             const sm_assigns = try sii.readSMPDOAssigns(
                 port,
                 station_address,
@@ -295,7 +296,8 @@ pub fn transitionIP(
                 }
 
                 for (sm_assigns.data.slice()) |sm_assign| {
-                    sii_sms.slice()[sm_assign.sm_idx].length = sm_assign.pdo_byte_length;
+                    sii_sms.slice()[sm_assign.sm_idx].length = @max(sm_assign.pdo_byte_length, sii_sms.slice()[sm_assign.sm_idx].length);
+                    // sii_sms.slice()[sm_assign.sm_idx].length = sm_assign.pdo_byte_length;
                     std.log.info("station addr: 0x{x}, sm assign: {}", .{ station_address, sii_sms.slice()[sm_assign.sm_idx] });
                     std.log.info("station addr: 0x{x}, sm control byte: {}", .{ station_address, sii_sms.slice()[sm_assign.sm_idx].control });
                     std.log.info("station addr: 0x{x}, sm control byte: {}", .{ station_address, @as(u8, @bitCast(sii_sms.slice()[sm_assign.sm_idx].control)) });

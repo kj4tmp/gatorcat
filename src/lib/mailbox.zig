@@ -4,13 +4,12 @@ const Timer = std.time.Timer;
 const ns_per_us = std.time.ns_per_us;
 
 const commands = @import("commands.zig");
-const nic = @import("nic.zig");
 const esc = @import("esc.zig");
+pub const coe = @import("mailbox/coe.zig");
+const nic = @import("nic.zig");
+const Port = @import("Port.zig");
 const telegram = @import("telegram.zig");
 const wire = @import("wire.zig");
-const Port = @import("Port.zig");
-
-pub const coe = @import("mailbox/coe.zig");
 
 pub const HalfConfiguration = struct {
     /// Start memory address of memory governed by the mailbox sync manager.
@@ -118,9 +117,18 @@ pub fn writeMailboxOut(
             .station_address = station_address,
             .offset = act_mbx_out.physical_start_address,
         },
-        // The datagram size must exactly match the mailbox size,
-        // otherwise the subdevice seems to do nothing.
-        buf[0..act_mbx_out.length],
+        buf[0..size],
+        recv_timeout_us,
+        1,
+    );
+
+    // apparently you have to write outside the SM for the
+    // mailbox to be considered finished writing...?
+    // TODO: try to remove this?
+    try commands.fpwrPackWkc(
+        port,
+        @as(u8, 0),
+        .{ .station_address = station_address, .offset = 0x107f },
         recv_timeout_us,
         1,
     );

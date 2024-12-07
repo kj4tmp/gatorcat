@@ -36,7 +36,7 @@ const beckhoff_EL7031_0030 = gcat.ENI.SubDeviceConfiguration{
         //     .timeout_us = 100_000,
         // },
         // .{
-        //     .transition = .PS,
+        //     .transition = .IP,
         //     .direction = .write,
         //     .index = 0xf081, // download revision
         //     .subindex = 0x1,
@@ -45,7 +45,7 @@ const beckhoff_EL7031_0030 = gcat.ENI.SubDeviceConfiguration{
         //     .timeout_us = 10_000,
         // },
         // .{
-        //     .transition = .PS,
+        //     .transition = .IP,
         //     .direction = .write,
         //     .index = 0x10f3, // undocumented
         //     .subindex = 0x5,
@@ -65,7 +65,7 @@ const beckhoff_EL7031_0030 = gcat.ENI.SubDeviceConfiguration{
                 0x02, 0x16, // STM control: 2 bytes
                 0x04, 0x16, // STM velocity: 2 bytes
             },
-            .timeout_us = 10_000,
+            .timeout_us = 50_000,
         },
         .{
             .transition = .PS,
@@ -80,7 +80,7 @@ const beckhoff_EL7031_0030 = gcat.ENI.SubDeviceConfiguration{
                 0x0a, 0x1a, // AI standard: 4 bytes
                 0x0c, 0x1a, // AI standard: 4 bytes
             },
-            .timeout_us = 10_000,
+            .timeout_us = 50_000,
         },
     },
 };

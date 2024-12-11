@@ -103,7 +103,7 @@ const beckhoff_EL7031_0030 = gcat.ENI.SubDeviceConfiguration{
         .product_code = 0x1b773052,
         .revision_number = 0x0010001e,
     },
-    .inputs_bit_length = 112,
+    .inputs_bit_length = 128,
     .outputs_bit_length = 64,
     .auto_config = .auto,
     .coe_startup_parameters = &.{
@@ -140,6 +140,7 @@ const beckhoff_EL7031_0030 = gcat.ENI.SubDeviceConfiguration{
             .data = &.{
                 0x04, 0x00, // 4 PDOs
                 0x00, 0x1a, // encoder: 6 bytes
+                0x03, 0x1a, // STM status: 2 bytes
                 0x0a, 0x1a, // AI standard: 4 bytes
                 0x0c, 0x1a, // AI standard: 4 bytes
             },

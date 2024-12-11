@@ -48,8 +48,8 @@ pub fn main() !void {
 
     const ek1100 = &md.subdevices[0];
     const el3314 = &md.subdevices[1];
-    const el2008 = &md.subdevices[4];
-    const el7041 = &md.subdevices[3];
+    const el2008 = &md.subdevices[3];
+    const el7041 = &md.subdevices[4];
 
     var temps = el3314.packFromInputProcessData(EL3314ProcessData);
     var motor_control = EL7041Outputs.zero;

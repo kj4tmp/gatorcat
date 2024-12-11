@@ -98,7 +98,7 @@ pub fn build(b: *std.Build) void {
     // example: simple
     const examples_step = b.step("examples", "Build example");
     const simple_example = b.addExecutable(.{
-        .name = "example",
+        .name = "simple",
         .target = target,
         .optimize = optimize,
         .root_source_file = b.path("examples/simple/main.zig"),

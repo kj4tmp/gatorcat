@@ -23,7 +23,7 @@ const beckhoff_EL7031_0030 = gcat.ENI.SubDeviceConfiguration{
     },
     .inputs_bit_length = 128,
     .outputs_bit_length = 64,
-    .auto_config = .coe,
+    .auto_config = .auto,
     .coe_startup_parameters = &.{
         // restore default params
         // .{

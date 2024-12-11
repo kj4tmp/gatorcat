@@ -236,14 +236,19 @@ pub fn transitionIP(
 
     // configure sync managers.
     // during the IP transition, we should configure the mailbox sync managers.
-    var sms = std.mem.zeroes(esc.SMRegister);
-    switch (self.config.auto_config) {
-        .none => {},
-        .sii, .coe => {
+    const sms: esc.SMRegister = switch (self.config.auto_config) {
+        .auto => blk_sms: {
+            var sms = std.mem.zeroes(esc.SMRegister);
+
             // If mailbox is supported:
             // SM0 should be used for Mailbox Out (from maindevice to subdevice)
             // SM1 should be used for Mailbox In (from subdevice to maindevice)
-            if (info.std_recv_mbx_offset > 0) { // mbx supported?
+            // Ref: IEC 61158-4-12
+            if (info.std_recv_mbx_offset > 0 and
+                info.std_recv_mbx_size > 0 and
+                info.std_send_mbx_offset > 0 and
+                info.std_send_mbx_size > 0)
+            {
                 sms.SM0 = esc.SyncManagerAttributes.mbxOutDefaults(
                     info.std_recv_mbx_offset,
                     info.std_recv_mbx_size,
@@ -252,60 +257,28 @@ pub fn transitionIP(
                     info.std_send_mbx_offset,
                     info.std_send_mbx_size,
                 );
-            }
 
-            // supports CoE? Complete Access?
-            if (info.mbx_protocol.CoE) {
-                self.runtime_info.coe = RuntimeInfo.CoE{
-                    .config = try mailbox.Configuration.init(
-                        sms.SM1.physical_start_address,
-                        sms.SM1.length,
-                        sms.SM0.physical_start_address,
-                        sms.SM0.length,
-                    ),
-                    .supports_complete_access = blk: {
-                        if (general_catagory) |general| {
-                            break :blk general.coe_details.enable_SDO_complete_access;
-                        } else break :blk false;
-                    },
-                };
-            }
-
-            // Trust default syncmanager configurations from sii
-            // Set SM from SII SM section if it exists
-            var maybe_sii_sms = try sii.readSMCatagory(
-                port,
-                station_address,
-                recv_timeout_us,
-                eeprom_timeout_us,
-            );
-
-            // apparently the SII doesnt set the sync managers to the correct
-            // length for you...
-            // and apparently the the PDOs are missing from the SII sometimes too???
-            const sm_assigns = try sii.readSMPDOAssigns(
-                port,
-                station_address,
-                recv_timeout_us,
-                eeprom_timeout_us,
-            );
-
-            if (maybe_sii_sms) |*sii_sms| {
-                for (sii_sms.slice(), 0..) |sm, sm_idx| {
-                    std.log.info("station addr: 0x{x}, sm {} config: {any}", .{ station_address, sm_idx, sm });
+                // supports CoE? Complete Access?
+                if (info.mbx_protocol.CoE) {
+                    self.runtime_info.coe = RuntimeInfo.CoE{
+                        .config = try mailbox.Configuration.init(
+                            sms.SM1.physical_start_address,
+                            sms.SM1.length,
+                            sms.SM0.physical_start_address,
+                            sms.SM0.length,
+                        ),
+                        .supports_complete_access = blk: {
+                            if (general_catagory) |general| {
+                                break :blk general.coe_details.enable_SDO_complete_access;
+                            } else break :blk false;
+                        },
+                    };
                 }
-
-                for (sm_assigns.data.slice()) |sm_assign| {
-                    sii_sms.slice()[sm_assign.sm_idx].length = @max(sm_assign.pdo_byte_length, sii_sms.slice()[sm_assign.sm_idx].length);
-                    // sii_sms.slice()[sm_assign.sm_idx].length = sm_assign.pdo_byte_length;
-                    std.log.info("station addr: 0x{x}, sm assign: {}", .{ station_address, sii_sms.slice()[sm_assign.sm_idx] });
-                    std.log.info("station addr: 0x{x}, sm control byte: {}", .{ station_address, sii_sms.slice()[sm_assign.sm_idx].control });
-                    std.log.info("station addr: 0x{x}, sm control byte: {}", .{ station_address, @as(u8, @bitCast(sii_sms.slice()[sm_assign.sm_idx].control)) });
-                }
-                sms = sii.escSMsFromSIISMs(sii_sms.slice());
             }
+
+            break :blk_sms sms;
         },
-    }
+    };
 
     // write SM configuration to subdevice
     try commands.fpwrPackWkc(
@@ -367,13 +340,79 @@ pub fn transitionPS(
     // TODO: does it say somewhere that if CoE supported the PDOs MUST be in the CoE?
     const station_address = stationAddressFromRingPos(self.runtime_info.ring_position);
 
+    // often, CoE is used to configure selected PDOs, this will effect the configuration of the
+    // syncmanagers. So we will do the startup parameters before auto config of the SM.
     try self.doStartupParameters(port, .PS, recv_timeout_us);
 
     switch (self.config.auto_config) {
-        .none => {},
-        .sii, .coe => |strat| {
-            // the entire SM configuration was already written from the SII as part of the IP transition.
-            // we do not need to modify it here.
+        .auto => {
+            var sii_sms = try sii.readSMCatagory(
+                port,
+                station_address,
+                recv_timeout_us,
+                eeprom_timeout_us,
+            );
+
+            // apparently the SII doesnt set the sync managers to the correct
+            // length for you...
+            // and apparently the the PDOs are missing from the SII sometimes too???
+            const sm_assigns = blk: {
+                if (self.runtime_info.coe) |*this_coe| {
+                    break :blk try coe.readSMPDOAssigns(
+                        port,
+                        station_address,
+                        recv_timeout_us,
+                        eeprom_timeout_us,
+                        mbx_timeout_us,
+                        &this_coe.cnt,
+                        this_coe.config,
+                    );
+                } else {
+                    break :blk try sii.readSMPDOAssigns(
+                        port,
+                        station_address,
+                        recv_timeout_us,
+                        eeprom_timeout_us,
+                    );
+                }
+            };
+
+            for (sm_assigns.data.slice()) |sm_assign| {
+                std.log.info("station addr: 0x{x}, sm assign: {}", .{ station_address, sii_sms.slice()[sm_assign.sm_idx] });
+            }
+
+            for (sii_sms.slice(), 0..) |sm, sm_idx| {
+                std.log.info("station addr: 0x{x}, sm {} config: {any}", .{ station_address, sm_idx, sm });
+            }
+
+            for (sm_assigns.data.slice()) |sm_assign| {
+                if (sm_assign.sm_idx >= sii_sms.len) {
+                    return error.InvalidSII;
+                }
+                var sii_sm = sii_sms.get(sm_assign.sm_idx);
+                if (sm_assign.direction != sii_sm.control.direction) return error.InvalidSII;
+                switch (sii_sm.syncM_type) {
+                    .process_data_inputs, .process_data_outputs => {},
+                    else => return error.InvalidSII,
+                }
+                sii_sm.length = sm_assign.pdo_byte_length;
+                sii_sms.set(sm_assign.sm_idx, sii_sm);
+                // sii_sms.slice()[sm_assign.sm_idx].length = sm_assign.pdo_byte_length;
+                std.log.info("station addr: 0x{x}, sm control byte: {}", .{ station_address, sii_sms.slice()[sm_assign.sm_idx].control });
+                std.log.info("station addr: 0x{x}, sm control byte: {}", .{ station_address, @as(u8, @bitCast(sii_sms.slice()[sm_assign.sm_idx].control)) });
+            }
+            const esc_sms = sii.escSMsFromSIISMs(sii_sms.slice());
+            // write SM configuration to subdevice
+            try commands.fpwrPackWkc(
+                port,
+                esc_sms,
+                .{
+                    .station_address = station_address,
+                    .offset = @intFromEnum(esc.RegisterMap.SM0),
+                },
+                recv_timeout_us,
+                1,
+            );
 
             var min_fmmu_required: u8 = 0;
             if (self.config.inputs_bit_length > 0) min_fmmu_required += 1;
@@ -386,25 +425,6 @@ pub fn transitionPS(
                 eeprom_timeout_us,
             );
             if (fmmus.len < min_fmmu_required) return error.NotEnoughFMMUs;
-
-            const sm_assigns = switch (strat) {
-                .sii => try sii.readSMPDOAssigns(
-                    port,
-                    station_address,
-                    recv_timeout_us,
-                    eeprom_timeout_us,
-                ),
-                .coe => try coe.readSMPDOAssigns(
-                    port,
-                    station_address,
-                    recv_timeout_us,
-                    eeprom_timeout_us,
-                    mbx_timeout_us,
-                    &self.runtime_info.coe.?.cnt,
-                    self.runtime_info.coe.?.config,
-                ),
-                .none => unreachable,
-            };
 
             const totals = sm_assigns.totalBitLengths();
 

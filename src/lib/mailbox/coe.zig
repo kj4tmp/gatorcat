@@ -988,7 +988,8 @@ pub fn readSMPDOAssigns(
         station_address,
         recv_timeout_us,
         eeprom_timeout_us,
-    ) orelse return res;
+    );
+    if (sm_catagory.len == 0) return res;
     const sync_managers = sm_catagory.slice();
 
     for (sync_managers, 0..) |sm_config, sm_idx| {

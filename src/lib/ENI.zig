@@ -29,7 +29,7 @@ pub const SubDeviceConfiguration = struct {
     // process_data: ProcessData,
 
     /// Autoconfigure strategy
-    auto_config: enum { none, sii, coe } = .sii,
+    auto_config: enum { auto } = .auto,
 
     // const ProcessData = struct {
     //     inputs_bit_length: u32 = 0,

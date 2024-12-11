@@ -675,7 +675,7 @@ pub const FMMUAttributes = packed struct(u128) {
     _reserved6: u24 = 0,
 
     pub fn init(
-        direction: pdi.Direction,
+        direction: esc.SyncManagerDirection,
         logical_start_address: u32,
         logical_start_bit: u3,
         bit_length: u32,
@@ -708,7 +708,7 @@ pub const FMMUAttributes = packed struct(u128) {
     /// given an FMMU, init an FMMU next to it.
     pub fn initNeighbor(
         self: *const FMMUAttributes,
-        direction: pdi.Direction,
+        direction: esc.SyncManagerDirection,
         physical_start_address: u16,
         physical_start_bit: u3,
         bit_length: u32,

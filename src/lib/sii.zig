@@ -10,12 +10,12 @@ const Timer = std.time.Timer;
 const ns_per_us = std.time.ns_per_us;
 const assert = std.debug.assert;
 
-const nic = @import("nic.zig");
-const wire = @import("wire.zig");
-const esc = @import("esc.zig");
 const commands = @import("commands.zig");
+const esc = @import("esc.zig");
+const nic = @import("nic.zig");
 const pdi = @import("pdi.zig");
 const Port = @import("Port.zig");
+const wire = @import("wire.zig");
 
 pub const ParameterMap = enum(u16) {
     PDI_control = 0x0000,
@@ -517,18 +517,19 @@ pub fn readSMCatagory(
     station_address: u16,
     recv_timeout_us: u32,
     eeprom_timeout_us: u32,
-) !?SMCatagory {
+) !SMCatagory {
     const catagory = try findCatagoryFP(
         port,
         station_address,
         .sync_manager,
         recv_timeout_us,
         eeprom_timeout_us,
-    ) orelse return null;
+    ) orelse return SMCatagory{};
     const n_sm: u17 = std.math.divExact(u17, catagory.byte_length, @divExact(@bitSizeOf(SyncM), 8)) catch return error.InvalidSII;
     if (n_sm == 0) {
-        return null;
+        return SMCatagory{};
     }
+    assert(n_sm > 0);
     if (n_sm > max_sm) {
         return error.InvalidSII;
     }
@@ -1059,7 +1060,7 @@ pub const SMPDOAssign = struct {
     pdo_byte_length: u16,
     /// total bit length of PDOs assigned to this sync manager.
     pdo_bit_length: u16,
-    direction: pdi.Direction,
+    direction: esc.SyncManagerDirection,
 };
 
 pub const SMPDOAssigns = struct {
@@ -1084,7 +1085,7 @@ pub const SMPDOAssigns = struct {
         return res;
     }
 
-    pub fn addPDOBitsToSM(self: *SMPDOAssigns, bit_length: u8, sm_idx: u8, direction: pdi.Direction) !void {
+    pub fn addPDOBitsToSM(self: *SMPDOAssigns, bit_length: u8, sm_idx: u8, direction: esc.SyncManagerDirection) !void {
         assert(sm_idx < max_sm);
         for ((&self.data).slice()) |*pdo_bit_length| {
             if (pdo_bit_length.sm_idx == sm_idx) {
@@ -1192,7 +1193,8 @@ pub fn readSMPDOAssigns(
         station_address,
         recv_timeout_us,
         eeprom_timeout_us,
-    ) orelse return res;
+    );
+    if (sm_catagory.len == 0) return res;
     const sync_managers = sm_catagory.slice();
 
     for (sync_managers, 0..) |sm_config, sm_idx| {

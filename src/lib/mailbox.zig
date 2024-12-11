@@ -111,24 +111,20 @@ pub fn writeMailboxOut(
     // and you should ensure that the data will fit.
     if (size > act_mbx_out.length) unreachable;
 
+    // We write the entire mailbox because the write will not be considered finished by the
+    // sync manager until the last byte of the sync manager buffer is written to.
+    //
+    // TODO: optimize with fpwr to last byte of sync manager when that requires less bytes
+    // over the wire.
+    //
+    // Ref: IEC 61158-4-12:2019 6.7.1
     try commands.fpwrWkc(
         port,
         .{
             .station_address = station_address,
             .offset = act_mbx_out.physical_start_address,
         },
-        buf[0..size],
-        recv_timeout_us,
-        1,
-    );
-
-    // apparently you have to write outside the SM for the
-    // mailbox to be considered finished writing...?
-    // TODO: try to remove this?
-    try commands.fpwrPackWkc(
-        port,
-        @as(u8, 0),
-        .{ .station_address = station_address, .offset = 0x107f },
+        buf[0..act_mbx_out.length],
         recv_timeout_us,
         1,
     );
@@ -202,9 +198,13 @@ pub fn readMailboxIn(
         return error.InvalidMbxConfiguration;
     }
 
-    // Mialbox empty?
+    // Mailbox empty?
     if (!act_mbx_in.status.mailbox_full) return null;
 
+    // We read the full size of the mailbox because the read operation is not fully completed
+    // until we touch the last byte of the sync manager buffer.
+    //
+    // Ref: IEC 61158-4-12:2019 6.7.1
     var buf = std.mem.zeroes([max_size]u8);
     try commands.fprdWkc(
         port,

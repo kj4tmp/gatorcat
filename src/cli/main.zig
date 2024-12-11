@@ -332,7 +332,8 @@ fn printSubdeviceDetails(
         }
     }
 
-    if (try gcat.sii.readSMCatagory(port, station_address, recv_timeout_us, eeprom_timeout_us)) |sm_catagory| {
+    const sm_catagory = try gcat.sii.readSMCatagory(port, station_address, recv_timeout_us, eeprom_timeout_us);
+    if (sm_catagory.len > 0) {
         try writer.print("SII Catagory Sync Managers:\n", .{});
         for (sm_catagory.slice(), 0..) |sm, i| {
             try writer.print("    SM Index: {}\n", .{i});

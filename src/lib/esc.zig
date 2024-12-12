@@ -1135,6 +1135,42 @@ pub const SMRegister = packed struct(u2048) {
         res[31] = self.SM31;
         return res;
     }
+
+    pub fn set(self: SMRegister, i: usize, sm: SyncManagerAttributes) void {
+        assert(i < 32);
+        if (i == 0) self.SM0 = sm;
+        if (i == 1) self.SM1 = sm;
+        if (i == 2) self.SM2 = sm;
+        if (i == 3) self.SM3 = sm;
+        if (i == 4) self.SM4 = sm;
+        if (i == 5) self.SM5 = sm;
+        if (i == 6) self.SM6 = sm;
+        if (i == 7) self.SM7 = sm;
+        if (i == 8) self.SM8 = sm;
+        if (i == 9) self.SM9 = sm;
+        if (i == 10) self.SM10 = sm;
+        if (i == 11) self.SM11 = sm;
+        if (i == 12) self.SM12 = sm;
+        if (i == 13) self.SM13 = sm;
+        if (i == 14) self.SM14 = sm;
+        if (i == 15) self.SM15 = sm;
+        if (i == 16) self.SM16 = sm;
+        if (i == 17) self.SM17 = sm;
+        if (i == 18) self.SM18 = sm;
+        if (i == 19) self.SM19 = sm;
+        if (i == 20) self.SM20 = sm;
+        if (i == 21) self.SM21 = sm;
+        if (i == 22) self.SM22 = sm;
+        if (i == 23) self.SM23 = sm;
+        if (i == 24) self.SM24 = sm;
+        if (i == 25) self.SM25 = sm;
+        if (i == 26) self.SM26 = sm;
+        if (i == 27) self.SM27 = sm;
+        if (i == 28) self.SM28 = sm;
+        if (i == 29) self.SM29 = sm;
+        if (i == 30) self.SM30 = sm;
+        if (i == 31) self.SM31 = sm;
+    }
 };
 
 // TODO: verify representation of sys time difference

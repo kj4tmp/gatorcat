@@ -995,7 +995,7 @@ pub fn readSMPDOAssigns(
     for (sync_managers, 0..) |sm_config, sm_idx| {
         switch (sm_config.syncM_type) {
             .mailbox_in, .mailbox_out, .not_used_or_unknown => {},
-            _ => return error.InvalidEEPROM,
+            _ => return error.SMAssigns,
             .process_data_inputs, .process_data_outputs => |direction| {
                 try res.addSyncManager(sm_config, @intCast(sm_idx));
 

@@ -19,6 +19,20 @@ pub const Settings = struct {
     dest_mac_address: u48 = 0xABCD_EF12_3456,
 };
 
+pub const max_frames: u9 = 256;
+
+const FrameStatus = enum {
+    /// available to be claimed
+    available,
+    /// under construction
+    in_use,
+    /// sent and can be received
+    in_use_receivable,
+    /// received
+    in_use_received,
+    in_use_currupted,
+};
+
 pub fn init(network_adapter: nic.NetworkAdapter, settings: Settings) Port {
     return Port{ .network_adapter = network_adapter, .settings = settings };
 }
@@ -207,17 +221,3 @@ pub fn send_recv_frame(
 pub fn ping(self: *Port, timeout_us: u32) !void {
     try commands.nop(self, 1, timeout_us);
 }
-
-pub const max_frames: u9 = 256;
-
-const FrameStatus = enum {
-    /// available to be claimed
-    available,
-    /// under construction
-    in_use,
-    /// sent and can be received
-    in_use_receivable,
-    /// received
-    in_use_received,
-    in_use_currupted,
-};

@@ -589,7 +589,7 @@ pub fn broadcastStateChange(self: *MainDevice, state: esc.ALStateControl, change
     }
 }
 
-pub fn expectedProcessDataWkc(self: *MainDevice) u16 {
+pub fn expectedProcessDataWkc(self: *const MainDevice) u16 {
     var wkc: u16 = 0;
     for (self.subdevices) |subdevice| {
         if (subdevice.config.outputs_bit_length > 0) wkc += 2;

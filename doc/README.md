@@ -4,9 +4,29 @@
 > GatorCAT is **alpha** software. Using it today means participating in its development.
 > This means you may find bugs or need features implemented before you can use GatorCAT effectively.
 
+## Zig Version
+
+GatorCAT targets zig master for now. We plan to stop targetting master once 0.14.0 is released.
+
 ## Installation
 
+### Windows
+
+On Windows, GatorCAT depends on [npcap](https://npcap.com/).
+
+Please do not use windows for anything other than developer convienience (using the CLI, etc.).
+
+Npcap has poor realtime performance and so does Windows in general.
+
+### Linux
+
+There are no system dependencies for linux.
+
+### Using the Zig Package Manager
+
 > TODO: show how to use gatorcat as a zig dependency
+
+## The CLI
 
 GatorCAT provides a CLI application that can be useful for getting information about ethercat networks.
 

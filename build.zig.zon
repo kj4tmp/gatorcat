@@ -1,7 +1,7 @@
 .{
     .name = "gatorcat",
-    .version = "0.0.0",
-    .minimum_zig_version = "0.13.0",
+    .version = "0.1.0",
+    .minimum_zig_version = "0.14.0",
     .dependencies = .{
         .flags = .{
             .url = "https://github.com/n0s4/flags/archive/refs/tags/v0.10.0.tar.gz",

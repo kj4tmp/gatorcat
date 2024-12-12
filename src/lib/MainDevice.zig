@@ -28,25 +28,6 @@ pub const Settings = struct {
     mbx_timeout_us: u32 = 50000,
 };
 
-pub fn init2(
-    port: *Port,
-    settings: Settings,
-    subdevices: []SubDevice,
-    process_image: []u8,
-    frames: []telegram.EtherCATFrame,
-) !MainDevice {
-    if (frameCount(@intCast(process_image.len)) < frames.len) return error.NotEnoughFrames;
-
-    assert(frameCount(@intCast(process_image.len)) <= frames.len);
-    return MainDevice{
-        .port = port,
-        .settings = settings,
-        .subdevices = subdevices,
-        .process_image = process_image,
-        .frames = frames,
-    };
-}
-
 pub fn init(
     allocator: std.mem.Allocator,
     port: *Port,

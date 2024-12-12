@@ -7,23 +7,35 @@ GatorCAT is an EtherCAT maindevice written for the zig programming language.
 > [!WARNING]
 > GatorCAT is **alpha** software. Using it today means participating in its development.
 
+## Documentation
+
+Examples can be found in [examples](examples/). The examples can be built using `zig build examples`.
+
+Documentation can be found in [doc](doc/README.md).
+
 ## Status
 
-- [x] can reach OP
+### Notably Working Features
+
+- [x] automatic configuration to reach OP for most subdevices, via SII and CoE
+- [x] verifcation of the network contents against an ethercat network information struct (ENI)
 - [x] can manipulate process data
-- [x] CoE supported
-- [x] autoconfiguration from SII EEPROM
-- [x] CLI for scanning networks
+- [x] CoE startup parameters
+- [x] CLI for scanning networks and getting information about subdevices
+- [x] multi-OS support (Linux and Windows)
 
-## Road to 0.1.0
+### Notably Missing Features
 
-- [x] multiple datagrams per frame
-- [x] topology monitoring
-- [x] NIC interface / vtable
-- [x] windows support via npcap
-- [ ] docs
-- [x] re-organize examples
-- [x] re-organize multi-platform code
+- [ ] distributed clocks
+- [ ] Ethernet Over EtherCAT (EoE), also AoE, FoE, SoE, VoE
+- [ ] user configurable processing of CoE emergency messages
+- [ ] generate starting point for the network configuration (ENI) using the CLI
+- [ ] mapping the mailbox status into the process data
+- [ ] async / event loop frames
+- [ ] multi-threading friendly API
+- [ ] linux XDP
+- [ ] mac-os, embedded support
+- [ ] allocation-free API
 
 ## TODOs
 

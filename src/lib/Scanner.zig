@@ -39,7 +39,7 @@ pub fn countSubdevices(self: *const Scanner) !u16 {
     return wkc;
 }
 
-pub fn busINIT(self: *const Scanner, state_change_timeout_us: u32, subdevice_count: u16) !void {
+pub fn busInit(self: *const Scanner, state_change_timeout_us: u32, subdevice_count: u16) !void {
 
     // open all ports
     try commands.bwrPackWkc(

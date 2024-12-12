@@ -32,10 +32,10 @@ pub fn main() !void {
     );
     defer md.deinit(stack_fba.allocator());
 
-    try md.busINIT(5_000_000);
-    try md.busPREOP(10_000_000);
-    try md.busSAFEOP(10_000_000);
-    try md.busOP(10_000_000);
+    try md.busInit(5_000_000);
+    try md.busPreop(10_000_000);
+    try md.busSafeop(10_000_000);
+    try md.busOp(10_000_000);
 
     std.debug.print("EL2008 PROCESS IMAGE: {}\n", .{md.subdevices[3].runtime_info.pi});
     std.debug.print("EL7041 PROCESS IMAGE: {}\n", .{md.subdevices[4].runtime_info.pi});

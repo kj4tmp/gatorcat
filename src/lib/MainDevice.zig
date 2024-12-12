@@ -96,7 +96,7 @@ pub fn estimateAllocSize(eni: ENI) usize {
 ///
 /// Sets all subdevices to the INIT state.
 /// Puts the bus in a known good starting configuration.
-pub fn busINIT(self: *MainDevice, change_timeout_us: u32) !void {
+pub fn busInit(self: *MainDevice, change_timeout_us: u32) !void {
 
     // open all ports
     var wkc = try commands.bwrPack(
@@ -266,7 +266,7 @@ pub fn busINIT(self: *MainDevice, change_timeout_us: u32) !void {
     try self.broadcastStateChange(.INIT, change_timeout_us);
 }
 
-pub fn busPREOP(self: *MainDevice, change_timeout_us: u32) !void {
+pub fn busPreop(self: *MainDevice, change_timeout_us: u32) !void {
 
     // perform IP tasks for each subdevice
     for (self.subdevices) |*subdevice| {
@@ -286,7 +286,7 @@ pub fn busPREOP(self: *MainDevice, change_timeout_us: u32) !void {
     try self.broadcastStateChange(.PREOP, change_timeout_us);
 }
 
-pub fn busSAFEOP(self: *MainDevice, change_timeout_us: u32) !void {
+pub fn busSafeop(self: *MainDevice, change_timeout_us: u32) !void {
     // perform PS tasks for each subdevice
     for (self.subdevices) |*subdevice| {
 
@@ -331,7 +331,7 @@ pub fn busSAFEOP(self: *MainDevice, change_timeout_us: u32) !void {
     }
 }
 
-pub fn busOP(self: *MainDevice, change_timeout_us: u32) !void {
+pub fn busOp(self: *MainDevice, change_timeout_us: u32) !void {
     for (self.subdevices) |*subdevice| {
         try subdevice.transitionSO(
             self.port,

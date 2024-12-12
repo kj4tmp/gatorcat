@@ -88,7 +88,7 @@ fn scan(
     const num_subdevices = try scanner.countSubdevices();
     try writer.print("Detected {} subdevices.\n", .{num_subdevices});
 
-    try scanner.busINIT(INIT_timeout_us, num_subdevices);
+    try scanner.busInit(INIT_timeout_us, num_subdevices);
     try writer.print("Successfully reached INIT.\n", .{});
 
     try scanner.assignStationAddresses(num_subdevices);

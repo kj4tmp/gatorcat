@@ -32,9 +32,9 @@ pub fn main() !void {
     );
     defer md.deinit(stack_fba.allocator());
 
-    try md.busINIT(5_000_000);
-    try md.busPREOP(10_000_000);
-    md.busSAFEOP(10_000_000) catch |err| switch (err) {
+    try md.busInit(5_000_000);
+    try md.busPreop(10_000_000);
+    md.busSafeop(10_000_000) catch |err| switch (err) {
         error.StateChangeTimeout => {
             std.debug.print(
                 "{any}",
@@ -53,5 +53,5 @@ pub fn main() !void {
         },
         else => |err2| return err2,
     };
-    try md.busOP(10_000_000);
+    try md.busOp(10_000_000);
 }

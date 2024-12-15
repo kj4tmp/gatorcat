@@ -74,7 +74,6 @@ pub fn main() !void {
             wkc_error_timer.reset();
             std.log.err("process data wkc wrong: {}, expected: {}", .{ diag.process_data_wkc, md.expectedProcessDataWkc() });
         }
-        // if (diag.process_data_wkc == md.expectedProcessDataWkc()) std.debug.print("SUCCESS!!!!!!!!!!!!!!\n", .{});
         cycle_count += 1;
 
         // do application

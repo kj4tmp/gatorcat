@@ -25,34 +25,6 @@ const beckhoff_EL7031_0030 = gcat.ENI.SubDeviceConfiguration{
     .outputs_bit_length = 64,
     .auto_config = .auto,
     .coe_startup_parameters = &.{
-        // restore default params
-        // .{
-        //     .transition = .PS,
-        //     .direction = .write,
-        //     .index = 0x1011,
-        //     .subindex = 0x01,
-        //     .complete_access = false,
-        //     .data = &.{ 0x6c, 0x6f, 0x61, 0x64 }, // restore default params
-        //     .timeout_us = 100_000,
-        // },
-        // .{
-        //     .transition = .IP,
-        //     .direction = .write,
-        //     .index = 0xf081, // download revision
-        //     .subindex = 0x1,
-        //     .complete_access = false,
-        //     .data = &.{ 0x1e, 0x00, 0x10, 0x00 },
-        //     .timeout_us = 10_000,
-        // },
-        // .{
-        //     .transition = .IP,
-        //     .direction = .write,
-        //     .index = 0x10f3, // undocumented
-        //     .subindex = 0x5,
-        //     .complete_access = false,
-        //     .data = &.{ 0x01, 0x00 },
-        //     .timeout_us = 10_000,
-        // },
         .{
             .transition = .PS,
             .direction = .write,

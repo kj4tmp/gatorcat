@@ -373,13 +373,6 @@ pub fn transitionPS(
 
     switch (self.config.auto_config) {
         .auto => {
-            // var sii_sms = try sii.readSMCatagory(
-            //     port,
-            //     station_address,
-            //     recv_timeout_us,
-            //     eeprom_timeout_us,
-            // );
-
             // The length of the SM provided by the SII is sometimes incorrect.
             // For example, the EL2008 provides SM length 0 even though it has
             // 8 bits of output data.

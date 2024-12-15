@@ -411,7 +411,7 @@ pub fn fprdWkc(
 }
 
 /// Configured address physical read a packable type
-fn fprdPack(
+pub fn fprdPack(
     self: *Port,
     comptime packed_type: type,
     address: telegram.StationAddress,
@@ -423,8 +423,6 @@ fn fprdPack(
 }
 
 /// Configured address physical read a packable type, expect wkc
-//
-// TODO: refactor wkc handling?
 pub fn fprdPackWkc(
     self: *Port,
     comptime packed_type: type,

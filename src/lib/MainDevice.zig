@@ -124,29 +124,27 @@ pub fn busInit(self: *MainDevice, change_timeout_us: u32) !void {
     std.log.info("bus wipe reset crc counters wkc: {}", .{wkc});
 
     // reset FMMUs
-    var zero_fmmus = wire.zerosFromPack(esc.FMMURegister);
-    wkc = try self.port.bwr(
+    wkc = try self.port.bwrPack(
+        std.mem.zeroes(esc.FMMURegister),
         .{
             .autoinc_address = 0,
             .offset = @intFromEnum(
                 esc.RegisterMap.FMMU0,
             ),
         },
-        &zero_fmmus,
         self.settings.recv_timeout_us,
     );
     std.log.info("bus wipe zero fmmus wkc: {}", .{wkc});
 
     // reset SMs
-    var zero_sms = wire.zerosFromPack(esc.SMRegister);
-    wkc = try self.port.bwr(
+    wkc = try self.port.bwrPack(
+        std.mem.zeroes(esc.SMRegister),
         .{
             .autoinc_address = 0,
             .offset = @intFromEnum(
                 esc.RegisterMap.SM0,
             ),
         },
-        &zero_sms,
         self.settings.recv_timeout_us,
     );
     std.log.info("bus wipe zero sms wkc: {}", .{wkc});
@@ -220,21 +218,19 @@ pub fn busInit(self: *MainDevice, change_timeout_us: u32) !void {
     std.log.info("bus wipe eeprom control to maindevice wkc: {}", .{wkc});
 
     // count subdevices
-    var dummy_data = [1]u8{0};
-    wkc = try self.port.brd(
+    const res = try self.port.brdPack(
+        esc.ALStatusRegister,
         .{
             .autoinc_address = 0,
-            .offset = 0,
+            .offset = @intFromEnum(esc.RegisterMap.AL_status),
         },
-        &dummy_data,
         self.settings.recv_timeout_us,
     );
-    std.log.info("detected {} subdevices", .{wkc});
-    if (wkc != self.subdevices.len) {
-        std.log.err("Found {} subdevices, expected {}.", .{ wkc, self.subdevices.len });
+    std.log.info("detected {} subdevices", .{res.wkc});
+    if (res.wkc != self.subdevices.len) {
+        std.log.err("Found {} subdevices, expected {}.", .{ res.wkc, self.subdevices.len });
         return error.WrongNumberOfSubDevices;
     }
-
     try self.broadcastStateChange(.INIT, change_timeout_us);
 }
 

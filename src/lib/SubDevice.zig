@@ -80,7 +80,7 @@ pub fn setALState(
     // TODO: consider not using the ack bit
     const station_address: u16 = stationAddressFromRingPos(self.runtime_info.ring_position);
 
-    const wkc = try port.fpwrPack(
+    try port.fpwrPackWkc(
         esc.ALControlRegister{
             .state = state,
             // simple subdevices will copy the ack bit
@@ -95,10 +95,8 @@ pub fn setALState(
             .offset = @intFromEnum(esc.RegisterMap.AL_control),
         },
         recv_timeout_us,
+        1,
     );
-    if (wkc != 1) {
-        return error.Wkc;
-    }
 
     var timer = std.time.Timer.start() catch @panic("timer not supported");
     while (timer.read() < @as(u64, change_timeout_us) * ns_per_us) {
@@ -201,29 +199,27 @@ pub fn transitionIP(
     );
 
     // wipe FMMUs
-    var zero_fmmus = wire.zerosFromPack(esc.FMMURegister);
-    try port.fpwrWkc(
+    try port.fpwrPackWkc(
+        std.mem.zeroes(esc.FMMURegister),
         .{
             .station_address = station_address,
             .offset = @intFromEnum(
                 esc.RegisterMap.FMMU0,
             ),
         },
-        &zero_fmmus,
         recv_timeout_us,
         1,
     );
 
     // wipe SMs
-    var zero_sms = wire.zerosFromPack(esc.SMRegister);
-    try port.fpwrWkc(
+    try port.fpwrPackWkc(
+        std.mem.zeroes(esc.SMRegister),
         .{
             .station_address = station_address,
             .offset = @intFromEnum(
                 esc.RegisterMap.SM0,
             ),
         },
-        &zero_sms,
         recv_timeout_us,
         1,
     );

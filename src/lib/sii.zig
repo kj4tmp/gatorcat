@@ -970,7 +970,6 @@ pub fn readSII4ByteFP(
         return error.Timeout;
     }
 
-    // attempt read 3 times
     var data = [4]u8{ 0, 0, 0, 0 };
     port.fprdWkc(
         .{
@@ -985,7 +984,6 @@ pub fn readSII4ByteFP(
     ) catch |err| switch (err) {
         error.LinkError => return error.LinkError,
         error.TransactionContention => return error.Timeout,
-        // error.FrameSerializationFailure => unreachable,
         error.CurruptedFrame => return error.Timeout,
         error.RecvTimeout => return error.Timeout,
         error.Wkc => return error.Timeout,

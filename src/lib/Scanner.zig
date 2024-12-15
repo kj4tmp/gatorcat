@@ -25,16 +25,16 @@ pub fn init(port: *Port, settings: MainDevice.Settings) Scanner {
 }
 
 pub fn countSubdevices(self: *const Scanner) !u16 {
-    var dummy_data = [1]u8{0};
-    const wkc = try self.port.brd(
+    // count subdevices
+    const res = try self.port.brdPack(
+        esc.ALStatusRegister,
         .{
             .autoinc_address = 0,
-            .offset = 0,
+            .offset = @intFromEnum(esc.RegisterMap.AL_status),
         },
-        &dummy_data,
         self.settings.recv_timeout_us,
     );
-    return wkc;
+    return res.wkc;
 }
 
 pub fn busInit(self: *const Scanner, state_change_timeout_us: u32, subdevice_count: u16) !void {

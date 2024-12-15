@@ -48,7 +48,8 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_root_unit_tests.step);
 
-    // CLI tool
+    // CLI tool step
+    const cli_step = b.step("cli", "Build the GatorCAT CLI tool");
     const cli = b.addExecutable(.{
         .name = "gatorcat",
         .root_source_file = b.path("src/cli/main.zig"),
@@ -93,10 +94,11 @@ pub fn build(b: *std.Build) void {
         },
         else => {},
     }
-    b.installArtifact(cli);
+    const cli_install = b.addInstallArtifact(cli, .{});
+    cli_step.dependOn(&cli_install.step);
 
     // example: simple
-    const examples_step = b.step("examples", "Build example");
+    const examples_step = b.step("examples", "Build examples");
     const simple_example = b.addExecutable(.{
         .name = "simple",
         .target = target,
@@ -121,4 +123,11 @@ pub fn build(b: *std.Build) void {
     const simple2_install = b.addInstallArtifact(simple2_example, .{});
     examples_step.dependOn(&simple2_install.step);
     if (target.result.os.tag == .windows) simple2_example.linkLibC();
+
+    const all_step = b.step("all", "Do everything");
+    all_step.dependOn(cli_step);
+    all_step.dependOn(test_step);
+    all_step.dependOn(examples_step);
+
+    b.default_step.dependOn(cli_step);
 }

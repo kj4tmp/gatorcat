@@ -411,7 +411,7 @@ pub fn fprdWkc(
 }
 
 /// Configured address physical read a packable type
-pub fn fprdPack(
+fn fprdPack(
     self: *Port,
     comptime packed_type: type,
     address: telegram.StationAddress,

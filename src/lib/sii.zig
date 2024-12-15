@@ -1137,9 +1137,9 @@ pub const SMPDOAssigns = struct {
 
 test "sort and verfiy non overlapping SMPDOAssigns" {
     var data = SMPDOAssigns{};
-    try data.data.append(SMPDOAssign{ .direction = .input, .pdo_bit_length = 12, .pdo_byte_length = 2, .start_addr = 1000, .sm_idx = 2 });
-    try data.data.append(SMPDOAssign{ .direction = .input, .pdo_bit_length = 12, .pdo_byte_length = 2, .start_addr = 998, .sm_idx = 4 });
-    try data.data.append(SMPDOAssign{ .direction = .input, .pdo_bit_length = 12, .pdo_byte_length = 2, .start_addr = 1002, .sm_idx = 1 });
+    try data.data.append(SMPDOAssign{ .direction = .input, .pdo_bit_length = 12, .pdo_byte_length = 2, .start_addr = 1000, .sm_idx = 2, .sii_sm = undefined });
+    try data.data.append(SMPDOAssign{ .direction = .input, .pdo_bit_length = 12, .pdo_byte_length = 2, .start_addr = 998, .sm_idx = 4, .sii_sm = undefined });
+    try data.data.append(SMPDOAssign{ .direction = .input, .pdo_bit_length = 12, .pdo_byte_length = 2, .start_addr = 1002, .sm_idx = 1, .sii_sm = undefined });
     try data.sortAndVerifyNonOverlapping();
 
     try std.testing.expectEqual(@as(u32, 998), data.data.slice()[0].start_addr);
@@ -1149,17 +1149,17 @@ test "sort and verfiy non overlapping SMPDOAssigns" {
 
 test "overlapping sync managers" {
     var data = SMPDOAssigns{};
-    try data.data.append(SMPDOAssign{ .direction = .input, .pdo_bit_length = 12, .pdo_byte_length = 2, .start_addr = 1000, .sm_idx = 3 });
-    try data.data.append(SMPDOAssign{ .direction = .input, .pdo_bit_length = 12, .pdo_byte_length = 3, .start_addr = 998, .sm_idx = 3 });
-    try data.data.append(SMPDOAssign{ .direction = .input, .pdo_bit_length = 12, .pdo_byte_length = 2, .start_addr = 1002, .sm_idx = 3 });
+    try data.data.append(SMPDOAssign{ .direction = .input, .pdo_bit_length = 12, .pdo_byte_length = 2, .start_addr = 1000, .sm_idx = 3, .sii_sm = undefined });
+    try data.data.append(SMPDOAssign{ .direction = .input, .pdo_bit_length = 12, .pdo_byte_length = 3, .start_addr = 998, .sm_idx = 3, .sii_sm = undefined });
+    try data.data.append(SMPDOAssign{ .direction = .input, .pdo_bit_length = 12, .pdo_byte_length = 2, .start_addr = 1002, .sm_idx = 3, .sii_sm = undefined });
     try std.testing.expectError(error.OverlappingSM, data.sortAndVerifyNonOverlapping());
 }
 
 test "overlapping sync managers non unique start addr" {
     var data = SMPDOAssigns{};
-    try data.data.append(SMPDOAssign{ .direction = .input, .pdo_bit_length = 12, .pdo_byte_length = 2, .start_addr = 1000, .sm_idx = 3 });
-    try data.data.append(SMPDOAssign{ .direction = .input, .pdo_bit_length = 12, .pdo_byte_length = 2, .start_addr = 1000, .sm_idx = 3 });
-    try data.data.append(SMPDOAssign{ .direction = .input, .pdo_bit_length = 12, .pdo_byte_length = 2, .start_addr = 1002, .sm_idx = 3 });
+    try data.data.append(SMPDOAssign{ .direction = .input, .pdo_bit_length = 12, .pdo_byte_length = 2, .start_addr = 1000, .sm_idx = 3, .sii_sm = undefined });
+    try data.data.append(SMPDOAssign{ .direction = .input, .pdo_bit_length = 12, .pdo_byte_length = 2, .start_addr = 1000, .sm_idx = 3, .sii_sm = undefined });
+    try data.data.append(SMPDOAssign{ .direction = .input, .pdo_bit_length = 12, .pdo_byte_length = 2, .start_addr = 1002, .sm_idx = 3, .sii_sm = undefined });
     try std.testing.expectError(error.OverlappingSM, data.sortAndVerifyNonOverlapping());
 }
 

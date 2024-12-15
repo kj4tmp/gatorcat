@@ -36,32 +36,9 @@ Documentation can be found in [doc](doc/README.md).
 - [ ] linux XDP
 - [ ] mac-os, embedded support
 - [ ] allocation-free API
-
-## TODOs
-
-- [ ] adjust order of declatations in files
-- [ ] audit std.log statements
-- [ ] re-organize files to separate lib from CLI
-- [ ] support DC
-- [ ] generic nic interface
-- [ ] EoE
-- [ ] FoE
 - [ ] cable redundancy
-- [ ] dynamic PDO assignment via CoE
-- [ ] parse ENI.xml
-- [ ] CLI for network diag, error counters etc
-- [ ] distributed clocks
-- [ ] topology monitoring
-- [ ] emergency messages
-- [ ] map mailbox status into process data
-- [ ] calculate expected WKCs
-- [ ] segmented SDO transfer
-- [ ] eeprom write access
-  - [ ] nic
-    - [ ] linux / XDP
-  - [ ] timers
-
-## Windows Setup
-
-1. Run `getmac /fo csv /v` in command prompt
-2. ifname for npcap is of the format: `\Device\NPF_{538CF305-6539-480E-ACD9-BEE598E7AE8F}`
+- [ ] EtherCAT Network Information(ENI) XML Parsing
+- [ ] Segmented SDO transfer
+- [ ] EEPROM write access
+- [ ] Embedded friendly API / timers
+- [ ] Network diagnosis in the CLI (CRC counters etc.)

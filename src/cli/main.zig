@@ -29,7 +29,7 @@ pub fn main() !void {
             };
             defer raw_socket.deinit();
 
-            var port = gcat.Port.init(raw_socket.networkAdapter(), .{});
+            var port = gcat.Port.init(raw_socket.linkLayer(), .{});
             try port.ping(scan_args.recv_timeout_us);
 
             try scan(

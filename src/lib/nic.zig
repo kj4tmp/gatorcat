@@ -4,7 +4,7 @@ const assert = std.debug.assert;
 const telegram = @import("telegram.zig");
 
 /// Interface for networking hardware
-pub const NetworkAdapter = struct {
+pub const LinkLayer = struct {
     ptr: *anyopaque,
     vtable: *const VTable,
 
@@ -25,7 +25,7 @@ pub const NetworkAdapter = struct {
     /// socket.
     ///
     /// warning: implementation must be thread-safe.
-    pub fn send(self: NetworkAdapter, data: []const u8) anyerror!void {
+    pub fn send(self: LinkLayer, data: []const u8) anyerror!void {
         assert(data.len <= telegram.max_frame_length);
         return try self.vtable.send(self.ptr, data);
     }
@@ -41,12 +41,12 @@ pub const NetworkAdapter = struct {
     /// socket with MSG_TRUNC enabled.
     ///
     /// warning: implementation must be thread-safe.
-    pub fn recv(self: NetworkAdapter, out: []u8) anyerror!usize {
+    pub fn recv(self: LinkLayer, out: []u8) anyerror!usize {
         return try self.vtable.recv(self.ptr, out);
     }
 };
 
-/// Raw socket implementation for NetworkAdapter
+/// Raw socket implementation for LinkLayer
 pub const RawSocket = struct {
     send_mutex: std.Thread.Mutex = .{},
     recv_mutex: std.Thread.Mutex = .{},
@@ -146,8 +146,8 @@ pub const RawSocket = struct {
         return try std.posix.recv(self.socket, out, std.posix.MSG.TRUNC);
     }
 
-    pub fn networkAdapter(self: *RawSocket) NetworkAdapter {
-        return NetworkAdapter{
+    pub fn linkLayer(self: *RawSocket) LinkLayer {
+        return LinkLayer{
             .ptr = self,
             .vtable = &.{ .send = send, .recv = recv },
         };
@@ -206,8 +206,8 @@ pub const WindowsRawSocket = struct {
         return @intCast(bytes_received);
     }
 
-    pub fn networkAdapter(self: *WindowsRawSocket) NetworkAdapter {
-        return NetworkAdapter{
+    pub fn linkLayer(self: *WindowsRawSocket) LinkLayer {
+        return LinkLayer{
             .ptr = self,
             .vtable = &.{ .send = send, .recv = recv },
         };

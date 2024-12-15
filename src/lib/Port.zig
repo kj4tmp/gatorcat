@@ -11,7 +11,7 @@ recv_frames_status_mutex: std.Thread.Mutex = .{},
 recv_frames: [max_frames]*telegram.EtherCATFrame = undefined,
 recv_frames_status: [max_frames]FrameStatus = [_]FrameStatus{FrameStatus.available} ** max_frames,
 last_used_idx: u8 = 0,
-network_adapter: nic.NetworkAdapter,
+network_adapter: nic.LinkLayer,
 settings: Settings,
 
 pub const Settings = struct {
@@ -33,7 +33,7 @@ const FrameStatus = enum {
     in_use_currupted,
 };
 
-pub fn init(network_adapter: nic.NetworkAdapter, settings: Settings) Port {
+pub fn init(network_adapter: nic.LinkLayer, settings: Settings) Port {
     return Port{ .network_adapter = network_adapter, .settings = settings };
 }
 

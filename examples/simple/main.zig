@@ -17,7 +17,7 @@ pub fn main() !void {
         else => @compileError("unsupported target os"),
     };
     defer raw_socket.deinit();
-    var port = gcat.Port.init(raw_socket.networkAdapter(), .{});
+    var port = gcat.Port.init(raw_socket.linkLayer(), .{});
     try port.ping(10000);
 
     const estimated_stack_usage = comptime gcat.MainDevice.estimateAllocSize(eni) + 8;

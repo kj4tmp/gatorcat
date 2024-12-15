@@ -11,7 +11,7 @@ recv_frames_status_mutex: std.Thread.Mutex = .{},
 recv_frames: [max_frames]*telegram.EtherCATFrame = undefined,
 recv_frames_status: [max_frames]FrameStatus = [_]FrameStatus{FrameStatus.available} ** max_frames,
 last_used_idx: u8 = 0,
-network_adapter: nic.LinkLayer,
+link_layer: nic.LinkLayer,
 settings: Settings,
 
 pub const Settings = struct {
@@ -33,8 +33,8 @@ const FrameStatus = enum {
     in_use_currupted,
 };
 
-pub fn init(network_adapter: nic.LinkLayer, settings: Settings) Port {
-    return Port{ .network_adapter = network_adapter, .settings = settings };
+pub fn init(link_layer: nic.LinkLayer, settings: Settings) Port {
+    return Port{ .link_layer = link_layer, .settings = settings };
 }
 
 /// claim transaction
@@ -79,7 +79,7 @@ pub fn send_transaction(self: *Port, idx: u8, send_frame: *const telegram.EtherC
     const out = out_buf[0..n_bytes];
 
     // TODO: handle partial send error
-    _ = self.network_adapter.send(out) catch return error.LinkError;
+    _ = self.link_layer.send(out) catch return error.LinkError;
     {
         self.recv_frames_status_mutex.lock();
         defer self.recv_frames_status_mutex.unlock();
@@ -124,7 +124,7 @@ fn recv_frame(self: *Port) !void {
     var buf: [telegram.max_frame_length]u8 = undefined;
     var frame_size: usize = 0;
 
-    frame_size = self.network_adapter.recv(&buf) catch |err| switch (err) {
+    frame_size = self.link_layer.recv(&buf) catch |err| switch (err) {
         error.WouldBlock => return error.FrameNotFound,
         else => {
             std.log.err("Socket error: {}", .{err});

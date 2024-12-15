@@ -109,21 +109,32 @@ fn benchmark(
 ) !void {
     var writer = std.io.getStdOut().writer();
     try writer.print("benchmarking for {d:.2}s...\n", .{duration_s});
-    var timer = try std.time.Timer.start();
 
+    var run_timer = try std.time.Timer.start();
     var n_cycles: u64 = 0;
-    while (@as(f64, @floatFromInt(timer.read())) < duration_s * std.time.ns_per_s) {
+    var max_cycle_time_ns: u64 = 0;
+    var min_cycle_time_ns: u64 = @as(u64, recv_timeout_us) * std.time.ns_per_us;
+    var cycle_timer = try std.time.Timer.start();
+    while (@as(f64, @floatFromInt(run_timer.read())) < duration_s * std.time.ns_per_s) {
         try port.ping(recv_timeout_us);
         n_cycles += 1;
-    }
-    const total_time_s: f64 = @as(f64, @floatFromInt(timer.read())) / std.time.ns_per_s;
-    const cycles_per_second: f64 = @as(f64, @floatFromInt(n_cycles)) / total_time_s;
 
-    try writer.print("Completed {} cycles in {d:.2}s or {d:.2} cycles/s.\n", .{
-        n_cycles,
-        total_time_s,
-        cycles_per_second,
-    });
+        const cycle_time_ns = cycle_timer.read();
+        cycle_timer.reset();
+        if (cycle_time_ns > max_cycle_time_ns) {
+            max_cycle_time_ns = cycle_time_ns;
+        }
+        if (cycle_time_ns < min_cycle_time_ns) {
+            min_cycle_time_ns = cycle_time_ns;
+        }
+    }
+    const total_time_s: f64 = @as(f64, @floatFromInt(run_timer.read())) / std.time.ns_per_s;
+    const cycles_per_second: f64 = @as(f64, @floatFromInt(n_cycles)) / total_time_s;
+    const max_cycle_time_s: f64 = @as(f64, @floatFromInt(max_cycle_time_ns)) / std.time.ns_per_s;
+    const min_cycle_time_s: f64 = @as(f64, @floatFromInt(min_cycle_time_ns)) / std.time.ns_per_s;
+    try writer.print("Completed {} cycles in {d:.2}s or {d:.2} cycles/s.\n", .{ n_cycles, total_time_s, cycles_per_second });
+    try writer.print("Max cycle time: {d:.6}s.\n", .{max_cycle_time_s});
+    try writer.print("Min cycle time: {d:.6}s.\n", .{min_cycle_time_s});
 }
 
 fn scan(

@@ -24,7 +24,7 @@ pub fn main() !void {
         .scan => |scan_args| {
             var raw_socket = switch (builtin.target.os.tag) {
                 .linux => try gcat.nic.RawSocket.init(scan_args.ifname),
-                .windows => try gcat.nic.WindowsRawSocket.init("\\Device\\NPF_{538CF305-6539-480E-ACD9-BEE598E7AE8F}"),
+                .windows => try gcat.nic.WindowsRawSocket.init(scan_args.ifname),
                 else => @compileError("unsupported target os"),
             };
             defer raw_socket.deinit();
@@ -41,6 +41,19 @@ pub fn main() !void {
                 scan_args.mbx_timeout_us,
                 scan_args.ring_position,
             );
+        },
+
+        .benchmark => |benchmark_args| {
+            var raw_socket = switch (builtin.target.os.tag) {
+                .linux => try gcat.nic.RawSocket.init(benchmark_args.ifname),
+                .windows => try gcat.nic.WindowsRawSocket.init(benchmark_args.ifname),
+                else => @compileError("unsupported target os"),
+            };
+            defer raw_socket.deinit();
+
+            var port = gcat.Port.init(raw_socket.linkLayer(), .{});
+            try port.ping(benchmark_args.recv_timeout_us);
+            try benchmark(&port, benchmark_args.recv_timeout_us, benchmark_args.duration_s);
         },
     }
 }
@@ -70,8 +83,48 @@ const Flags = struct {
                 .ring_position = "Optionally specify only a single subdevice at this ring position to be scanned.",
             };
         },
+
+        benchmark: struct {
+            ifname: [:0]const u8,
+            recv_timeout_us: u32 = 10_000,
+            duration_s: f64 = 10.0,
+
+            pub const descriptions = .{
+                .ifname = "Network interface to use for the benchmark (e.g. \"eth0\").",
+                .recv_timeout_us = "Frame receive timeout in microseconds.",
+            };
+        },
+
+        pub const descriptions = .{
+            .scan = "Scan the EtherCAT bus and print information about the subdevices.",
+            .benchmark = "Benchmark the performance of the EtherCAT bus.",
+        };
     },
 };
+
+fn benchmark(
+    port: *gcat.Port,
+    recv_timeout_us: u32,
+    duration_s: f64,
+) !void {
+    var writer = std.io.getStdOut().writer();
+    try writer.print("benchmarking for {d:.2}s...\n", .{duration_s});
+    var timer = try std.time.Timer.start();
+
+    var n_cycles: u64 = 0;
+    while (@as(f64, @floatFromInt(timer.read())) < duration_s * std.time.ns_per_s) {
+        try port.ping(recv_timeout_us);
+        n_cycles += 1;
+    }
+    const total_time_s: f64 = @as(f64, @floatFromInt(timer.read())) / std.time.ns_per_s;
+    const cycles_per_second: f64 = @as(f64, @floatFromInt(n_cycles)) / total_time_s;
+
+    try writer.print("Completed {} cycles in {d:.2}s or {d:.2} cycles/s.\n", .{
+        n_cycles,
+        total_time_s,
+        cycles_per_second,
+    });
+}
 
 fn scan(
     port: *gcat.Port,

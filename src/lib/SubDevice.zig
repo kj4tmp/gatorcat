@@ -373,12 +373,12 @@ pub fn transitionPS(
 
     switch (self.config.auto_config) {
         .auto => {
-            var sii_sms = try sii.readSMCatagory(
-                port,
-                station_address,
-                recv_timeout_us,
-                eeprom_timeout_us,
-            );
+            // var sii_sms = try sii.readSMCatagory(
+            //     port,
+            //     station_address,
+            //     recv_timeout_us,
+            //     eeprom_timeout_us,
+            // );
 
             // The length of the SM provided by the SII is sometimes incorrect.
             // For example, the EL2008 provides SM length 0 even though it has
@@ -406,40 +406,25 @@ pub fn transitionPS(
                 }
             };
 
-            for (sm_assigns.data.slice()) |sm_assign| {
-                std.log.info("station addr: 0x{x}, sm assign: {}", .{ station_address, sii_sms.slice()[sm_assign.sm_idx] });
-            }
+            // for (sm_assigns.data.slice()) |sm_assign| {
+            //     std.log.info("station addr: 0x{x}, sm assign: {}", .{ station_address, sii_sms.slice()[sm_assign.sm_idx] });
+            // }
 
-            for (sii_sms.slice(), 0..) |sm, sm_idx| {
-                std.log.info("station addr: 0x{x}, sm {} config: {any}", .{ station_address, sm_idx, sm });
-            }
-
-            for (sm_assigns.data.slice()) |sm_assign| {
-                if (sm_assign.sm_idx >= sii_sms.len) return error.InvalidSII;
-                assert(sm_assign.sm_idx < sii_sms.len);
-                var sii_sm = sii_sms.get(sm_assign.sm_idx);
-                if (sm_assign.direction != sii_sm.control.direction) return error.InvalidSII;
-                switch (sii_sm.syncM_type) {
-                    .process_data_inputs, .process_data_outputs => {},
-                    else => return error.InvalidSMAssigns,
-                }
-                sii_sm.length = sm_assign.pdo_byte_length;
-                sii_sms.set(sm_assign.sm_idx, sii_sm);
-            }
-
-            if (sii_sms.len > 0) {
-                const esc_sms = sii.escSMsFromSIISMs(sii_sms.slice());
-                // write process data SM configuration to subdevice
+            for (sm_assigns.dumpESCSMs().slice()) |esc_sm| {
                 try commands.fpwrPackWkc(
                     port,
-                    esc_sms,
+                    esc_sm.esc_sm,
                     .{
                         .station_address = station_address,
-                        .offset = @intFromEnum(esc.RegisterMap.SM0),
+                        .offset = esc.getSMAddr(@intCast(esc_sm.sm_idx)),
                     },
                     recv_timeout_us,
                     1,
                 );
+            }
+
+            for (sm_assigns.dumpESCSMs().slice()) |esc_sm| {
+                std.log.info("station addr: 0x{x}, process data sm {} config: {any}", .{ station_address, esc_sm.sm_idx, esc_sm.esc_sm });
             }
 
             var min_fmmu_required: u8 = 0;
@@ -479,7 +464,6 @@ pub fn transitionPS(
                 .{ .start_addr = fmmu_outputs_start_addr, .bit_length = totals.outputs_bit_length },
             );
             std.log.info("station addr: 0x{x}, n_FMMU: {}, FMMU config: {any}", .{ station_address, fmmu_config.data.slice().len, fmmu_config.data.slice() });
-
             // TODO: Sort FMMUs according to order defined in SII
             if (fmmu_config.data.slice().len > fmmus.len) return error.NotEnoughFMMUs;
 

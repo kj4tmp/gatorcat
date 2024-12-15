@@ -94,7 +94,12 @@ pub fn main() !void {
             std.debug.print("EL2008 PROCESS IMAGE: {}\n", .{md.subdevices[3].runtime_info.pi});
             std.debug.print("EL7041 PROCESS IMAGE: {}\n", .{md.subdevices[4].runtime_info.pi});
             cycle_count = 0;
-            motor_control.control_reset = !motor_control.control_reset;
+            if (motor_status.status.ready_to_enable) {
+                motor_control.control_enable = true;
+            } else {
+                motor_control.control_reset = !motor_control.control_reset;
+                motor_control.control_enable = false;
+            }
         }
         if (blink_timer.read() > std.time.ns_per_s * 0.1) {
             blink_timer.reset();
@@ -104,7 +109,7 @@ pub fn main() !void {
                 el2008.runtime_info.pi.outputs[0] = 1;
             }
         }
-        if (kill_timer.read() > std.time.ns_per_s * 100) {
+        if (kill_timer.read() > std.time.ns_per_s * 10) {
             kill_timer.reset();
             try ek1100.setALState(&port, .SAFEOP, 10000, 10000);
         }

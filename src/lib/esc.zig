@@ -57,6 +57,10 @@ pub const RegisterMap = enum(u16) {
     DC_sync_activation = 0x0981,
 };
 
+pub fn getSMAddr(sm: u4) u16 {
+    return @as(u16, @intFromEnum(RegisterMap.SM0)) + 8 * @as(u16, sm);
+}
+
 pub const PortDescriptor = enum(u2) {
     not_implemented = 0x00,
     not_configured,
@@ -902,21 +906,21 @@ pub const FMMURegister = packed struct {
     pub fn writeFMMUConfig(self: *FMMURegister, config: FMMUAttributes, fmmu_idx: u4) void {
         switch (fmmu_idx) {
             0 => self.FMMU0 = config,
-            1 => self.FMMU0 = config,
-            2 => self.FMMU0 = config,
-            3 => self.FMMU0 = config,
-            4 => self.FMMU0 = config,
-            5 => self.FMMU0 = config,
-            6 => self.FMMU0 = config,
-            7 => self.FMMU0 = config,
-            8 => self.FMMU0 = config,
-            9 => self.FMMU0 = config,
-            10 => self.FMMU0 = config,
-            11 => self.FMMU0 = config,
-            12 => self.FMMU0 = config,
-            13 => self.FMMU0 = config,
-            14 => self.FMMU0 = config,
-            15 => self.FMMU0 = config,
+            1 => self.FMMU1 = config,
+            2 => self.FMMU2 = config,
+            3 => self.FMMU3 = config,
+            4 => self.FMMU4 = config,
+            5 => self.FMMU5 = config,
+            6 => self.FMMU6 = config,
+            7 => self.FMMU7 = config,
+            8 => self.FMMU8 = config,
+            9 => self.FMMU9 = config,
+            10 => self.FMMU10 = config,
+            11 => self.FMMU11 = config,
+            12 => self.FMMU12 = config,
+            13 => self.FMMU13 = config,
+            14 => self.FMMU14 = config,
+            15 => self.FMMU15 = config,
         }
     }
 };

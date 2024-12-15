@@ -429,9 +429,7 @@ pub fn readFMMUCatagory(
         assert(res.len == 0);
         return res;
     }
-    if (n_fmmu > max_fmmu) {
-        return error.InvalidSII;
-    }
+
     var stream = SIIStream.init(
         port,
         station_address,
@@ -442,9 +440,13 @@ pub fn readFMMUCatagory(
     var limited_reader = std.io.limitedReader(stream.reader(), catagory.byte_length);
     const reader = limited_reader.reader();
 
+    if (n_fmmu > max_fmmu) {
+        return error.InvalidSII;
+    }
+    assert(n_fmmu <= max_fmmu);
     for (0..n_fmmu) |_| {
         res.append(try wire.packFromECatReader(FMMUFunction, reader)) catch |err| switch (err) {
-            error.Overflow => return error.InvalidSII,
+            error.Overflow => unreachable,
         };
     }
     return res;
@@ -474,9 +476,6 @@ pub fn readSMCatagory(
         return SMCatagory{};
     }
     assert(n_sm > 0);
-    if (n_sm > max_sm) {
-        return error.InvalidSII;
-    }
     var stream = SIIStream.init(
         port,
         station_address,
@@ -487,9 +486,13 @@ pub fn readSMCatagory(
     var limited_reader = std.io.limitedReader(stream.reader(), catagory.byte_length);
     const reader = limited_reader.reader();
     var res = SMCatagory{};
+    if (n_sm > max_sm) {
+        return error.InvalidSII;
+    }
+    assert(n_sm <= max_sm);
     for (0..n_sm) |_| {
         res.append(try wire.packFromECatReader(SyncM, reader)) catch |err| switch (err) {
-            error.Overflow => return error.InvalidSII,
+            error.Overflow => unreachable,
         };
     }
     return res;
@@ -1005,6 +1008,7 @@ pub const SMPDOAssign = struct {
     /// total bit length of PDOs assigned to this sync manager.
     pdo_bit_length: u16,
     direction: esc.SyncManagerDirection,
+    sii_sm: SyncM,
 };
 
 pub const SMPDOAssigns = struct {
@@ -1058,6 +1062,7 @@ pub const SMPDOAssigns = struct {
                 .process_data_outputs => .output,
                 else => unreachable,
             },
+            .sii_sm = sm_config,
         });
     }
 
@@ -1094,6 +1099,39 @@ pub const SMPDOAssigns = struct {
         self.sort();
         assert(self.isSorted());
         if (!self.isNonOverlapping()) return error.OverlappingSM;
+    }
+
+    pub const ESCSM = struct {
+        sm_idx: u8,
+        esc_sm: esc.SyncManagerAttributes,
+    };
+
+    pub fn dumpESCSMs(self: *const SMPDOAssigns) std.BoundedArray(ESCSM, max_sm) {
+        var res = std.BoundedArray(ESCSM, max_sm){};
+        for (self.data.slice()) |sm_assign| {
+            res.append(
+                ESCSM{
+                    .sm_idx = sm_assign.sm_idx,
+                    .esc_sm = esc.SyncManagerAttributes{
+                        .physical_start_address = sm_assign.start_addr,
+                        .length = sm_assign.pdo_byte_length,
+                        .control = sm_assign.sii_sm.control,
+                        .status = @bitCast(@as(u8, 0)),
+                        .activate = .{
+                            .channel_enable = sm_assign.sii_sm.enable_sync_manager.enable,
+                            .repeat = false,
+                            .DC_event_0_bus_access = false,
+                            .DC_event_0_local_access = false,
+                        },
+                        .channel_enable_PDI = false,
+                        .repeat_ack = false,
+                    },
+                },
+            ) catch |err| switch (err) {
+                error.Overflow => unreachable,
+            };
+        }
+        return res;
     }
 };
 

@@ -55,7 +55,7 @@ const Flags = struct {
     command: union(enum) {
         // scan bus
         scan: struct {
-            ifname: []const u8,
+            ifname: [:0]const u8,
             ring_position: ?u16 = null,
             recv_timeout_us: u32 = 10_000,
             eeprom_timeout_us: u32 = 10_000,
@@ -463,10 +463,11 @@ fn printSubdeviceCoePDOs(
     mbx_timeout_us: u32,
     subdevice: *gcat.SubDevice,
 ) !void {
+    const coe_info = &(subdevice.runtime_info.coe orelse return);
     try writer.print("COE PDO Assignment:\n", .{});
     const station_address = gcat.SubDevice.stationAddressFromRingPos(subdevice.runtime_info.ring_position);
-    const cnt = &subdevice.runtime_info.coe.?.cnt;
-    const mailbox_config = subdevice.runtime_info.coe.?.config;
+    const cnt = &coe_info.cnt;
+    const mailbox_config = coe_info.config;
 
     const sm_comms = try gcat.mailbox.coe.readSMComms(port, station_address, recv_timeout_us, mbx_timeout_us, cnt, mailbox_config);
 

@@ -53,8 +53,9 @@ pub const RawSocket = struct {
     socket: std.posix.socket_t,
 
     pub fn init(
-        ifname: []const u8,
+        ifname: [:0]const u8,
     ) !RawSocket {
+        if (ifname.len > std.posix.IFNAMESIZE - 1) return error.InterfaceNameTooLong;
         assert(ifname.len <= std.posix.IFNAMESIZE - 1); // ifname too long
         const ETH_P_ETHERCAT = @intFromEnum(telegram.EtherType.ETHERCAT);
         const socket: std.posix.socket_t = try std.posix.socket(

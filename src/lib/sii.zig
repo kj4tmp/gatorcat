@@ -10,7 +10,6 @@ const Timer = std.time.Timer;
 const ns_per_us = std.time.ns_per_us;
 const assert = std.debug.assert;
 
-const commands = @import("commands.zig");
 const esc = @import("esc.zig");
 const nic = @import("nic.zig");
 const pdi = @import("pdi.zig");
@@ -868,8 +867,7 @@ pub fn readSII4ByteFP(
 ) ReadSIIError![4]u8 {
 
     // set eeprom access to main device
-    commands.fpwrPackWkc(
-        port,
+    port.fpwrPackWkc(
         esc.SIIAccessRegisterCompact{
             .owner = .ethercat_DL,
             .lock = false,
@@ -889,8 +887,7 @@ pub fn readSII4ByteFP(
     };
 
     // ensure there is a rising edge in the read command by first sending zeros
-    commands.fpwrPackWkc(
-        port,
+    port.fpwrPackWkc(
         @as(u16, @bitCast(wire.zerosFromPack(esc.SIIControlStatusRegister))),
         .{
             .station_address = station_address,
@@ -906,8 +903,7 @@ pub fn readSII4ByteFP(
         error.Wkc => return error.Timeout,
     };
     // send read command
-    commands.fpwrPackWkc(
-        port,
+    port.fpwrPackWkc(
         esc.SIIControlStatusAddressRegister{
             .write_access = false,
             .EEPROM_emulation = false,
@@ -942,8 +938,7 @@ pub fn readSII4ByteFP(
     };
     // wait for eeprom to be not busy
     while (timer.read() < @as(u64, eeprom_timeout_us) * ns_per_us) {
-        const sii_status = commands.fprdPackWkc(
-            port,
+        const sii_status = port.fprdPackWkc(
             esc.SIIControlStatusRegister,
             .{
                 .station_address = station_address,
@@ -977,8 +972,7 @@ pub fn readSII4ByteFP(
 
     // attempt read 3 times
     var data = [4]u8{ 0, 0, 0, 0 };
-    commands.fprdWkc(
-        port,
+    port.fprdWkc(
         .{
             .station_address = station_address,
             .offset = @intFromEnum(

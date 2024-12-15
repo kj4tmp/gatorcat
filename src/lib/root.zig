@@ -1,7 +1,6 @@
 const std = @import("std");
 const assert = std.debug.assert;
 
-pub const commands = @import("commands.zig");
 pub const ENI = @import("ENI.zig");
 pub const esc = @import("esc.zig");
 pub const mailbox = @import("mailbox.zig");

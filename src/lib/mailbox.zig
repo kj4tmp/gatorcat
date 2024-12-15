@@ -3,7 +3,6 @@ const assert = std.debug.assert;
 const Timer = std.time.Timer;
 const ns_per_us = std.time.ns_per_us;
 
-const commands = @import("commands.zig");
 const esc = @import("esc.zig");
 pub const coe = @import("mailbox/coe.zig");
 const nic = @import("nic.zig");
@@ -70,8 +69,7 @@ pub fn writeMailboxOut(
 ) !void {
     assert(mbx_out.isValid());
 
-    const act_mbx_out = try commands.fprdPackWkc(
-        port,
+    const act_mbx_out = try port.fprdPackWkc(
         esc.SyncManagerAttributes,
         .{ .station_address = station_address, .offset = @intFromEnum(esc.RegisterMap.SM0) },
         recv_timeout_us,
@@ -118,8 +116,7 @@ pub fn writeMailboxOut(
     // over the wire.
     //
     // Ref: IEC 61158-4-12:2019 6.7.1
-    try commands.fpwrWkc(
-        port,
+    try port.fpwrWkc(
         .{
             .station_address = station_address,
             .offset = act_mbx_out.physical_start_address,
@@ -172,8 +169,7 @@ pub fn readMailboxIn(
 ) !?InContent {
     assert(mbx_in.isValid());
 
-    const act_mbx_in = try commands.fprdPackWkc(
-        port,
+    const act_mbx_in = try port.fprdPackWkc(
         esc.SyncManagerAttributes,
         .{
             .station_address = station_address,
@@ -206,8 +202,7 @@ pub fn readMailboxIn(
     //
     // Ref: IEC 61158-4-12:2019 6.7.1
     var buf = std.mem.zeroes([max_size]u8);
-    try commands.fprdWkc(
-        port,
+    try port.fprdWkc(
         .{
             .station_address = station_address,
             .offset = act_mbx_in.physical_start_address,

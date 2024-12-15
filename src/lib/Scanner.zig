@@ -4,7 +4,6 @@ const std = @import("std");
 const Timer = std.time.Timer;
 const ns_per_us = std.time.ns_per_us;
 
-const commands = @import("commands.zig");
 const esc = @import("esc.zig");
 const MainDevice = @import("MainDevice.zig");
 const nic = @import("nic.zig");
@@ -27,8 +26,7 @@ pub fn init(port: *Port, settings: MainDevice.Settings) Scanner {
 
 pub fn countSubdevices(self: *const Scanner) !u16 {
     var dummy_data = [1]u8{0};
-    const wkc = try commands.brd(
-        self.port,
+    const wkc = try self.port.brd(
         .{
             .autoinc_address = 0,
             .offset = 0,
@@ -42,8 +40,7 @@ pub fn countSubdevices(self: *const Scanner) !u16 {
 pub fn busInit(self: *const Scanner, state_change_timeout_us: u32, subdevice_count: u16) !void {
 
     // open all ports
-    try commands.bwrPackWkc(
-        self.port,
+    try self.port.bwrPackWkc(
         esc.DLControlRegisterCompact{
             .forwarding_rule = true, // destroy non-ecat frames
             .temporary_loop_control = false, // permanent settings
@@ -63,8 +60,7 @@ pub fn busInit(self: *const Scanner, state_change_timeout_us: u32, subdevice_cou
     // TODO: set IRQ mask
 
     // reset CRC counters
-    try commands.bwrPackWkc(
-        self.port,
+    try self.port.bwrPackWkc(
         // a write to any one of these counters will reset them all,
         // but I am too lazt to do it any differently.
         esc.RXErrorCounterRegister{
@@ -88,8 +84,7 @@ pub fn busInit(self: *const Scanner, state_change_timeout_us: u32, subdevice_cou
     );
 
     // reset FMMUs
-    try commands.bwrPackWkc(
-        self.port,
+    try self.port.bwrPackWkc(
         std.mem.zeroes(esc.FMMURegister),
         .{ .autoinc_address = 0, .offset = @intFromEnum(esc.RegisterMap.FMMU0) },
         self.settings.recv_timeout_us,
@@ -97,8 +92,7 @@ pub fn busInit(self: *const Scanner, state_change_timeout_us: u32, subdevice_cou
     );
 
     // reset SMs
-    try commands.bwrPackWkc(
-        self.port,
+    try self.port.bwrPackWkc(
         std.mem.zeroes(esc.SMRegister),
         .{ .autoinc_address = 0, .offset = @intFromEnum(esc.RegisterMap.SM0) },
         self.settings.recv_timeout_us,
@@ -111,8 +105,7 @@ pub fn busInit(self: *const Scanner, state_change_timeout_us: u32, subdevice_cou
     // TODO: DC filter
 
     // disable alias address
-    try commands.bwrPackWkc(
-        self.port,
+    try self.port.bwrPackWkc(
         esc.DLControlEnableAliasAddressRegister{
             .enable_alias_address = false,
         },
@@ -122,8 +115,7 @@ pub fn busInit(self: *const Scanner, state_change_timeout_us: u32, subdevice_cou
     );
 
     // request INIT
-    try commands.bwrPackWkc(
-        self.port,
+    try self.port.bwrPackWkc(
         esc.ALControlRegister{
             .state = .INIT,
 
@@ -145,8 +137,7 @@ pub fn busInit(self: *const Scanner, state_change_timeout_us: u32, subdevice_cou
     );
 
     // Force take away EEPROM from PDI
-    try commands.bwrPackWkc(
-        self.port,
+    try self.port.bwrPackWkc(
         esc.SIIAccessRegisterCompact{
             .owner = .ethercat_DL,
             .lock = true,
@@ -160,8 +151,7 @@ pub fn busInit(self: *const Scanner, state_change_timeout_us: u32, subdevice_cou
     );
 
     // Maindevice controls EEPROM
-    try commands.bwrPackWkc(
-        self.port,
+    try self.port.bwrPackWkc(
         esc.SIIAccessRegisterCompact{
             .owner = .ethercat_DL,
             .lock = false,
@@ -177,8 +167,7 @@ pub fn busInit(self: *const Scanner, state_change_timeout_us: u32, subdevice_cou
     // command INIT on all subdevices, twice
     // SOEM does this...something about netX100
     for (0..1) |_| {
-        commands.bwrPackWkc(
-            self.port,
+        self.port.bwrPackWkc(
             esc.ALControlRegister{
                 .state = .INIT,
                 .ack = false,
@@ -252,8 +241,7 @@ pub fn broadcastALStatusCheck(
     };
 
     while (timer.read() < @as(u64, change_timeout_us) * ns_per_us) {
-        const status_res = try commands.brdPack(
-            self.port,
+        const status_res = try self.port.brdPack(
             esc.ALStatusRegister,
             .{
                 .autoinc_address = 0,

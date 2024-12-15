@@ -3,7 +3,6 @@ const Timer = std.time.Timer;
 const ns_per_us = std.time.ns_per_us;
 const assert = std.debug.assert;
 
-const commands = @import("commands.zig");
 const ENI = @import("ENI.zig");
 const esc = @import("esc.zig");
 const mailbox = @import("mailbox.zig");
@@ -63,8 +62,7 @@ pub fn getALStatus(
 ) !esc.ALStatusRegister {
     // TODO: consider not using the ack bit
     const station_address: u16 = stationAddressFromRingPos(self.runtime_info.ring_position);
-    return try commands.fprdPackWkc(
-        port,
+    return try port.fprdPackWkc(
         esc.ALStatusRegister,
         .{ .station_address = station_address, .offset = @intFromEnum(esc.RegisterMap.AL_status) },
         recv_timeout_us,
@@ -82,8 +80,7 @@ pub fn setALState(
     // TODO: consider not using the ack bit
     const station_address: u16 = stationAddressFromRingPos(self.runtime_info.ring_position);
 
-    const wkc = try commands.fpwrPack(
-        port,
+    const wkc = try port.fpwrPack(
         esc.ALControlRegister{
             .state = state,
             // simple subdevices will copy the ack bit
@@ -105,8 +102,7 @@ pub fn setALState(
 
     var timer = std.time.Timer.start() catch @panic("timer not supported");
     while (timer.read() < @as(u64, change_timeout_us) * ns_per_us) {
-        const status = try commands.fprdPackWkc(
-            port,
+        const status = try port.fprdPackWkc(
             esc.ALStatusRegister,
             .{
                 .station_address = station_address,
@@ -206,8 +202,7 @@ pub fn transitionIP(
 
     // wipe FMMUs
     var zero_fmmus = wire.zerosFromPack(esc.FMMURegister);
-    try commands.fpwrWkc(
-        port,
+    try port.fpwrWkc(
         .{
             .station_address = station_address,
             .offset = @intFromEnum(
@@ -221,8 +216,7 @@ pub fn transitionIP(
 
     // wipe SMs
     var zero_sms = wire.zerosFromPack(esc.SMRegister);
-    try commands.fpwrWkc(
-        port,
+    try port.fpwrWkc(
         .{
             .station_address = station_address,
             .offset = @intFromEnum(
@@ -308,8 +302,7 @@ pub fn transitionIP(
     };
 
     // write SM configuration to subdevice
-    try commands.fpwrPackWkc(
-        port,
+    try port.fpwrPackWkc(
         sms,
         .{
             .station_address = station_address,
@@ -404,8 +397,7 @@ pub fn transitionPS(
             // }
 
             for (sm_assigns.dumpESCSMs().slice()) |esc_sm| {
-                try commands.fpwrPackWkc(
-                    port,
+                try port.fpwrPackWkc(
                     esc_sm.esc_sm,
                     .{
                         .station_address = station_address,
@@ -461,8 +453,7 @@ pub fn transitionPS(
             if (fmmu_config.data.slice().len > fmmus.len) return error.NotEnoughFMMUs;
 
             // write fmmu configuration
-            try commands.fpwrPackWkc(
-                port,
+            try port.fpwrPackWkc(
                 fmmu_config.dumpFMMURegister(),
                 .{ .station_address = station_address, .offset = @intFromEnum(esc.RegisterMap.FMMU0) },
                 recv_timeout_us,

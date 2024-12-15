@@ -1,7 +1,6 @@
 const std = @import("std");
 const assert = std.debug.assert;
 
-const commands = @import("commands.zig");
 const ENI = @import("ENI.zig");
 const esc = @import("esc.zig");
 const FrameBuilder = @import("FrameBuilder.zig");
@@ -80,8 +79,7 @@ pub fn estimateAllocSize(eni: ENI) usize {
 pub fn busInit(self: *MainDevice, change_timeout_us: u32) !void {
 
     // open all ports
-    var wkc = try commands.bwrPack(
-        self.port,
+    var wkc = try self.port.bwrPack(
         esc.DLControlRegisterCompact{
             .forwarding_rule = true, // destroy non-ecat frames
             .temporary_loop_control = false, // permanent settings
@@ -101,8 +99,8 @@ pub fn busInit(self: *MainDevice, change_timeout_us: u32) !void {
     // TODO: set IRQ mask
 
     // reset CRC counters
-    wkc = try commands.bwrPack(
-        self.port,
+    wkc = try self.port.bwrPack(
+
         // a write to any one of these counters will reset them all,
         // but I am too lazt to do it any differently.
         esc.RXErrorCounterRegister{
@@ -127,8 +125,7 @@ pub fn busInit(self: *MainDevice, change_timeout_us: u32) !void {
 
     // reset FMMUs
     var zero_fmmus = wire.zerosFromPack(esc.FMMURegister);
-    wkc = try commands.bwr(
-        self.port,
+    wkc = try self.port.bwr(
         .{
             .autoinc_address = 0,
             .offset = @intFromEnum(
@@ -142,8 +139,7 @@ pub fn busInit(self: *MainDevice, change_timeout_us: u32) !void {
 
     // reset SMs
     var zero_sms = wire.zerosFromPack(esc.SMRegister);
-    wkc = try commands.bwr(
-        self.port,
+    wkc = try self.port.bwr(
         .{
             .autoinc_address = 0,
             .offset = @intFromEnum(
@@ -161,8 +157,7 @@ pub fn busInit(self: *MainDevice, change_timeout_us: u32) !void {
     // TODO: DC filter
 
     // disable alias address
-    wkc = try commands.bwrPack(
-        self.port,
+    wkc = try self.port.bwrPack(
         esc.DLControlEnableAliasAddressRegister{
             .enable_alias_address = false,
         },
@@ -175,8 +170,7 @@ pub fn busInit(self: *MainDevice, change_timeout_us: u32) !void {
     std.log.info("bus wipe disable alias wkc: {}", .{wkc});
 
     // request INIT
-    wkc = try commands.bwrPack(
-        self.port,
+    wkc = try self.port.bwrPack(
         esc.ALControlRegister{
             .state = .INIT,
 
@@ -198,8 +192,7 @@ pub fn busInit(self: *MainDevice, change_timeout_us: u32) !void {
     std.log.info("bus wipe INIT wkc: {}", .{wkc});
 
     // Force take away EEPROM from PDI
-    wkc = try commands.bwrPack(
-        self.port,
+    wkc = try self.port.bwrPack(
         esc.SIIAccessRegisterCompact{
             .owner = .ethercat_DL,
             .lock = true,
@@ -213,8 +206,7 @@ pub fn busInit(self: *MainDevice, change_timeout_us: u32) !void {
     std.log.info("bus wipe force eeprom wkc: {}", .{wkc});
 
     // Maindevice controls EEPROM
-    wkc = try commands.bwrPack(
-        self.port,
+    wkc = try self.port.bwrPack(
         esc.SIIAccessRegisterCompact{
             .owner = .ethercat_DL,
             .lock = false,
@@ -229,8 +221,7 @@ pub fn busInit(self: *MainDevice, change_timeout_us: u32) !void {
 
     // count subdevices
     var dummy_data = [1]u8{0};
-    wkc = try commands.brd(
-        self.port,
+    wkc = try self.port.brd(
         .{
             .autoinc_address = 0,
             .offset = 0,
@@ -282,8 +273,7 @@ pub fn busSafeop(self: *MainDevice, change_timeout_us: u32) !void {
         );
     }
 
-    const state_change_wkc = try commands.bwrPack(
-        self.port,
+    const state_change_wkc = try self.port.bwrPack(
         esc.ALControlRegister{
             .state = .SAFEOP,
             .ack = false,
@@ -320,8 +310,7 @@ pub fn busOp(self: *MainDevice, change_timeout_us: u32) !void {
         );
     }
 
-    const state_change_wkc = try commands.bwrPack(
-        self.port,
+    const state_change_wkc = try self.port.bwrPack(
         esc.ALControlRegister{
             .state = .OP,
             .ack = false,
@@ -528,8 +517,7 @@ pub fn sendRecvCyclicFramesDiag(self: *MainDevice) SendRecvCycleFramesDiagError!
 }
 
 pub fn broadcastStateChange(self: *MainDevice, state: esc.ALStateControl, change_timeout_us: u32) !void {
-    const wkc = try commands.bwrPack(
-        self.port,
+    const wkc = try self.port.bwrPack(
         esc.ALControlRegister{
             .state = state,
             // simple subdevices will copy the ack bit
@@ -549,8 +537,7 @@ pub fn broadcastStateChange(self: *MainDevice, state: esc.ALStateControl, change
 
     var timer = std.time.Timer.start() catch @panic("timer not supported");
     while (timer.read() < @as(u64, change_timeout_us) * std.time.ns_per_us) {
-        const res = try commands.brdPack(
-            self.port,
+        const res = try self.port.brdPack(
             esc.ALStatusRegister,
             .{
                 .autoinc_address = 0,
@@ -601,8 +588,7 @@ pub fn expectedProcessDataWkc(self: *const MainDevice) u16 {
 /// Assign configured station address.
 pub fn assignStationAddress(port: *Port, station_address: u16, ring_position: u16, recv_timeout_us: u32) !void {
     const autoinc_address = SubDevice.autoincAddressFromRingPos(ring_position);
-    try commands.apwrPackWkc(
-        port,
+    try port.apwrPackWkc(
         esc.ConfiguredStationAddressRegister{
             .configured_station_address = station_address,
         },

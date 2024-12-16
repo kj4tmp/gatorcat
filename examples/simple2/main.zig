@@ -48,33 +48,34 @@ pub fn main() !void {
     var motor_control = EL7031Outputs.zero;
     var motor_status = std.mem.zeroes(EL7031Inputs);
 
+    try md.sendCyclicFrames();
+    md.sleepUntilNextCycle(2000);
+
     while (true) {
-
-        // input and output mapping
-        motor_status = el7031.packFromInputProcessData(EL7031Inputs);
-        el7031.packToOutputProcessData(motor_control);
-
-        // exchange process data
-        const diag = md.sendRecvCyclicFramesDiag() catch |err| switch (err) {
+        // recv frames
+        const recv_result = md.recvCyclicFrames();
+        if (recv_result) |diag| {
+            if (diag.brd_status_wkc != eni.subdevices.len) return error.TopologyChanged;
+            if (diag.brd_status.state != .OP) {
+                std.log.err("Not all subdevices in OP! brd status {}", .{diag.brd_status});
+                return error.NotAllSubdevicesInOP;
+            }
+            if (diag.process_data_wkc != md.expectedProcessDataWkc() and wkc_error_timer.read() > 1 * std.time.ns_per_s) {
+                wkc_error_timer.reset();
+                std.log.err("process data wkc wrong: {}, expected: {}", .{ diag.process_data_wkc, md.expectedProcessDataWkc() });
+            }
+        } else |recv_error| switch (recv_error) {
             error.RecvTimeout => {
                 std.log.warn("recv timeout", .{});
-                continue;
             },
             error.LinkError,
             error.CurruptedFrame,
             error.NoTransactionAvailable,
             => |err2| return err2,
-        };
-        if (diag.brd_status_wkc != eni.subdevices.len) return error.TopologyChanged;
-        if (diag.brd_status.state != .OP) {
-            std.log.err("Not all subdevices in OP! brd status {}", .{diag.brd_status});
-            return error.NotAllSubdevicesInOP;
         }
-        if (diag.process_data_wkc != md.expectedProcessDataWkc() and wkc_error_timer.read() > 1 * std.time.ns_per_s) {
-            wkc_error_timer.reset();
-            std.log.err("process data wkc wrong: {}, expected: {}", .{ diag.process_data_wkc, md.expectedProcessDataWkc() });
-        }
-        cycle_count += 1;
+
+        // input mapping
+        motor_status = el7031.packFromInputProcessData(EL7031Inputs);
 
         // do application
         if (print_timer.read() > std.time.ns_per_s * 1) {
@@ -98,6 +99,16 @@ pub fn main() !void {
             kill_timer.reset();
             try ek1100.setALState(&port, .SAFEOP, 10000, 10000);
         }
+        // output mapping
+        el7031.packToOutputProcessData(motor_control);
+
+        // send frames
+        try md.sendCyclicFrames();
+
+        // sleep until next cycle
+        md.sleepUntilNextCycle(2000);
+
+        cycle_count += 1;
     }
 }
 

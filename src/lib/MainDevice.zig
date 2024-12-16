@@ -20,7 +20,6 @@ settings: Settings,
 subdevices: []SubDevice,
 process_image: []u8,
 frames: []telegram.EtherCATFrame,
-used_frames: u32 = 0,
 transactions: std.BoundedArray(u8, max_frames_in_flight),
 first_cycle_time: ?std.time.Instant = null,
 
@@ -342,24 +341,28 @@ pub const SendRecvCyclicFramesError = SendRecvCycleFramesDiagError || error{
     Wkc,
 };
 
-// pub fn sendRecvCyclicFrames(self: *MainDevice) SendRecvCyclicFramesError!void {
-//     const result = try self.sendRecvCyclicFramesDiag();
-//     if (result.brd_status_wkc != self.subdevices.len) return error.TopologyChanged;
-//     if (result.brd_status.state != .OP) return error.NotAllSubdevicesInOP;
-//     if (result.process_data_wkc != self.expectedProcessDataWkc()) return error.Wkc;
-// }
+pub fn sendRecvCyclicFrames(self: *MainDevice) SendRecvCyclicFramesError!void {
+    const result = try self.sendRecvCyclicFramesDiag();
+    if (result.brd_status_wkc != self.subdevices.len) return error.TopologyChanged;
+    if (result.brd_status.state != .OP) return error.NotAllSubdevicesInOP;
+    if (result.process_data_wkc != self.expectedProcessDataWkc()) return error.Wkc;
+}
 
+// TODO: rename this
 pub const SendRecvCyclicFramesDiagResult = struct {
     brd_status: esc.ALStatusRegister,
     brd_status_wkc: u16,
     process_data_wkc: u16,
 };
 
+// TODO: rename this
 pub const SendRecvCycleFramesDiagError = error{
     LinkError,
     CurruptedFrame,
     NoTransactionAvailable,
     RecvTimeout,
+    /// TODO: can we get rid of this???
+    NoTransactions,
 };
 
 /// returns number of frames required to exchange process data
@@ -395,6 +398,7 @@ pub fn frameCount(process_image_size: u32) u32 {
 pub const max_frames_in_flight = std.math.maxInt(u8) + 1;
 
 pub fn sendCyclicFrames(self: *MainDevice) !void {
+    // TODO: reduce this spaghetti!
     assert(frameCount(@intCast(self.process_image.len)) <= self.frames.len);
     assert(self.transactions.len == 0); // did you try to send more than once before recv?
 
@@ -402,7 +406,7 @@ pub fn sendCyclicFrames(self: *MainDevice) !void {
     var process_image_bytes_remaining = self.process_image.len;
     var logical_addr: u32 = 0;
 
-    self.used_frames = 0;
+    var used_frames: u32 = 0;
     build_frames: for (0..max_frames_in_flight) |i| {
         var builder = FrameBuilder{};
         if (i == 0) {
@@ -432,12 +436,12 @@ pub fn sendCyclicFrames(self: *MainDevice) !void {
 
         assert(i < self.frames.len); // checked by frameCount on init
         self.frames[i] = builder.dumpFrame();
-        self.used_frames += 1;
+        used_frames += 1;
 
         if (process_image_bytes_remaining == 0) break :build_frames;
     } else unreachable; // checked by frameCount on init
     assert(process_image_bytes_remaining == 0);
-    assert(self.used_frames == frameCount(@intCast(self.process_image.len)));
+    assert(used_frames == frameCount(@intCast(self.process_image.len)));
 
     // send muliple frames in flight
     var transactions = std.BoundedArray(u8, max_frames_in_flight){};
@@ -446,9 +450,9 @@ pub fn sendCyclicFrames(self: *MainDevice) !void {
             self.port.release_transaction(transaction);
         }
     }
-    assert(self.used_frames <= max_frames_in_flight);
-    assert(self.used_frames <= self.frames.len);
-    for (self.frames[0..self.used_frames]) |*frame| {
+    assert(used_frames <= max_frames_in_flight);
+    assert(used_frames <= self.frames.len);
+    for (self.frames[0..used_frames]) |*frame| {
         const transaction_idx = try self.port.claim_transaction();
 
         transactions.append(transaction_idx) catch |err| switch (err) {
@@ -473,7 +477,9 @@ pub fn sleepUntilNextCycle(self: *MainDevice, cycle_time_us: u32) void {
 }
 
 pub fn recvCyclicFrames(self: *MainDevice) SendRecvCycleFramesDiagError!SendRecvCyclicFramesDiagResult {
-    // TODO: handle calling recv frames first???? Important!!!
+    // TODO: reduce this spaghetti!
+
+    if (self.transactions.len == 0) return error.NoTransactions;
     defer assert(self.transactions.len == 0);
     errdefer {
         for (self.transactions.slice()) |transaction| {
@@ -481,7 +487,8 @@ pub fn recvCyclicFrames(self: *MainDevice) SendRecvCycleFramesDiagError!SendRecv
         }
         self.transactions = .{};
     }
-    recv: for (0..(self.used_frames * 2) + 1) |_| {
+    const n_transactions = self.transactions.len;
+    recv: for (0..(n_transactions * 2) + 1) |_| {
         if (self.transactions.len == 0) break :recv;
         const transaction = self.transactions.pop();
         if (try self.port.continue_transaction(transaction)) {
@@ -498,7 +505,7 @@ pub fn recvCyclicFrames(self: *MainDevice) SendRecvCycleFramesDiagError!SendRecv
 
     // TODO: use individual datagram WKC's
     var process_data_wkc: u16 = 0;
-    for (self.frames[0..self.used_frames]) |*frame| {
+    for (self.frames[0..n_transactions]) |*frame| {
         for (frame.portable_datagrams.slice()) |*dgram| {
             switch (dgram.header.command) {
                 .LRD, .LWR, .LRW => process_data_wkc +|= dgram.wkc,
@@ -512,7 +519,7 @@ pub fn recvCyclicFrames(self: *MainDevice) SendRecvCycleFramesDiagError!SendRecv
     // telegram.EtherCATFrame.isCurrupted protects against memory
     // curruption
     // TODO: don't touch process data unless wkc is correct
-    for (self.frames[0..self.used_frames]) |*frame| {
+    for (self.frames[0..n_transactions]) |*frame| {
         for (frame.datagrams().slice()) |*dgram| {
             switch (dgram.header.command) {
                 .LRD, .LRW => {
@@ -553,127 +560,6 @@ pub fn sendRecvCyclicFramesDiag(self: *MainDevice) SendRecvCycleFramesDiagError!
     }
     unreachable;
 }
-// pub fn sendRecvCyclicFramesDiag(self: *MainDevice) SendRecvCycleFramesDiagError!SendRecvCyclicFramesDiagResult {
-//     assert(frameCount(@intCast(self.process_image.len)) <= self.frames.len);
-
-//     // TODO: implement frame re-cycling upon receive to allow extremely large process data?
-//     var process_image_bytes_remaining = self.process_image.len;
-//     var logical_addr: u32 = 0;
-
-//     var used_frames: u9 = 0;
-//     build_frames: for (0..max_frames_in_flight) |i| {
-//         var builder = FrameBuilder{};
-//         if (i == 0) {
-//             builder.appendBrdPack(
-//                 esc.ALStatusRegister,
-//                 .{
-//                     .autoinc_address = 0,
-//                     .offset = @intFromEnum(esc.RegisterMap.AL_status),
-//                 },
-//             ) catch |err| switch (err) {
-//                 error.NoSpaceLeft => unreachable,
-//             };
-//         }
-
-//         // append process data datagrams
-//         if (process_image_bytes_remaining > 0 and builder.datagramDataSpaceRemaining() > 0) {
-//             const bytes_to_consume = @min(process_image_bytes_remaining, builder.datagramDataSpaceRemaining());
-//             const start = logical_addr;
-//             const end_exclusive = logical_addr + bytes_to_consume;
-
-//             builder.appendLrw(logical_addr, self.process_image[start..end_exclusive]) catch |err| switch (err) {
-//                 error.NoSpaceLeft => unreachable,
-//             };
-//             process_image_bytes_remaining -= bytes_to_consume;
-//             logical_addr += bytes_to_consume;
-//         }
-
-//         assert(i < self.frames.len); // checked by frameCount on init
-//         self.frames[i] = builder.dumpFrame();
-//         used_frames += 1;
-
-//         if (process_image_bytes_remaining == 0) break :build_frames;
-//     } else unreachable; // checked by frameCount on init
-//     assert(process_image_bytes_remaining == 0);
-//     assert(used_frames == frameCount(@intCast(self.process_image.len)));
-
-//     // send muliple frames in flight
-//     var transactions = std.BoundedArray(u8, max_frames_in_flight){};
-//     defer {
-//         for (transactions.slice()) |transaction| {
-//             self.port.release_transaction(transaction);
-//         }
-//     }
-//     assert(used_frames <= max_frames_in_flight);
-//     assert(used_frames <= self.frames.len);
-//     for (self.frames[0..used_frames]) |*frame| {
-//         const transaction_idx = try self.port.claim_transaction();
-
-//         transactions.append(transaction_idx) catch |err| switch (err) {
-//             error.Overflow => unreachable,
-//         };
-//         try self.port.send_transaction(transaction_idx, frame, frame);
-//     }
-
-//     // gather transactions (subject to recv timeout)
-//     var timer = std.time.Timer.start() catch @panic("timer not supported");
-//     recv: while (timer.read() < @as(u64, self.settings.recv_timeout_us) * std.time.ns_per_us) {
-//         if (transactions.len == 0) break :recv;
-//         const transaction = transactions.pop();
-//         if (try self.port.continue_transaction(transaction)) {
-//             self.port.release_transaction(transaction);
-//         } else {
-//             transactions.append(transaction) catch |err| switch (err) {
-//                 error.Overflow => unreachable,
-//             };
-//         }
-//     } else {
-//         return error.RecvTimeout;
-//     }
-
-//     // TODO: use individual datagram WKC's
-//     var process_data_wkc: u16 = 0;
-//     for (self.frames[0..used_frames]) |*frame| {
-//         for (frame.portable_datagrams.slice()) |*dgram| {
-//             switch (dgram.header.command) {
-//                 .LRD, .LWR, .LRW => process_data_wkc +|= dgram.wkc,
-//                 .BRD => {},
-//                 else => unreachable,
-//             }
-//         }
-//     }
-
-//     // copy data to process image now that we know wkc is correct
-//     // telegram.EtherCATFrame.isCurrupted protects against memory
-//     // curruption
-//     // TODO: don't touch process data unless wkc is correct
-
-//     for (self.frames[0..used_frames]) |*frame| {
-//         for (frame.datagrams().slice()) |*dgram| {
-//             switch (dgram.header.command) {
-//                 .LRD, .LRW => {
-//                     const start = dgram.header.address;
-//                     const end_exclusive = dgram.header.address + dgram.data.len;
-//                     @memcpy(self.process_image[start..end_exclusive], dgram.data);
-//                 },
-//                 // no need to copy to outputs
-//                 .BRD, .LWR => {},
-//                 else => unreachable,
-//             }
-//         }
-//     }
-
-//     // check subdevice states
-//     assert(self.frames[0].portable_datagrams.slice()[0].header.command == .BRD);
-//     const state_check_dgram: telegram.Datagram = self.frames[0].datagrams().slice()[0];
-//     const brd_status_wkc = state_check_dgram.wkc;
-//     const al_status = wire.packFromECatSlice(esc.ALStatusRegister, state_check_dgram.data);
-//     return SendRecvCyclicFramesDiagResult{
-//         .brd_status = al_status,
-//         .brd_status_wkc = brd_status_wkc,
-//         .process_data_wkc = process_data_wkc,
-//     };
-// }
 
 pub fn broadcastStateChange(self: *MainDevice, state: esc.ALStateControl, change_timeout_us: u32) !void {
     const wkc = try self.port.bwrPack(

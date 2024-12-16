@@ -71,6 +71,7 @@ pub fn main() !void {
             error.LinkError,
             error.CurruptedFrame,
             error.NoTransactionAvailable,
+            error.NoTransactions,
             => |err2| return err2,
         };
         if (diag.brd_status_wkc != eni.subdevices.len) return error.TopologyChanged;

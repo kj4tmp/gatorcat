@@ -468,14 +468,6 @@ pub fn sendCyclicFrames(self: *MainDevice) !void {
     assert(self.first_cycle_time != null);
 }
 
-pub fn sleepUntilNextCycle(self: *MainDevice, cycle_time_us: u32) void {
-    assert(self.first_cycle_time != null); // must do at least one sendCyclicFrames!
-    const now = std.time.Instant.now() catch @panic("Timer unsupported.");
-    // use modulo to sleep until the next cycle
-    const time_to_sleep_ns = @as(u64, cycle_time_us) * std.time.ns_per_us - now.since(self.first_cycle_time.?) % (@as(u64, cycle_time_us) * std.time.ns_per_us);
-    std.Thread.sleep(time_to_sleep_ns);
-}
-
 pub fn recvCyclicFrames(self: *MainDevice) SendRecvCycleFramesDiagError!SendRecvCyclicFramesDiagResult {
     // TODO: reduce this spaghetti!
 

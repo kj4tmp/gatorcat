@@ -79,6 +79,14 @@ pub fn initSubdevicesFromENI(eni: ENI, subdevices: []SubDevice, process_image: [
     return subdevices[0..subdevices_used];
 }
 
+// given the time of the first cycle and the cycle duration, sleep until the next cycle
+pub fn sleepUntilNextCycle(start_time: std.time.Instant, cycle_time_us: u32) void {
+    const now = std.time.Instant.now() catch @panic("Timer unsupported.");
+    // use modulo to sleep until the next cycle
+    const time_to_sleep_ns = @as(u64, cycle_time_us) * std.time.ns_per_us - now.since(start_time) % (@as(u64, cycle_time_us) * std.time.ns_per_us);
+    std.Thread.sleep(time_to_sleep_ns);
+}
+
 pub const max_subdevices = 65535;
 
 test {

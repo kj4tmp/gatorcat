@@ -48,8 +48,9 @@ pub fn main() !void {
     var motor_control = EL7031Outputs.zero;
     var motor_status = std.mem.zeroes(EL7031Inputs);
 
+    const first_cycle_time = std.time.Instant.now() catch @panic("Timer unsupported");
     try md.sendCyclicFrames();
-    md.sleepUntilNextCycle(2000);
+    gcat.sleepUntilNextCycle(first_cycle_time, 2000);
 
     while (true) {
         // recv frames
@@ -107,7 +108,7 @@ pub fn main() !void {
         try md.sendCyclicFrames();
 
         // sleep until next cycle
-        md.sleepUntilNextCycle(2000);
+        gcat.sleepUntilNextCycle(first_cycle_time, 2000);
 
         cycle_count += 1;
     }

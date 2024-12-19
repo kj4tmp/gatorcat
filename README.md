@@ -42,3 +42,11 @@ Documentation can be found in [doc](doc/README.md).
 - [ ] EEPROM write access
 - [ ] Embedded friendly API / timers
 - [ ] Network diagnosis in the CLI (CRC counters etc.)
+
+## Sponsors
+
+List updated monthly.
+
+- (empty)
+
+Please consider [❤️ Sponsoring](https://github.com/sponsors/kj4tmp) if you depend on this project or just want to see it succeed.

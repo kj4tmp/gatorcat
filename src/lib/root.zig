@@ -10,6 +10,7 @@ pub const pdi = @import("pdi.zig");
 pub const Port = @import("Port.zig");
 pub const Scanner = @import("Scanner.zig");
 pub const sii = @import("sii.zig");
+pub const sim = @import("sim.zig");
 pub const SubDevice = @import("SubDevice.zig");
 pub const telegram = @import("telegram.zig");
 pub const wire = @import("wire.zig");

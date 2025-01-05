@@ -22,6 +22,8 @@ pub const Simulator = struct {
     /// frames waiting to be returned by recv().
     /// Appended by tick().
     out_frames: *std.ArrayList(Frame),
+    /// simulated subdevices
+    subdevices: []SubDevice,
 
     const Frame = std.BoundedArray(u8, telegram.max_frame_length);
 
@@ -47,11 +49,17 @@ pub const Simulator = struct {
         out_frames.* = std.ArrayList(Frame).fromOwnedSlice(std.testing.failing_allocator, out_frames_slice);
         out_frames.shrinkRetainingCapacity(0);
 
+        const subdevices = try arena.allocator().alloc(SubDevice, eni.subdevices.len);
+        for (subdevices, eni.subdevices) |*subdevice, config| {
+            subdevice.* = SubDevice.init(config);
+        }
+
         return Simulator{
             .eni = eni,
             .arena = arena,
             .in_frames = in_frames,
             .out_frames = out_frames,
+            .subdevices = subdevices,
         };
     }
     pub fn deinit(self: *Simulator, allocator: std.mem.Allocator) void {
@@ -70,6 +78,7 @@ pub const Simulator = struct {
     pub fn recv(ctx: *anyopaque, out: []u8) std.posix.RecvFromError!usize {
         const self: *Simulator = @ptrCast(@alignCast(ctx));
         self.tick();
+        // TODO: re-order frames randomly
         var out_stream = std.io.fixedBufferStream(out);
         if (self.out_frames.popOrNull()) |frame| {
             return out_stream.write(frame.slice()) catch |err| switch (err) {
@@ -87,9 +96,35 @@ pub const Simulator = struct {
     }
 
     pub fn tick(self: *Simulator) void {
-        if (self.in_frames.popOrNull()) |frame| {
-            self.out_frames.appendAssumeCapacity(frame);
+        while (self.in_frames.popOrNull()) |frame| {
+            var mut_frame = frame;
+            for (self.subdevices) |*subdevice| {
+                subdevice.processFrame(&mut_frame);
+            }
+            self.out_frames.appendAssumeCapacity(mut_frame);
         }
+    }
+};
+
+pub const SubDevice = struct {
+    config: ENI.SubDeviceConfiguration,
+    pub fn init(config: ENI.SubDeviceConfiguration) SubDevice {
+        return SubDevice{
+            .config = config,
+        };
+    }
+    pub fn processFrame(self: *SubDevice, frame: *Simulator.Frame) void {
+        _ = self;
+        var ethernet_frame = telegram.EthernetFrame.deserialize(frame.slice()) catch return;
+
+        for (ethernet_frame.ethercat_frame.portable_datagrams.slice()) |*datagram| {
+            _ = datagram;
+        }
+        var new_frame = Simulator.Frame{};
+        new_frame.len = frame.len;
+        const num_written = ethernet_frame.serialize(null, new_frame.slice()) catch unreachable;
+        assert(num_written == frame.len);
+        frame.* = new_frame;
     }
 };
 

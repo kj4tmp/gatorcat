@@ -70,6 +70,9 @@ pub const Command = enum(u8) {
     ARMW,
     /// Configured address physical read multiple write.
     FRMW,
+    /// Never serialize an unnamed value. This is here only to help ensure we
+    /// handle invalid data correctly on deserialization.
+    _,
 };
 
 /// Position Address (Auto Increment Address)
@@ -261,6 +264,10 @@ pub const EtherCATFrame = struct {
 
         assert(self.portable_datagrams.len == original.portable_datagrams.len);
         for (self.portable_datagrams.slice(), original.portable_datagrams.slice(), 0..) |self_dgram, orig_dgram, i| {
+            switch (self_dgram.header.command) {
+                .BWR, .BRD, .BRW, .APRD, .APWR, .APRW, .ARMW, .FPRD, .FPWR, .FPRW, .LRD, .LWR, .LRW, .FRMW, .NOP => {},
+                _ => return true,
+            }
             if (self_dgram.header.command != orig_dgram.header.command) {
                 return true;
             }
@@ -268,6 +275,7 @@ pub const EtherCATFrame = struct {
             const check_addr: bool = switch (orig_dgram.header.command) {
                 .BWR, .BRD, .BRW, .APRD, .APWR, .APRW, .ARMW => false,
                 .FPRD, .FPWR, .FPRW, .LRD, .LWR, .LRW, .FRMW, .NOP => true,
+                _ => unreachable, // sent datagrams should never have been _
             };
             if (check_addr and self_dgram.header.address != orig_dgram.header.address) return true;
             // idx is skipped since it is injected on serialization
@@ -363,7 +371,9 @@ pub const EthernetFrame = struct {
     /// for tranmission on the line.
     ///
     /// Returns number of bytes written, or error.
-    pub fn serialize(self: *const EthernetFrame, idx: u8, out: []u8) !usize {
+    ///
+    /// If idx is provided, it will be injected into the first datagram.
+    pub fn serialize(self: *const EthernetFrame, maybe_idx: ?u8, out: []u8) !usize {
         var fbs = std.io.fixedBufferStream(out);
         const writer = fbs.writer();
         try writer.writeInt(u48, self.header.dest_mac, big);
@@ -374,7 +384,9 @@ pub const EthernetFrame = struct {
             // inject idx at first datagram to identify frame
             if (i == 0) {
                 var header_copy = datagram.header;
-                header_copy.idx = idx;
+                if (maybe_idx) |idx| {
+                    header_copy.idx = idx;
+                }
                 try wire.eCatFromPackToWriter(header_copy, writer);
             } else {
                 try wire.eCatFromPackToWriter(datagram.header, writer);

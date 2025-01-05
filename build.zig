@@ -124,10 +124,22 @@ pub fn build(b: *std.Build) void {
     examples_step.dependOn(&simple2_install.step);
     if (target.result.os.tag == .windows) simple2_example.linkLibC();
 
+    // sim tests
+    const sim_test = b.addTest(.{
+        .root_source_file = b.path("test/sim/root.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    const run_sim_test = b.addRunArtifact(sim_test);
+    const sim_test_step = b.step("sim_test", "Run sim tests");
+    sim_test_step.dependOn(&run_sim_test.step);
+    sim_test.root_module.addImport("gatorcat", lib);
+
     const all_step = b.step("all", "Do everything");
     all_step.dependOn(cli_step);
     all_step.dependOn(test_step);
     all_step.dependOn(examples_step);
+    all_step.dependOn(sim_test_step);
 
     b.default_step.dependOn(cli_step);
 }

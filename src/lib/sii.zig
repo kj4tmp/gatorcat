@@ -89,7 +89,7 @@ pub const SubDeviceInfo = packed struct {
     std_send_mbx_size: u16,
     mbx_protocol: MailboxProtocolSupported,
     reserved3: u528 = 0,
-    /// size of EEPROM in kbit + 1, kbit = 1024 bits, 0 = 1 kbit.
+    /// size of EEPROM in KiBit + 1, KiBit = 1024 bits, 0 = 1 KiBit.
     size: u16,
     version: u16,
 };
@@ -1430,6 +1430,22 @@ pub fn readSubdeviceInfoCompact(
     return try readSIIFP_ps(
         port,
         SubDeviceInfoCompact,
+        station_address,
+        @intFromEnum(ParameterMap.PDI_control),
+        recv_timeout_us,
+        eeprom_timeout_us,
+    );
+}
+
+pub fn readSubdeviceInfo(
+    port: *Port,
+    station_address: u16,
+    recv_timeout_us: u32,
+    eeprom_timeout_us: u32,
+) !SubDeviceInfo {
+    return try readSIIFP_ps(
+        port,
+        SubDeviceInfo,
         station_address,
         @intFromEnum(ParameterMap.PDI_control),
         recv_timeout_us,

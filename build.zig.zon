@@ -1,11 +1,11 @@
 .{
     .name = "gatorcat",
     .version = "0.1.2",
-    .minimum_zig_version = "0.14.0",
+    .minimum_zig_version = "0.14.0-dev.2802+257054a14",
     .dependencies = .{
         .flags = .{
-            .url = "git+https://github.com/n0s4/flags.git#119c1956099e987b5dea2792faa2c27e9b72dc61",
-            .hash = "12200e8e6e80e88c93404bc0827f6c80318d5aefab4e46cfa4c581a7c9eb48461c9e",
+            .url = "git+https://github.com/kj4tmp/flags.git#11f494bfbe372e1b9b647ffc1ce5ed8a1642c81d",
+            .hash = "12208568f1875c10484968bb7cfa5a08c786feb2eb2f09d0631cedf6299d335f538a",
         },
         .npcap_sdk = .{
             .url = "https://npcap.com/dist/npcap-sdk-1.13.zip",

@@ -126,7 +126,7 @@ const EL3314Channel = packed struct(u32) {
     _reserved: u7,
     txpdo_state: bool,
     txpdo_toggle: bool,
-    value: u16,
+    value: i16,
 };
 
 const EL3314ProcessData = packed struct {

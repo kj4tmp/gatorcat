@@ -474,12 +474,12 @@ pub fn recvCyclicFrames(self: *MainDevice) SendRecvCycleFramesDiagError!SendRecv
 
     if (self.transactions.len == 0) return error.NoTransactions;
     defer assert(self.transactions.len == 0);
-    errdefer {
-        for (self.transactions.slice()) |transaction| {
-            self.port.release_transaction(transaction);
-        }
-        self.transactions = .{};
-    }
+    // errdefer {
+    //     for (self.transactions.slice()) |transaction| {
+    //         self.port.release_transaction(transaction);
+    //     }
+    //     self.transactions = .{};
+    // }
     const n_transactions = self.transactions.len;
     recv: for (0..(n_transactions * 2) + 1) |_| {
         if (self.transactions.len == 0) break :recv;

@@ -539,7 +539,7 @@ pub fn recvCyclicFrames(self: *MainDevice) SendRecvCycleFramesDiagError!SendRecv
 
 pub fn continueAllTransactionsRecvCyclicFrames(self: *MainDevice) SendRecvCycleFramesDiagError!SendRecvCyclicFramesDiagResult {
     // TODO: reduce this spaghetti!
-
+    std.debug.print("called continue all transactions\n", .{});
     assert(self.transactions.len > 0); // forget to send?
     const n_transactions = self.transactions.len;
     recv: for (0..(n_transactions * 2) + 1) |_| {
@@ -557,7 +557,9 @@ pub fn continueAllTransactionsRecvCyclicFrames(self: *MainDevice) SendRecvCycleF
         return error.RecvTimeout;
     }
     assert(self.transactions.len == 0);
+    std.debug.print("transactions is zero\n", .{});
 
+    errdefer unreachable;
     // TODO: use individual datagram WKC's
     var process_data_wkc: u16 = 0;
     for (self.frames[0..n_transactions]) |*frame| {

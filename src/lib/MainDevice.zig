@@ -361,8 +361,6 @@ pub const SendRecvCycleFramesDiagError = error{
     CurruptedFrame,
     NoTransactionAvailable,
     RecvTimeout,
-    /// TODO: can we get rid of this???
-    NoTransactions,
 };
 
 /// returns number of frames required to exchange process data

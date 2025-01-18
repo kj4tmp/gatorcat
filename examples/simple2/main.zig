@@ -72,7 +72,6 @@ pub fn main() !void {
             error.LinkError,
             error.CurruptedFrame,
             error.NoTransactionAvailable,
-            error.NoTransactions,
             => |err2| return err2,
         }
 

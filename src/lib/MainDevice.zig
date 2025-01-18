@@ -552,6 +552,7 @@ pub fn continueAllTransactionsRecvCyclicFrames(self: *MainDevice) SendRecvCycleF
                 error.Overflow => unreachable,
             };
         }
+        if (self.transactions.len == 0) break :recv;
     } else {
         return error.RecvTimeout;
     }

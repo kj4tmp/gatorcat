@@ -466,6 +466,7 @@ pub fn sendCyclicFrames(self: *MainDevice) !void {
         self.first_cycle_time = std.time.Instant.now() catch @panic("Timer unsupported.");
     }
     assert(self.first_cycle_time != null);
+    assert(self.transactions.len > 0);
 }
 
 pub fn recvCyclicFrames(self: *MainDevice) SendRecvCycleFramesDiagError!SendRecvCyclicFramesDiagResult {

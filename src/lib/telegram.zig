@@ -152,6 +152,23 @@ pub const Datagram = struct {
     pub const data_overhead = @divExact(@bitSizeOf(Header), 8) +
         @divExact(@bitSizeOf(u16), 8); // wkc
 
+    /// Compact Datagram Header
+    ///
+    /// Same as Header but only the first few fields.
+    pub const CompactHeader = packed struct(u64) {
+        /// service command, APRD etc.
+        command: Command,
+        /// used my maindevice to identify duplicate or lost datagrams
+        idx: u8 = 0,
+        /// auto-increment, configured station, or logical address
+        /// when position addressing
+        address: u32,
+        /// length of following data, in bytes, not including wkc
+        length: u11,
+        /// reserved, 0
+        reserved: u3 = 0,
+    };
+
     /// Datagram Header
     ///
     /// Ref: IEC 61158-4-12:2019 5.4.1.2

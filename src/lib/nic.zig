@@ -154,6 +154,115 @@ pub const RawSocket = struct {
     }
 };
 
+pub const XDPSocket = struct {
+    send_mutex: std.Thread.Mutex = .{},
+    recv_mutex: std.Thread.Mutex = .{},
+    socket: std.posix.socket_t,
+
+    const Self = XDPSocket;
+
+    pub fn init(
+        ifname: [:0]const u8,
+    ) !XDPSocket {
+        if (ifname.len > std.posix.IFNAMESIZE - 1) return error.InterfaceNameTooLong;
+        assert(ifname.len <= std.posix.IFNAMESIZE - 1); // ifname too long
+        const ETH_P_ETHERCAT = @intFromEnum(telegram.EtherType.ETHERCAT);
+        const socket: std.posix.socket_t = try std.posix.socket(
+            std.posix.AF.XDP,
+            std.posix.SOCK.RAW,
+            0,
+        );
+        var timeout_rcv = std.posix.timeval{
+            .sec = 0,
+            .usec = 1,
+        };
+        try std.posix.setsockopt(
+            socket,
+            std.posix.SOL.SOCKET,
+            std.posix.SO.RCVTIMEO,
+            std.mem.asBytes(&timeout_rcv),
+        );
+
+        var timeout_snd = std.posix.timeval{
+            .sec = 0,
+            .usec = 1,
+        };
+        try std.posix.setsockopt(
+            socket,
+            std.posix.SOL.SOCKET,
+            std.posix.SO.SNDTIMEO,
+            std.mem.asBytes(&timeout_snd),
+        );
+        const dontroute_enable: c_int = 1;
+        try std.posix.setsockopt(
+            socket,
+            std.posix.SOL.SOCKET,
+            std.posix.SO.DONTROUTE,
+            std.mem.asBytes(&dontroute_enable),
+        );
+        var ifr: std.posix.ifreq = std.mem.zeroInit(std.posix.ifreq, .{});
+        @memcpy(ifr.ifrn.name[0..ifname.len], ifname);
+        ifr.ifrn.name[ifname.len] = 0;
+        try std.posix.ioctl_SIOCGIFINDEX(socket, &ifr);
+        const ifindex: i32 = ifr.ifru.ivalue;
+
+        var rval = std.posix.errno(std.os.linux.ioctl(socket, std.os.linux.SIOCGIFFLAGS, @intFromPtr(&ifr)));
+        switch (rval) {
+            .SUCCESS => {},
+            else => {
+                return error.nicError;
+            },
+        }
+        ifr.ifru.flags.BROADCAST = true;
+        ifr.ifru.flags.PROMISC = true;
+        rval = std.posix.errno(std.os.linux.ioctl(socket, std.os.linux.SIOCSIFFLAGS, @intFromPtr(&ifr)));
+        switch (rval) {
+            .SUCCESS => {},
+            else => {
+                return error.nicError;
+            },
+        }
+        const sockaddr_ll = std.posix.sockaddr.ll{
+            .family = std.posix.AF.PACKET,
+            .ifindex = ifindex,
+            .protocol = std.mem.nativeToBig(u16, @as(u16, ETH_P_ETHERCAT)),
+            .halen = 0, //not used
+            .addr = .{ 0, 0, 0, 0, 0, 0, 0, 0 }, //not used
+            .pkttype = 0, //not used
+            .hatype = 0, //not used
+        };
+        try std.posix.bind(socket, @ptrCast(&sockaddr_ll), @sizeOf(@TypeOf(sockaddr_ll)));
+        return XDPSocket{
+            .socket = socket,
+        };
+    }
+
+    pub fn deinit(self: *Self) void {
+        std.posix.close(self.socket);
+    }
+
+    pub fn send(ctx: *anyopaque, bytes: []const u8) std.posix.SendError!void {
+        const self: *Self = @ptrCast(@alignCast(ctx));
+        self.send_mutex.lock();
+        defer self.send_mutex.unlock();
+        _ = try std.posix.send(self.socket, bytes, 0);
+    }
+
+    pub fn recv(ctx: *anyopaque, out: []u8) std.posix.RecvFromError!usize {
+        const self: *Self = @ptrCast(@alignCast(ctx));
+        self.recv_mutex.lock();
+        defer self.recv_mutex.unlock();
+        return try std.posix.recv(self.socket, out, std.posix.MSG.TRUNC);
+    }
+
+    pub fn linkLayer(self: *Self) LinkLayer {
+        return LinkLayer{
+            .ptr = self,
+            .vtable = &.{ .send = send, .recv = recv },
+        };
+    }
+};
+
 const npcap = @cImport({
     @cInclude("pcap.h");
 });

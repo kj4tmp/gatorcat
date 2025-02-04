@@ -4,11 +4,14 @@ const telegram = @import("telegram.zig");
 
 const TransactionPool = @This();
 
-pool: std.AutoHashMap(comptime K: type, comptime V: type)
-last_idx: u8,
-std.ArrayHashMap(comptime K: type, comptime V: type, comptime Context: type, comptime store_hash: bool)
+const Options = struct {
+    num_cyclic_datagrams: u32,
+    num_acyclic_datagrams: u32,
+};
 
-pub fn init(items: []?Item) TransactionPool {
+pub fn init(
+    items: []?Item,
+) TransactionPool {
     return TransactionPool{ .items = items };
 }
 

@@ -62,3 +62,19 @@ sequenceDiagram;
     end
 
 ```
+
+## Async 2
+
+1. User thread for subdevice group 0
+    1. assigned bus maintainance
+1. User thread for subdevice group 1
+    1. recv frames
+        1. all frames are expected to be ready
+        1. discards non-recv'd frames
+            1. this is effectively deadline = 0
+        1. return value is important
+        1. ticks state machine for this group
+    1. send frames
+        1. sends all frames
+    1. recv cyclic frames
+1. User thread for subdevice group 2

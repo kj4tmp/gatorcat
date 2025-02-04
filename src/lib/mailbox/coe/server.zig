@@ -882,8 +882,157 @@ pub const GetEntryDescriptionResponse = struct {
     data_type: u16,
     bit_length: u16,
     object_access: coe.ObjectAccess,
-    data: []u8,
+    data: std.BoundedArray(u8, max_data_length),
+
+    pub const max_data_length = 1464;
+
+    pub fn init(
+        cnt: u3,
+        station_address: u16,
+        more_follows: bool,
+        fragments_left: u16,
+        index: u16,
+        subindex: u8,
+        value_info: coe.ValueInfo,
+        data_type: u16,
+        bit_length: u16,
+        object_access: coe.ObjectAccess,
+        data: []const u8,
+    ) GetEntryDescriptionResponse {
+        assert(data.len <= max_data_length);
+        const mbx_header_length = data.len + 16;
+        return GetEntryDescriptionResponse{
+            .mbx_header = .{
+                .length = @intCast(mbx_header_length),
+                .address = station_address,
+                .channel = 0,
+                .priority = 0,
+                .type = .CoE,
+                .cnt = cnt,
+            },
+            .coe_header = .{
+                .number = 0,
+                .service = .sdo_info,
+            },
+            .sdo_info_header = .{
+                .opcode = .get_entry_description_response,
+                .incomplete = more_follows,
+                .fragments_left = fragments_left,
+            },
+            .index = index,
+            .subindex = subindex,
+            .value_info = value_info,
+            .data_type = data_type,
+            .bit_length = bit_length,
+            .object_access = object_access,
+            .data = std.BoundedArray(u8, max_data_length).fromSlice(data) catch unreachable,
+        };
+    }
+
+    pub fn deserialize(buf: []const u8) !GetEntryDescriptionResponse {
+        var fbs = std.io.fixedBufferStream(buf);
+        const reader = fbs.reader();
+
+        const mbx_header = try wire.packFromECatReader(mailbox.Header, reader);
+        const coe_header = try wire.packFromECatReader(coe.Header, reader);
+        const sdo_info_header = try wire.packFromECatReader(coe.SDOInfoHeader, reader);
+        const index = try wire.packFromECatReader(u16, reader);
+        const subindex = try wire.packFromECatReader(u8, reader);
+        const value_info = try wire.packFromECatReader(coe.ValueInfo, reader);
+        const data_type = try wire.packFromECatReader(u16, reader);
+        const bit_length = try wire.packFromECatReader(u16, reader);
+        const object_access = try wire.packFromECatReader(coe.ObjectAccess, reader);
+
+        const data_length = mbx_header.length -| 16;
+        if (data_length > max_data_length) return error.InvalidMailboxContent;
+        assert(data_length <= max_data_length);
+        var data_buf: [max_data_length]u8 = undefined;
+        try reader.readNoEof(data_buf[0..data_length]);
+        const data = std.BoundedArray(u8, max_data_length).fromSlice(data_buf[0..data_length]) catch unreachable;
+
+        return GetEntryDescriptionResponse{
+            .mbx_header = mbx_header,
+            .coe_header = coe_header,
+            .sdo_info_header = sdo_info_header,
+            .index = index,
+            .subindex = subindex,
+            .value_info = value_info,
+            .data_type = data_type,
+            .bit_length = bit_length,
+            .object_access = object_access,
+            .data = data,
+        };
+    }
+
+    pub fn serialize(self: GetEntryDescriptionResponse, out: []u8) !usize {
+        var fbs = std.io.fixedBufferStream(out);
+        const writer = fbs.writer();
+        try wire.eCatFromPackToWriter(self.mbx_header, writer);
+        try wire.eCatFromPackToWriter(self.coe_header, writer);
+        try wire.eCatFromPackToWriter(self.sdo_info_header, writer);
+        try wire.eCatFromPackToWriter(self.index, writer);
+        try wire.eCatFromPackToWriter(self.subindex, writer);
+        try wire.eCatFromPackToWriter(self.value_info, writer);
+        try wire.eCatFromPackToWriter(self.data_type, writer);
+        try wire.eCatFromPackToWriter(self.bit_length, writer);
+        try wire.eCatFromPackToWriter(self.object_access, writer);
+        try writer.writeAll(self.data.slice());
+        return fbs.getWritten().len;
+    }
+
+    comptime {
+        assert(
+            max_data_length ==
+                mailbox.max_size -
+                @divExact(@bitSizeOf(mailbox.Header), 8) -
+                @divExact(@bitSizeOf(coe.Header), 8) -
+                @divExact(@bitSizeOf(coe.SDOInfoHeader), 8) -
+                @divExact(@bitSizeOf(u16), 8) -
+                @divExact(@bitSizeOf(u8), 8) -
+                @divExact(@bitSizeOf(coe.ValueInfo), 8) -
+                @divExact(@bitSizeOf(u16), 8) -
+                @divExact(@bitSizeOf(u16), 8) -
+                @divExact(@bitSizeOf(coe.ObjectAccess), 8),
+        );
+    }
 };
+
+test "serialize and deserialize get entry description response" {
+    const expected = GetEntryDescriptionResponse.init(
+        3,
+        3,
+        true,
+        23,
+        53,
+        56,
+        .{
+            .default_value = true,
+            .maximum_value = false,
+            .minimum_value = true,
+            .unit_type = false,
+        },
+        6543,
+        234,
+        .{
+            .read_OP = false,
+            .backup = true,
+            .read_PREOP = true,
+            .read_SAFEOP = false,
+            .rxpdo_mappable = true,
+            .setting = true,
+            .write_OP = false,
+            .txpdo_mappable = false,
+            .write_PREOP = false,
+            .write_SAFEOP = true,
+        },
+        "foo",
+    );
+    var bytes = std.mem.zeroes([mailbox.max_size]u8);
+    const byte_size = try expected.serialize(&bytes);
+    try std.testing.expectEqual(@as(usize, 6 + 2 + 4 + 2 + 1 + 1 + 2 + 2 + 2 + 3), byte_size);
+    const actual = try GetEntryDescriptionResponse.deserialize(&bytes);
+    try std.testing.expectEqualDeep(expected, actual);
+}
 
 /// SDO Info Error Request
 ///

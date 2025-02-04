@@ -639,6 +639,7 @@ pub const GetODListResponse = struct {
         list_type: coe.ODListType,
         index_list: []const u16,
     ) GetODListResponse {
+        assert(cnt != 0);
         assert(index_list.len <= index_list_max_length);
         const mbx_header_length = (index_list.len * 2) + 8;
         return GetODListResponse{
@@ -762,6 +763,7 @@ pub const GetObjectDescriptionResponse = struct {
         object_code: coe.ObjectCode,
         name: []const u8,
     ) GetObjectDescriptionResponse {
+        assert(cnt != 0);
         assert(name.len <= max_name_length);
         const mbx_header_length = name.len + 12;
         return GetObjectDescriptionResponse{
@@ -899,6 +901,7 @@ pub const GetEntryDescriptionResponse = struct {
         object_access: coe.ObjectAccess,
         data: []const u8,
     ) GetEntryDescriptionResponse {
+        assert(cnt != 0);
         assert(data.len <= max_data_length);
         const mbx_header_length = data.len + 16;
         return GetEntryDescriptionResponse{
@@ -1037,12 +1040,66 @@ test "serialize and deserialize get entry description response" {
 /// SDO Info Error Request
 ///
 /// Ref: IEC 61158-6-12:2019 5.6.3.8
-pub const SDOInfoErrorRequest = packed struct {
+pub const SDOInfoError = packed struct(u128) {
     mbx_header: mailbox.Header,
     coe_header: coe.Header,
     sdo_info_header: coe.SDOInfoHeader,
     abort_code: SDOAbortCode,
+
+    pub fn init(
+        cnt: u3,
+        station_address: u16,
+        abort_code: SDOAbortCode,
+    ) SDOInfoError {
+        assert(cnt != 0);
+        return SDOInfoError{
+            .mbx_header = .{
+                .length = 10,
+                .address = station_address,
+                .channel = 0,
+                .priority = 0,
+                .type = .CoE,
+                .cnt = cnt,
+            },
+            .coe_header = .{
+                .number = 0,
+                .service = .sdo_request,
+            },
+            .sdo_info_header = .{
+                .opcode = .sdo_info_error_request,
+                .incomplete = false,
+                .fragments_left = 0,
+            },
+            .abort_code = abort_code,
+        };
+    }
+
+    pub fn deserialize(buf: []const u8) !SDOInfoError {
+        var fbs = std.io.fixedBufferStream(buf);
+        const reader = fbs.reader();
+        return try wire.packFromECatReader(SDOInfoError, reader);
+    }
+
+    pub fn serialize(self: SDOInfoError, out: []u8) !usize {
+        var fbs = std.io.fixedBufferStream(out);
+        const writer = fbs.writer();
+        try wire.eCatFromPackToWriter(self, writer);
+        return fbs.getWritten().len;
+    }
 };
+
+test "serialize and deserialize sdo info error" {
+    const expected = SDOInfoError.init(
+        3,
+        1234,
+        .AccessFailedDueToHardwareError,
+    );
+    var bytes = std.mem.zeroes([mailbox.max_size]u8);
+    const byte_size = try expected.serialize(&bytes);
+    try std.testing.expectEqual(@as(usize, 6 + 2 + 4 + 4), byte_size);
+    const actual = try SDOInfoError.deserialize(&bytes);
+    try std.testing.expectEqualDeep(expected, actual);
+}
 
 /// Emergency Request
 ///

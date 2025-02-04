@@ -47,10 +47,18 @@ pub fn eCatFromPack(pack: anytype) [@divExact(@bitSizeOf(@TypeOf(pack)), 8)]u8 {
     var bytes: [@divExact(@bitSizeOf(@TypeOf(pack)), 8)]u8 = undefined;
     switch (native_endian) {
         .little => {
-            bytes = @bitCast(pack);
+            if (@typeInfo(@TypeOf(pack)) == .@"enum") {
+                bytes = @bitCast(@as(@typeInfo(@TypeOf(pack)).@"enum".tag_type, @intFromEnum(pack)));
+            } else {
+                bytes = @bitCast(pack);
+            }
         },
         .big => {
-            bytes = @bitCast(pack);
+            if (@typeInfo(@TypeOf(pack)) == .@"enum") {
+                bytes = @bitCast(@as(@typeInfo(@TypeOf(pack)).@"enum".tag_type, @intFromEnum(pack)));
+            } else {
+                bytes = @bitCast(pack);
+            }
             std.mem.reverse(u8, &bytes);
         },
     }
@@ -114,6 +122,12 @@ test "eCatFromPack" {
     try std.testing.expectEqual(
         [_]u8{ 1, 0x22, 0x11, 0x03, 0xAB },
         eCatFromPack(Command5{}),
+    );
+
+    const command_enum: enum(u16) { zero, one, _ } = .one;
+    try std.testing.expectEqual(
+        [_]u8{ 0x01, 0x00 },
+        eCatFromPack(command_enum),
     );
 }
 

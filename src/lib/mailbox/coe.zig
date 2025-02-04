@@ -515,7 +515,7 @@ pub const TransferType = enum(u1) {
 /// Ref: IEC 61158-6-12:2019 5.6.3.2
 pub const SDOInfoOpCode = enum(u7) {
     get_od_list_request = 0x01,
-    get_od_list_respoonse = 0x02,
+    get_od_list_response = 0x02,
     get_object_description_request = 0x03,
     get_object_description_response = 0x04,
     get_entry_description_request = 0x05,
@@ -543,6 +543,7 @@ pub const ODListType = enum(u16) {
     txpdo_mappable = 0x03,
     device_replacement_stored = 0x04, // what does this mean?
     startup_parameters = 0x05,
+    _,
 };
 
 /// Object Code

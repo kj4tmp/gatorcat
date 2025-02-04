@@ -541,7 +541,33 @@ pub const GetODListRequest = packed struct {
             .list_type = list_type,
         };
     }
+
+    pub fn deserialize(buf: []const u8) !GetODListRequest {
+        var fbs = std.io.fixedBufferStream(buf);
+        const reader = fbs.reader();
+        return try wire.packFromECatReader(GetODListRequest, reader);
+    }
+
+    pub fn serialize(self: GetODListRequest, out: []u8) !usize {
+        var fbs = std.io.fixedBufferStream(out);
+        const writer = fbs.writer();
+        try wire.eCatFromPackToWriter(self, writer);
+        return fbs.getWritten().len;
+    }
 };
+
+test "serialize deserialize get od list request" {
+    const expected = GetODListRequest.init(
+        3,
+        .all_objects,
+    );
+
+    var bytes = std.mem.zeroes([mailbox.max_size]u8);
+    const byte_size = try expected.serialize(&bytes);
+    try std.testing.expectEqual(@as(usize, 6 + 2 + 4 + 2), byte_size);
+    const actual = try GetODListRequest.deserialize(&bytes);
+    try std.testing.expectEqualDeep(expected, actual);
+}
 
 /// Get Object Description Request
 ///

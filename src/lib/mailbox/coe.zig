@@ -369,6 +369,9 @@ pub const OutContent = union(enum) {
     normal: client.Normal,
     segment: client.Segment,
     abort: client.Abort,
+    get_entry_description_request: client.GetEntryDescriptionRequest,
+    get_object_description_request: client.GetObjectDescriptionRequest,
+    get_od_list_request: client.GetODListRequest,
 
     // TODO: implement remaining CoE content types
 
@@ -378,6 +381,9 @@ pub const OutContent = union(enum) {
             .normal => return self.normal.serialize(out),
             .segment => return self.segment.serialize(out),
             .abort => return self.abort.serialize(out),
+            .get_entry_description_request => return self.get_entry_description_request.serialize(out),
+            .get_object_description_request => return self.get_object_description_request.serialize(out),
+            .get_od_list_request => return self.get_od_list_request.serialize(out),
         }
     }
 };

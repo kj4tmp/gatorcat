@@ -397,7 +397,7 @@ pub const InContent = union(enum) {
     segment: server.Segment,
     abort: server.Abort,
     emergency: server.Emergency,
-    get_entry_decription_response: server.GetEntryDescriptionResponse,
+    get_entry_description_response: server.GetEntryDescriptionResponse,
     get_object_description_response: server.GetObjectDescriptionResponse,
     get_od_list_response: server.GetODListResponse,
     sdo_info_error: server.SDOInfoError,
@@ -411,7 +411,7 @@ pub const InContent = union(enum) {
             .segment => return InContent{ .segment = try server.Segment.deserialize(buf) },
             .abort => return InContent{ .abort = try server.Abort.deserialize(buf) },
             .emergency => return InContent{ .emergency = try server.Emergency.deserialize(buf) },
-            .get_entry_decription_response => return InContent{ .get_entry_decription_response = try server.GetEntryDescriptionResponse.deserialize(buf) },
+            .get_entry_description_response => return InContent{ .get_entry_description_response = try server.GetEntryDescriptionResponse.deserialize(buf) },
             .get_object_description_response => return InContent{ .get_object_description_response = try server.GetObjectDescriptionResponse.deserialize(buf) },
             .get_od_list_response => return InContent{ .get_od_list_response = try server.GetODListResponse.deserialize(buf) },
             .sdo_info_error => return InContent{ .sdo_info_error = try server.SDOInfoError.deserialize(buf) },
@@ -435,7 +435,17 @@ pub const InContent = union(enum) {
             .rx_pdo => return error.NotImplemented,
             .tx_pdo_remote_request => return error.NotImplemented,
             .rx_pdo_remote_request => return error.NotImplemented,
-            .sdo_info => return error.NotImplemented,
+            .sdo_info => {
+                const sdo_info_header = try wire.packFromECatReader(SDOInfoHeader, reader);
+                return switch (sdo_info_header.opcode) {
+                    .get_entry_description_response => .get_entry_description_response,
+                    .get_object_description_response => .get_object_description_response,
+                    .get_od_list_response => .get_od_list_response,
+                    .sdo_info_error_request => .sdo_info_error,
+                    .get_entry_description_request, .get_object_description_request, .get_od_list_request => return error.InvalidMbxContent,
+                    _ => return error.InvalidMbxContent,
+                };
+            },
 
             .sdo_request => {
                 const sdo_header = try wire.packFromECatReader(server.SDOHeader, reader);
@@ -537,6 +547,7 @@ pub const SDOInfoOpCode = enum(u7) {
     get_entry_description_request = 0x05,
     get_entry_description_response = 0x06,
     sdo_info_error_request = 0x07,
+    _,
 };
 
 /// SDO Info Header

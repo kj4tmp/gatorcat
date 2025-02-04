@@ -604,7 +604,32 @@ pub const GetObjectDescriptionRequest = packed struct {
             .index = index,
         };
     }
+
+    pub fn deserialize(buf: []const u8) !GetObjectDescriptionRequest {
+        var fbs = std.io.fixedBufferStream(buf);
+        const reader = fbs.reader();
+        return try wire.packFromECatReader(GetObjectDescriptionRequest, reader);
+    }
+
+    pub fn serialize(self: GetObjectDescriptionRequest, out: []u8) !usize {
+        var fbs = std.io.fixedBufferStream(out);
+        const writer = fbs.writer();
+        try wire.eCatFromPackToWriter(self, writer);
+        return fbs.getWritten().len;
+    }
 };
+
+test "serialize deserialize get object description request" {
+    const expected = GetObjectDescriptionRequest.init(
+        3,
+        234,
+    );
+    var bytes = std.mem.zeroes([mailbox.max_size]u8);
+    const byte_size = try expected.serialize(&bytes);
+    try std.testing.expectEqual(@as(usize, 6 + 2 + 4 + 2), byte_size);
+    const actual = try GetObjectDescriptionRequest.deserialize(&bytes);
+    try std.testing.expectEqualDeep(expected, actual);
+}
 
 /// Get Entry Description Request
 ///
@@ -647,7 +672,39 @@ pub const GetEntryDescriptionRequest = packed struct {
             .value_info = value_info,
         };
     }
+
+    pub fn deserialize(buf: []const u8) !GetEntryDescriptionRequest {
+        var fbs = std.io.fixedBufferStream(buf);
+        const reader = fbs.reader();
+        return try wire.packFromECatReader(GetEntryDescriptionRequest, reader);
+    }
+
+    pub fn serialize(self: GetEntryDescriptionRequest, out: []u8) !usize {
+        var fbs = std.io.fixedBufferStream(out);
+        const writer = fbs.writer();
+        try wire.eCatFromPackToWriter(self, writer);
+        return fbs.getWritten().len;
+    }
 };
+
+test "serialize deserialize get entry description request" {
+    const expected = GetEntryDescriptionRequest.init(
+        3,
+        35,
+        2,
+        .{
+            .default_value = true,
+            .maximum_value = true,
+            .minimum_value = false,
+            .unit_type = true,
+        },
+    );
+    var bytes = std.mem.zeroes([mailbox.max_size]u8);
+    const byte_size = try expected.serialize(&bytes);
+    try std.testing.expectEqual(@as(usize, 6 + 2 + 4 + 4), byte_size);
+    const actual = try GetEntryDescriptionRequest.deserialize(&bytes);
+    try std.testing.expectEqualDeep(expected, actual);
+}
 
 /// PDO Mailbox Transmission
 ///

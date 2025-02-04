@@ -1063,7 +1063,7 @@ pub const SDOInfoError = packed struct(u128) {
             },
             .coe_header = .{
                 .number = 0,
-                .service = .sdo_request,
+                .service = .sdo_info,
             },
             .sdo_info_header = .{
                 .opcode = .sdo_info_error_request,

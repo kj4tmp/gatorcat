@@ -492,6 +492,18 @@ test "serialize deserialize mailbox in content" {
     try std.testing.expectEqualDeep(expected, actual);
 }
 
+test "serialize deserialize mailbox in content sdo info" {
+    const expected = InContent{
+        .sdo_info_error = .init(3, 23, .ToggleBitNotChanged),
+    };
+
+    var bytes = std.mem.zeroes([mailbox.max_size]u8);
+    const byte_size = try expected.sdo_info_error.serialize(&bytes);
+    try std.testing.expectEqual(@as(usize, 6 + 2 + 4 + 4), byte_size);
+    const actual = try InContent.deserialize(&bytes);
+    try std.testing.expectEqualDeep(expected, actual);
+}
+
 pub const DataSetSize = enum(u2) {
     four_octets = 0x00,
     three_octets = 0x01,

@@ -164,6 +164,7 @@ pub fn sdoWrite(
                     return error.Emergency;
                 },
                 .expedited => return,
+                else => return error.WrongProtocol, // TODO: is this correct?
             }
         },
     }
@@ -312,6 +313,7 @@ pub fn sdoRead(
                     }
                     return error.Emergency;
                 },
+                else => return error.WrongProtocol, // TODO: is this correct?
             }
         },
         .expedited => {
@@ -395,6 +397,10 @@ pub const InContent = union(enum) {
     segment: server.Segment,
     abort: server.Abort,
     emergency: server.Emergency,
+    get_entry_decription_response: server.GetEntryDescriptionResponse,
+    get_object_description_response: server.GetObjectDescriptionResponse,
+    get_od_list_response: server.GetODListResponse,
+    sdo_info_error: server.SDOInfoError,
 
     // TODO: implement remaining CoE content types
 
@@ -405,6 +411,10 @@ pub const InContent = union(enum) {
             .segment => return InContent{ .segment = try server.Segment.deserialize(buf) },
             .abort => return InContent{ .abort = try server.Abort.deserialize(buf) },
             .emergency => return InContent{ .emergency = try server.Emergency.deserialize(buf) },
+            .get_entry_decription_response => return InContent{ .get_entry_decription_response = try server.GetEntryDescriptionResponse.deserialize(buf) },
+            .get_object_description_response => return InContent{ .get_object_description_response = try server.GetObjectDescriptionResponse.deserialize(buf) },
+            .get_od_list_response => return InContent{ .get_od_list_response = try server.GetODListResponse.deserialize(buf) },
+            .sdo_info_error => return InContent{ .sdo_info_error = try server.SDOInfoError.deserialize(buf) },
         }
     }
 

@@ -739,12 +739,135 @@ pub const GetObjectDescriptionResponse = struct {
     mbx_header: mailbox.Header,
     coe_header: coe.Header,
     sdo_info_header: coe.SDOInfoHeader,
+    /// index of the object description
     index: u16,
+    /// reference to data type list
     data_type: u16,
+    /// maximum number of subindexes of the object
     max_subindex: u8,
     object_code: coe.ObjectCode,
-    name: []u8,
+    /// name of the object
+    name: std.BoundedArray(u8, max_name_length),
+
+    pub const max_name_length = 1468;
+
+    pub fn init(
+        cnt: u3,
+        station_address: u16,
+        more_follows: bool,
+        fragments_left: u16,
+        index: u16,
+        data_type: u16,
+        max_subindex: u8,
+        object_code: coe.ObjectCode,
+        name: []const u8,
+    ) GetObjectDescriptionResponse {
+        assert(name.len <= max_name_length);
+        const mbx_header_length = name.len + 12;
+        return GetObjectDescriptionResponse{
+            .mbx_header = .{
+                .length = @intCast(mbx_header_length),
+                .address = station_address,
+                .channel = 0,
+                .priority = 0,
+                .type = .CoE,
+                .cnt = cnt,
+            },
+            .coe_header = .{
+                .number = 0,
+                .service = .sdo_info,
+            },
+            .sdo_info_header = .{
+                .opcode = .get_object_description_response,
+                .incomplete = more_follows,
+                .fragments_left = fragments_left,
+            },
+            .index = index,
+            .data_type = data_type,
+            .max_subindex = max_subindex,
+            .object_code = object_code,
+            .name = std.BoundedArray(u8, max_name_length).fromSlice(name) catch unreachable,
+        };
+    }
+
+    pub fn deserialize(buf: []const u8) !GetObjectDescriptionResponse {
+        var fbs = std.io.fixedBufferStream(buf);
+        const reader = fbs.reader();
+
+        const mbx_header = try wire.packFromECatReader(mailbox.Header, reader);
+        const coe_header = try wire.packFromECatReader(coe.Header, reader);
+        const sdo_info_header = try wire.packFromECatReader(coe.SDOInfoHeader, reader);
+        const index = try wire.packFromECatReader(u16, reader);
+        const data_type = try wire.packFromECatReader(u16, reader);
+        const max_subindex = try wire.packFromECatReader(u8, reader);
+        const object_code = try wire.packFromECatReader(coe.ObjectCode, reader);
+
+        const name_length = mbx_header.length -| 12;
+        if (name_length > max_name_length) return error.InvalidMailboxContent;
+        assert(name_length <= max_name_length);
+        var name_buf: [max_name_length]u8 = undefined;
+        try reader.readNoEof(name_buf[0..name_length]);
+        const name = std.BoundedArray(u8, max_name_length).fromSlice(name_buf[0..name_length]) catch unreachable;
+
+        return GetObjectDescriptionResponse{
+            .mbx_header = mbx_header,
+            .coe_header = coe_header,
+            .sdo_info_header = sdo_info_header,
+            .index = index,
+            .data_type = data_type,
+            .max_subindex = max_subindex,
+            .object_code = object_code,
+            .name = name,
+        };
+    }
+
+    pub fn serialize(self: GetObjectDescriptionResponse, out: []u8) !usize {
+        var fbs = std.io.fixedBufferStream(out);
+        const writer = fbs.writer();
+        try wire.eCatFromPackToWriter(self.mbx_header, writer);
+        try wire.eCatFromPackToWriter(self.coe_header, writer);
+        try wire.eCatFromPackToWriter(self.sdo_info_header, writer);
+        try wire.eCatFromPackToWriter(self.index, writer);
+        try wire.eCatFromPackToWriter(self.data_type, writer);
+        try wire.eCatFromPackToWriter(self.max_subindex, writer);
+        try wire.eCatFromPackToWriter(self.object_code, writer);
+        try writer.writeAll(self.name.slice());
+        return fbs.getWritten().len;
+    }
+
+    comptime {
+        assert(
+            max_name_length ==
+                mailbox.max_size -
+                @divExact(@bitSizeOf(mailbox.Header), 8) -
+                @divExact(@bitSizeOf(coe.Header), 8) -
+                @divExact(@bitSizeOf(coe.SDOInfoHeader), 8) -
+                @divExact(@bitSizeOf(u16), 8) -
+                @divExact(@bitSizeOf(u16), 8) -
+                @divExact(@bitSizeOf(u8), 8) -
+                @divExact(@bitSizeOf(coe.ObjectCode), 8),
+        );
+    }
 };
+
+test "serialize and deserialize get object description response" {
+    const expected = GetObjectDescriptionResponse.init(
+        3,
+        34,
+        true,
+        1345,
+        2624,
+        151,
+        23,
+        .array,
+        "name",
+    );
+    var bytes = std.mem.zeroes([mailbox.max_size]u8);
+    const byte_size = try expected.serialize(&bytes);
+    try std.testing.expectEqual(@as(usize, 6 + 2 + 4 + 2 + 2 + 1 + 1 + 4), byte_size);
+    const actual = try GetObjectDescriptionResponse.deserialize(&bytes);
+    try std.testing.expectEqualDeep(expected, actual);
+}
 
 /// Get Entry Description Response
 ///

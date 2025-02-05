@@ -1062,6 +1062,126 @@ pub fn readSMPDOAssigns(
     return res;
 }
 
+/// There are 5 OD lists.
+///
+/// An OD list is an object description list where each item
+/// is an index in the object dictionary.
+///
+/// This struct is the length reported for each of the OD lists.
+///
+/// Ref: IEC 61158-6-12:2019 5.6.3.3
+pub const ODListLengths = struct {
+    all_objects: u16,
+    rx_pdo_mappable: u16,
+    tx_pdo_mappable: u16,
+    stored_for_device_replacement: u16,
+    startup_parameters: u16,
+};
+
+pub fn readODListLengths(
+    port: *Port,
+    station_address: u16,
+    recv_timeout_us: u32,
+    mbx_timeout_us: u32,
+    cnt: *Cnt,
+    config: mailbox.Configuration,
+) !ODListLengths {
+    const request = mailbox.OutContent{
+        .coe = .{
+            .get_od_list_request = .init(
+                cnt.nextCnt(),
+                .num_object_in_5_lists,
+            ),
+        },
+    };
+    try mailbox.writeMailboxOut(
+        port,
+        station_address,
+        recv_timeout_us,
+        config.mbx_out,
+        request,
+    );
+
+    // TODO: make this simpler
+    var list_lengths = std.BoundedArray(u16, 5){};
+    incomplete: for (0..5) |_| {
+        const in_content = try mailbox.readMailboxInTimeout(
+            port,
+            station_address,
+            recv_timeout_us,
+            config.mbx_in,
+            mbx_timeout_us,
+        );
+        if (in_content != .coe) return error.WrongProtocol;
+        switch (in_content.coe) {
+            .abort => return error.Aborted,
+            .emergency => return error.Emergency,
+            .get_od_list_response => {
+                if (in_content.coe.get_od_list_response.list_type != .num_object_in_5_lists) return error.WrongProtocol;
+                for (in_content.coe.get_od_list_response.index_list.slice()) |index| {
+                    list_lengths.append(index) catch return error.WrongProtocol;
+                }
+                if (in_content.coe.get_od_list_response.sdo_info_header.incomplete) continue :incomplete;
+                if (list_lengths.slice().len != 5) return error.WrongProtocol;
+                assert(list_lengths.len == 5);
+                return ODListLengths{
+                    .all_objects = list_lengths.slice()[0],
+                    .rx_pdo_mappable = list_lengths.slice()[1],
+                    .tx_pdo_mappable = list_lengths.slice()[2],
+                    .stored_for_device_replacement = list_lengths.slice()[3],
+                    .startup_parameters = list_lengths.slice()[4],
+                };
+            },
+            else => return error.WrongProtocol,
+        }
+    } else {
+        return error.WrongProtocol;
+    }
+}
+
+pub const od_list_max_length = 1024; // TODO: arbitrary
+pub const ODList = std.BoundedArray(u16, od_list_max_length);
+
+pub fn readODList(
+    port: *Port,
+    station_address: u16,
+    recv_timeout_us: u32,
+    mbx_timeout_us: u32,
+    cnt: *Cnt,
+    config: mailbox.Configuration,
+    list_type: ODListType,
+) !ODList {
+    const request = mailbox.OutContent{
+        .coe = .{
+            .get_od_list_request = .init(cnt.nextCnt(), list_type),
+        },
+    };
+    try mailbox.writeMailboxOut(port, station_address, recv_timeout_us, config.mbx_out, request);
+
+    var res = ODList{};
+    var expected_fragments_left: u16 = 0;
+    for (0..1024) |i| {
+        const in_content = try mailbox.readMailboxInTimeout(port, station_address, recv_timeout_us, config.mbx_in, mbx_timeout_us);
+        if (in_content != .coe) return error.WrongProtocol;
+        switch (in_content.coe) {
+            .abort => return error.Aborted,
+            .emergency => return error.Emergency,
+            .get_od_list_response => |response| {
+                std.log.err("remaining fragments: {}, incomplete: {}", .{ response.sdo_info_header.fragments_left, response.sdo_info_header.incomplete });
+                if (i == 0) expected_fragments_left = response.sdo_info_header.fragments_left;
+                if (response.sdo_info_header.fragments_left != expected_fragments_left) return error.MissedFragment;
+                for (response.index_list.slice()) |index| {
+                    try res.append(index);
+                }
+                if (response.sdo_info_header.fragments_left == 0) return res;
+                assert(expected_fragments_left > 0);
+                expected_fragments_left -= 1;
+            },
+            else => return error.WrongProtocol,
+        }
+    } else return error.WrongProtocol;
+}
+
 /// Basic Data Type Area
 ///
 /// Ref: IEC 61158-6-12:2019 5.6.7.3 Table 64

@@ -716,6 +716,28 @@ fn printSubdeviceCoePDOs(
         }
     }
 
+    const od_list_lengths = try gcat.mailbox.coe.readODListLengths(
+        port,
+        station_address,
+        recv_timeout_us,
+        mbx_timeout_us,
+        cnt,
+        mailbox_config,
+    );
+    try writer.print("od list lengths: {}\n", .{od_list_lengths});
+
+    const od_list_all = try gcat.mailbox.coe.readODList(
+        port,
+        station_address,
+        recv_timeout_us,
+        mbx_timeout_us,
+        cnt,
+        mailbox_config,
+        .all_objects,
+    );
+    try writer.print("od list lengths: {}\n", .{od_list_lengths});
+    try writer.print("od list all (len: {}): {x}\n", .{ od_list_all.slice().len, od_list_all.slice() });
+
     // const mapping = try gcat.mailbox.coe.readPDOMapping(
     //     port,
     //     gcat.SubDevice.stationAddressFromRingPos(subdevice.runtime_info.ring_position),

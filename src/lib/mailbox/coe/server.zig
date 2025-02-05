@@ -627,8 +627,9 @@ pub const GetODListResponse = struct {
     coe_header: coe.Header,
     sdo_info_header: coe.SDOInfoHeader,
     list_type: coe.ODListType,
-    index_list: std.BoundedArray(u16, index_list_max_length),
+    index_list: IndexList,
 
+    pub const IndexList = std.BoundedArray(u16, index_list_max_length);
     pub const index_list_max_length = 736;
 
     pub fn init(
@@ -676,6 +677,7 @@ pub const GetODListResponse = struct {
         var index_list = std.BoundedArray(u16, index_list_max_length){};
 
         const n_index = (mbx_header.length -| 8) / 2;
+        std.log.err("mailbox header length: {}", .{mbx_header.length});
         if (n_index > index_list_max_length) return error.InvalidMailboxContent;
         for (0..n_index) |_| {
             index_list.append(try wire.packFromECatReader(u16, reader)) catch unreachable;

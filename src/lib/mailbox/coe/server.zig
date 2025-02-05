@@ -619,6 +619,8 @@ test "serialize and deserialize abort sdo transfer request" {
     try std.testing.expectEqualDeep(expected, actual);
 }
 
+// TODO: This is wrong.
+// We drop one item in the index list on fragmentation due to thinking the od list type is still there.
 /// Get OD List Response
 ///
 /// Ref: IEC 61158-6-12:2019 5.6.3.3.2

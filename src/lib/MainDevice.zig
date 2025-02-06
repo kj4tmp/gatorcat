@@ -231,7 +231,7 @@ pub fn busInit(self: *MainDevice, change_timeout_us: u32) !void {
     );
     std.log.info("detected {} subdevices", .{res.wkc});
     if (res.wkc != self.subdevices.len) {
-        std.log.err("Found {} subdevices, expected {}.", .{ res.wkc, self.subdevices.len });
+        std.log.warn("Found {} subdevices, expected {}.", .{ res.wkc, self.subdevices.len });
         return error.WrongNumberOfSubDevices;
     }
     try self.broadcastStateChange(.INIT, change_timeout_us);

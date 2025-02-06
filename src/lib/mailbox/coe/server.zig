@@ -784,7 +784,7 @@ pub const GetObjectDescriptionResponse = struct {
     /// index of the object description
     index: u16,
     /// reference to data type list
-    data_type: u16,
+    data_type: coe.DataTypeArea,
     /// maximum number of subindexes of the object
     max_subindex: u8,
     object_code: coe.ObjectCode,
@@ -795,7 +795,7 @@ pub const GetObjectDescriptionResponse = struct {
 
     pub fn init(
         index: u16,
-        data_type: u16,
+        data_type: coe.DataTypeArea,
         max_subindex: u8,
         object_code: coe.ObjectCode,
         name: []const u8,
@@ -814,7 +814,7 @@ pub const GetObjectDescriptionResponse = struct {
         var fbs = std.io.fixedBufferStream(buf);
         const reader = fbs.reader();
         const index = try wire.packFromECatReader(u16, reader);
-        const data_type = try wire.packFromECatReader(u16, reader);
+        const data_type = try wire.packFromECatReader(coe.DataTypeArea, reader);
         const max_subindex = try wire.packFromECatReader(u8, reader);
         const object_code = try wire.packFromECatReader(coe.ObjectCode, reader);
 
@@ -849,7 +849,7 @@ pub const GetObjectDescriptionResponse = struct {
 test "serialize and deserialize get object description response" {
     const expected = GetObjectDescriptionResponse.init(
         2624,
-        151,
+        .BIT1,
         23,
         .array,
         "name",

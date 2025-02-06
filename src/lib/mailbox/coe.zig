@@ -596,6 +596,8 @@ pub const ObjectCode = enum(u8) {
 ///
 /// What info about the value will be included in the response.
 ///
+/// Of there is more data, the remaining data is a description (array of char).
+///
 /// Ref: IEC 61158-6-12:2019 5.6.3.6.1
 pub const ValueInfo = packed struct(u8) {
     reserved: u3 = 0,
@@ -604,6 +606,13 @@ pub const ValueInfo = packed struct(u8) {
     minimum_value: bool,
     maximum_value: bool,
     reserved2: u1 = 0,
+
+    pub const description_only = ValueInfo{
+        .unit_type = false,
+        .default_value = false,
+        .minimum_value = false,
+        .maximum_value = false,
+    };
 };
 
 /// Object Access
@@ -1175,15 +1184,79 @@ pub fn readSDOInfoFragments(
     return fbs.getWritten();
 }
 
-// pub fn readObjectDescription(
-//     port: *Port,
-//     station_address: u16,
-//     recv_timeout_us: u32,
-//     mbx_timeout_us: u32,
-//     cnt: *Cnt,
-//     config: mailbox.Configuration,
-//     list_type: ODListType,
-// ) !server.GetObjectDescriptionResponse {}
+pub fn readObjectDescription(
+    port: *Port,
+    station_address: u16,
+    recv_timeout_us: u32,
+    mbx_timeout_us: u32,
+    cnt: *Cnt,
+    config: mailbox.Configuration,
+    index: u16,
+) !server.GetObjectDescriptionResponse {
+    const request = mailbox.OutContent{
+        .coe = .{
+            .get_object_description_request = .init(cnt.nextCnt(), index),
+        },
+    };
+    try mailbox.writeMailboxOut(
+        port,
+        station_address,
+        recv_timeout_us,
+        config.mbx_out,
+        request,
+    );
+
+    var full_service_data_buffer: [4096]u8 = undefined; // TODO: this is arbitrary
+    const full_service_data = try readSDOInfoFragments(
+        port,
+        station_address,
+        recv_timeout_us,
+        mbx_timeout_us,
+        config,
+        .get_object_description_response,
+        &full_service_data_buffer,
+    );
+    const response = try server.GetObjectDescriptionResponse.deserialize(full_service_data);
+    if (response.index != index) return error.WrongProtocol;
+    return response;
+}
+
+pub fn readEntryDescription(
+    port: *Port,
+    station_address: u16,
+    recv_timeout_us: u32,
+    mbx_timeout_us: u32,
+    cnt: *Cnt,
+    config: mailbox.Configuration,
+    index: u16,
+    subindex: u8,
+    value_info: ValueInfo,
+) !server.GetEntryDescriptionResponse {
+    const request = mailbox.OutContent{
+        .coe = .{ .get_entry_description_request = .init(cnt.nextCnt(), index, subindex, value_info) },
+    };
+    try mailbox.writeMailboxOut(
+        port,
+        station_address,
+        recv_timeout_us,
+        config.mbx_out,
+        request,
+    );
+
+    var full_service_data_buffer: [4096]u8 = undefined; // TODO: this is arbitrary
+    const full_service_data = try readSDOInfoFragments(
+        port,
+        station_address,
+        recv_timeout_us,
+        mbx_timeout_us,
+        config,
+        .get_entry_description_response,
+        &full_service_data_buffer,
+    );
+    const response = try server.GetEntryDescriptionResponse.deserialize(full_service_data);
+    if (response.index != index or response.subindex != subindex or response.value_info != value_info) return error.WrongProtocol;
+    return response;
+}
 
 /// Basic Data Type Area
 ///

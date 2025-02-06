@@ -619,7 +619,97 @@ test "serialize and deserialize abort sdo transfer request" {
     try std.testing.expectEqualDeep(expected, actual);
 }
 
-// TODO: This is wrong.
+pub const SDOInfoResponse = struct {
+    mbx_header: mailbox.Header,
+    coe_header: coe.Header,
+    sdo_info_header: coe.SDOInfoHeader,
+    service_data: ServiceData,
+
+    pub const ServiceData = std.BoundedArray(u8, service_data_max_length);
+    pub const service_data_max_length = 1474;
+
+    pub fn init(
+        cnt: u3,
+        station_address: u16,
+        more_follows: bool,
+        fragments_left: u16,
+        service_data: []const u8,
+    ) SDOInfoResponse {
+        assert(cnt != 0);
+        assert(service_data.len <= service_data_max_length);
+        const mbx_header_length = service_data.len + 6;
+        return SDOInfoResponse{
+            .mbx_header = .{
+                .length = @intCast(mbx_header_length),
+                .address = station_address,
+                .channel = 0,
+                .priority = 0,
+                .type = .CoE,
+                .cnt = cnt,
+            },
+            .coe_header = .{
+                .number = 0,
+                .service = .sdo_info,
+            },
+            .sdo_info_header = .{
+                .opcode = .get_od_list_response,
+                .incomplete = more_follows,
+                .fragments_left = fragments_left,
+            },
+            .service_data = ServiceData.fromSlice(service_data) catch unreachable,
+        };
+    }
+
+    pub fn deserialize(buf: []const u8) !SDOInfoResponse {
+        var fbs = std.io.fixedBufferStream(buf);
+        const reader = fbs.reader();
+
+        const mbx_header = try wire.packFromECatReader(mailbox.Header, reader);
+        const coe_header = try wire.packFromECatReader(coe.Header, reader);
+        const sdo_info_header = try wire.packFromECatReader(coe.SDOInfoHeader, reader);
+        var service_data = ServiceData{};
+
+        const service_data_length = mbx_header.length -| 6;
+        for (0..service_data_length) |_| {
+            try service_data.append(try reader.readByte());
+        }
+        return SDOInfoResponse{
+            .mbx_header = mbx_header,
+            .coe_header = coe_header,
+            .sdo_info_header = sdo_info_header,
+            .service_data = service_data,
+        };
+    }
+
+    pub fn serialize(self: SDOInfoResponse, out: []u8) !usize {
+        var fbs = std.io.fixedBufferStream(out);
+        const writer = fbs.writer();
+        try wire.eCatFromPackToWriter(self.mbx_header, writer);
+        try wire.eCatFromPackToWriter(self.coe_header, writer);
+        try wire.eCatFromPackToWriter(self.sdo_info_header, writer);
+        try writer.writeAll(self.service_data.slice());
+        return fbs.getWritten().len;
+    }
+
+    comptime {
+        assert(service_data_max_length ==
+            mailbox.max_size -
+            @divExact(@bitSizeOf(mailbox.Header), 8) -
+            @divExact(@bitSizeOf(coe.Header), 8) -
+            @divExact(@bitSizeOf(coe.SDOInfoHeader), 8));
+    }
+};
+
+test "serialize and deserialize sdo info response" {
+    const expected = SDOInfoResponse.init(3, 234, true, 151, &.{ 1, 2, 3, 4 });
+    var bytes = std.mem.zeroes([mailbox.max_size]u8);
+    const byte_size = try expected.serialize(&bytes);
+    try std.testing.expectEqual(@as(usize, 6 + 2 + 4 + 4), byte_size);
+    const actual = try SDOInfoResponse.deserialize(&bytes);
+    try std.testing.expectEqualDeep(expected, actual);
+}
+
+// TODO: This is wrong.`
 // We drop one item in the index list on fragmentation due to thinking the od list type is still there.
 /// Get OD List Response
 ///
@@ -679,7 +769,6 @@ pub const GetODListResponse = struct {
         var index_list = std.BoundedArray(u16, index_list_max_length){};
 
         const n_index = (mbx_header.length -| 8) / 2;
-        std.log.err("mailbox header length: {}", .{mbx_header.length});
         if (n_index > index_list_max_length) return error.InvalidMailboxContent;
         for (0..n_index) |_| {
             index_list.append(try wire.packFromECatReader(u16, reader)) catch unreachable;

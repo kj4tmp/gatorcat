@@ -553,25 +553,6 @@ pub fn sdoRead(
     );
 }
 
-pub fn readODList(
-    self: *SubDevice,
-    port: *Port,
-    recv_timeout_us: u32,
-    mbx_timeout_us: u32,
-    list_type: coe.ODListType,
-) !coe.server.GetODListResponse.IndexList {
-    const this_coe = self.runtime_info.coe orelse return error.CoENotSupported;
-    return try coe.readODList(
-        port,
-        stationAddressFromRingPos(self.runtime_info.ring_position),
-        recv_timeout_us,
-        mbx_timeout_us,
-        &self.runtime_info.coe.?.cnt,
-        this_coe.config,
-        list_type,
-    );
-}
-
 /// Calcuate the auto increment address of a subdevice
 /// for commands which use position addressing.
 ///

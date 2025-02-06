@@ -764,7 +764,7 @@ fn printSubdeviceCoePDOs(
                     @intCast(subindex),
                     .description_only,
                 );
-                try writer.print("      --- 0x{x}:{x} {s}\n", .{ index, subindex, entry_description.data.slice() });
+                try writer.print("      --- 0x{x}:{x} :: {} ::{s}\n", .{ index, subindex, entry_description.data_type, entry_description.data.slice() });
             }
         }
     }

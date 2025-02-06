@@ -870,7 +870,7 @@ pub const GetEntryDescriptionResponse = struct {
     index: u16,
     subindex: u8,
     value_info: coe.ValueInfo,
-    data_type: u16,
+    data_type: coe.DataTypeArea,
     bit_length: u16,
     object_access: coe.ObjectAccess,
     data: std.BoundedArray(u8, max_data_length),
@@ -881,7 +881,7 @@ pub const GetEntryDescriptionResponse = struct {
         index: u16,
         subindex: u8,
         value_info: coe.ValueInfo,
-        data_type: u16,
+        data_type: coe.DataTypeArea,
         bit_length: u16,
         object_access: coe.ObjectAccess,
         data: []const u8,
@@ -905,7 +905,7 @@ pub const GetEntryDescriptionResponse = struct {
         const index = try wire.packFromECatReader(u16, reader);
         const subindex = try wire.packFromECatReader(u8, reader);
         const value_info = try wire.packFromECatReader(coe.ValueInfo, reader);
-        const data_type = try wire.packFromECatReader(u16, reader);
+        const data_type = try wire.packFromECatReader(coe.DataTypeArea, reader);
         const bit_length = try wire.packFromECatReader(u16, reader);
         const object_access = try wire.packFromECatReader(coe.ObjectAccess, reader);
 
@@ -951,7 +951,7 @@ test "serialize and deserialize get entry description response" {
             .minimum_value = true,
             .unit_type = false,
         },
-        6543,
+        .BITARR8,
         234,
         .{
             .read_OP = false,

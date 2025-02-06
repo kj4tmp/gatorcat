@@ -397,9 +397,7 @@ pub const InContent = union(enum) {
     segment: server.Segment,
     abort: server.Abort,
     emergency: server.Emergency,
-    get_entry_description_response: server.GetEntryDescriptionResponse,
-    get_object_description_response: server.GetObjectDescriptionResponse,
-    get_od_list_response: server.GetODListResponse,
+    sdo_info_response: server.SDOInfoResponse,
     sdo_info_error: server.SDOInfoError,
 
     // TODO: implement remaining CoE content types
@@ -411,9 +409,7 @@ pub const InContent = union(enum) {
             .segment => return InContent{ .segment = try server.Segment.deserialize(buf) },
             .abort => return InContent{ .abort = try server.Abort.deserialize(buf) },
             .emergency => return InContent{ .emergency = try server.Emergency.deserialize(buf) },
-            .get_entry_description_response => return InContent{ .get_entry_description_response = try server.GetEntryDescriptionResponse.deserialize(buf) },
-            .get_object_description_response => return InContent{ .get_object_description_response = try server.GetObjectDescriptionResponse.deserialize(buf) },
-            .get_od_list_response => return InContent{ .get_od_list_response = try server.GetODListResponse.deserialize(buf) },
+            .sdo_info_response => return InContent{ .sdo_info_response = try server.SDOInfoResponse.deserialize(buf) },
             .sdo_info_error => return InContent{ .sdo_info_error = try server.SDOInfoError.deserialize(buf) },
         }
     }
@@ -438,9 +434,10 @@ pub const InContent = union(enum) {
             .sdo_info => {
                 const sdo_info_header = try wire.packFromECatReader(SDOInfoHeader, reader);
                 return switch (sdo_info_header.opcode) {
-                    .get_entry_description_response => .get_entry_description_response,
-                    .get_object_description_response => .get_object_description_response,
-                    .get_od_list_response => .get_od_list_response,
+                    .get_entry_description_response,
+                    .get_object_description_response,
+                    .get_od_list_response,
+                    => .sdo_info_response,
                     .sdo_info_error_request => .sdo_info_error,
                     .get_entry_description_request, .get_object_description_request, .get_od_list_request => return error.InvalidMbxContent,
                     _ => return error.InvalidMbxContent,
@@ -1086,61 +1083,26 @@ pub fn readODListLengths(
     cnt: *Cnt,
     config: mailbox.Configuration,
 ) !ODListLengths {
-    const request = mailbox.OutContent{
-        .coe = .{
-            .get_od_list_request = .init(
-                cnt.nextCnt(),
-                .num_object_in_5_lists,
-            ),
-        },
-    };
-    try mailbox.writeMailboxOut(
+    const index_list = try readODList(
         port,
         station_address,
         recv_timeout_us,
-        config.mbx_out,
-        request,
+        mbx_timeout_us,
+        cnt,
+        config,
+        .num_object_in_5_lists,
     );
 
-    // TODO: make this simpler
-    var list_lengths = std.BoundedArray(u16, 5){};
-    incomplete: for (0..5) |_| {
-        const in_content = try mailbox.readMailboxInTimeout(
-            port,
-            station_address,
-            recv_timeout_us,
-            config.mbx_in,
-            mbx_timeout_us,
-        );
-        if (in_content != .coe) return error.WrongProtocol;
-        switch (in_content.coe) {
-            .abort => return error.Aborted,
-            .emergency => return error.Emergency,
-            .get_od_list_response => {
-                if (in_content.coe.get_od_list_response.list_type != .num_object_in_5_lists) return error.WrongProtocol;
-                for (in_content.coe.get_od_list_response.index_list.slice()) |index| {
-                    list_lengths.append(index) catch return error.WrongProtocol;
-                }
-                if (in_content.coe.get_od_list_response.sdo_info_header.incomplete) continue :incomplete;
-                if (list_lengths.slice().len != 5) return error.WrongProtocol;
-                assert(list_lengths.len == 5);
-                return ODListLengths{
-                    .all_objects = list_lengths.slice()[0],
-                    .rx_pdo_mappable = list_lengths.slice()[1],
-                    .tx_pdo_mappable = list_lengths.slice()[2],
-                    .stored_for_device_replacement = list_lengths.slice()[3],
-                    .startup_parameters = list_lengths.slice()[4],
-                };
-            },
-            else => return error.WrongProtocol,
-        }
-    } else {
-        return error.WrongProtocol;
-    }
+    if (index_list.len != 5) return error.WrongProtocol;
+    assert(index_list.len == 5);
+    return ODListLengths{
+        .all_objects = index_list.slice()[0],
+        .rx_pdo_mappable = index_list.slice()[1],
+        .tx_pdo_mappable = index_list.slice()[2],
+        .stored_for_device_replacement = index_list.slice()[3],
+        .startup_parameters = index_list.slice()[4],
+    };
 }
-
-pub const od_list_max_length = 1024; // TODO: arbitrary
-pub const ODList = std.BoundedArray(u16, od_list_max_length);
 
 pub fn readODList(
     port: *Port,
@@ -1150,7 +1112,7 @@ pub fn readODList(
     cnt: *Cnt,
     config: mailbox.Configuration,
     list_type: ODListType,
-) !ODList {
+) !server.GetODListResponse.IndexList {
     const request = mailbox.OutContent{
         .coe = .{
             .get_od_list_request = .init(cnt.nextCnt(), list_type),
@@ -1158,28 +1120,31 @@ pub fn readODList(
     };
     try mailbox.writeMailboxOut(port, station_address, recv_timeout_us, config.mbx_out, request);
 
-    var res = ODList{};
     var expected_fragments_left: u16 = 0;
-    for (0..1024) |i| {
+
+    var full_service_data = std.BoundedArray(u8, 4096){};
+
+    get_fragments: for (0..1024) |i| {
         const in_content = try mailbox.readMailboxInTimeout(port, station_address, recv_timeout_us, config.mbx_in, mbx_timeout_us);
         if (in_content != .coe) return error.WrongProtocol;
         switch (in_content.coe) {
             .abort => return error.Aborted,
             .emergency => return error.Emergency,
-            .get_od_list_response => |response| {
-                std.log.err("remaining fragments: {}, incomplete: {}", .{ response.sdo_info_header.fragments_left, response.sdo_info_header.incomplete });
+            .sdo_info_response => |response| {
                 if (i == 0) expected_fragments_left = response.sdo_info_header.fragments_left;
                 if (response.sdo_info_header.fragments_left != expected_fragments_left) return error.MissedFragment;
-                for (response.index_list.slice()) |index| {
-                    try res.append(index);
-                }
-                if (response.sdo_info_header.fragments_left == 0) return res;
+                try full_service_data.appendSlice(response.service_data.slice());
+                if (response.sdo_info_header.fragments_left == 0) break :get_fragments;
                 assert(expected_fragments_left > 0);
                 expected_fragments_left -= 1;
             },
             else => return error.WrongProtocol,
         }
     } else return error.WrongProtocol;
+
+    const response = try server.GetODListResponse.deserialize(full_service_data.slice());
+    if (response.list_type != list_type) return error.WrongProtocol;
+    return response.index_list;
 }
 
 /// Basic Data Type Area

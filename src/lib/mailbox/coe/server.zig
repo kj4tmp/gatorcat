@@ -709,74 +709,44 @@ test "serialize and deserialize sdo info response" {
     try std.testing.expectEqualDeep(expected, actual);
 }
 
-// TODO: This is wrong.`
-// We drop one item in the index list on fragmentation due to thinking the od list type is still there.
 /// Get OD List Response
+///
+/// This is encapsulated and transferred as service_data in SDOInfoResponse.
 ///
 /// Ref: IEC 61158-6-12:2019 5.6.3.3.2
 pub const GetODListResponse = struct {
-    mbx_header: mailbox.Header,
-    coe_header: coe.Header,
-    sdo_info_header: coe.SDOInfoHeader,
     list_type: coe.ODListType,
     index_list: IndexList,
 
     pub const IndexList = std.BoundedArray(u16, index_list_max_length);
-    pub const index_list_max_length = 736;
+    pub const index_list_max_length = 1024; // TODO: this length is arbitrary
 
     pub fn init(
-        cnt: u3,
-        station_address: u16,
-        more_follows: bool,
-        fragments_left: u16,
         list_type: coe.ODListType,
         index_list: []const u16,
     ) GetODListResponse {
-        assert(cnt != 0);
         assert(index_list.len <= index_list_max_length);
-        const mbx_header_length = (index_list.len * 2) + 8;
         return GetODListResponse{
-            .mbx_header = .{
-                .length = @intCast(mbx_header_length),
-                .address = station_address,
-                .channel = 0,
-                .priority = 0,
-                .type = .CoE,
-                .cnt = cnt,
-            },
-            .coe_header = .{
-                .number = 0,
-                .service = .sdo_info,
-            },
-            .sdo_info_header = .{
-                .opcode = .get_od_list_response,
-                .incomplete = more_follows,
-                .fragments_left = fragments_left,
-            },
             .list_type = list_type,
-            .index_list = std.BoundedArray(u16, index_list_max_length).fromSlice(index_list) catch unreachable,
+            .index_list = IndexList.fromSlice(index_list) catch unreachable,
         };
     }
 
+    /// Input buffer must be exact length.
     pub fn deserialize(buf: []const u8) !GetODListResponse {
         var fbs = std.io.fixedBufferStream(buf);
         const reader = fbs.reader();
 
-        const mbx_header = try wire.packFromECatReader(mailbox.Header, reader);
-        const coe_header = try wire.packFromECatReader(coe.Header, reader);
-        const sdo_info_header = try wire.packFromECatReader(coe.SDOInfoHeader, reader);
         const list_type = try wire.packFromECatReader(coe.ODListType, reader);
-        var index_list = std.BoundedArray(u16, index_list_max_length){};
+        var index_list = IndexList{};
 
-        const n_index = (mbx_header.length -| 8) / 2;
-        if (n_index > index_list_max_length) return error.InvalidMailboxContent;
-        for (0..n_index) |_| {
-            index_list.append(try wire.packFromECatReader(u16, reader)) catch unreachable;
+        const bytes_remaining = try fbs.getEndPos() - try fbs.getPos();
+        if (bytes_remaining % 2 != 0) return error.InvalidServiceData;
+        if (bytes_remaining / 2 > index_list_max_length) return error.StreamTooLong;
+        for (0..bytes_remaining / 2) |_| {
+            index_list.append(wire.packFromECatReader(u16, reader) catch unreachable) catch unreachable;
         }
         return GetODListResponse{
-            .mbx_header = mbx_header,
-            .coe_header = coe_header,
-            .sdo_info_header = sdo_info_header,
             .list_type = list_type,
             .index_list = index_list,
         };
@@ -785,44 +755,23 @@ pub const GetODListResponse = struct {
     pub fn serialize(self: GetODListResponse, out: []u8) !usize {
         var fbs = std.io.fixedBufferStream(out);
         const writer = fbs.writer();
-        try wire.eCatFromPackToWriter(self.mbx_header, writer);
-        try wire.eCatFromPackToWriter(self.coe_header, writer);
-        try wire.eCatFromPackToWriter(self.sdo_info_header, writer);
         try wire.eCatFromPackToWriter(self.list_type, writer);
         for (self.index_list.slice()) |index| {
             try wire.eCatFromPackToWriter(index, writer);
         }
         return fbs.getWritten().len;
     }
-
-    comptime {
-        assert(
-            index_list_max_length ==
-                @divExact(
-                mailbox.max_size -
-                    @divExact(@bitSizeOf(mailbox.Header), 8) -
-                    @divExact(@bitSizeOf(coe.Header), 8) -
-                    @divExact(@bitSizeOf(coe.SDOInfoHeader), 8) -
-                    @divExact(@bitSizeOf(coe.ODListType), 8),
-                2,
-            ),
-        );
-    }
 };
 
 test "serialize and deserialize get od list response" {
     const expected = GetODListResponse.init(
-        3,
-        123,
-        true,
-        23,
         .all_objects,
         &.{ 1, 2, 3, 4 },
     );
     var bytes = std.mem.zeroes([mailbox.max_size]u8);
     const byte_size = try expected.serialize(&bytes);
-    try std.testing.expectEqual(@as(usize, 6 + 2 + 4 + 2 + 8), byte_size);
-    const actual = try GetODListResponse.deserialize(&bytes);
+    try std.testing.expectEqual(@as(usize, 2 + 8), byte_size);
+    const actual = try GetODListResponse.deserialize(bytes[0..byte_size]);
     try std.testing.expectEqualDeep(expected, actual);
 }
 

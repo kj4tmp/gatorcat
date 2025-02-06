@@ -1118,12 +1118,41 @@ pub fn readODList(
             .get_od_list_request = .init(cnt.nextCnt(), list_type),
         },
     };
-    try mailbox.writeMailboxOut(port, station_address, recv_timeout_us, config.mbx_out, request);
+    try mailbox.writeMailboxOut(
+        port,
+        station_address,
+        recv_timeout_us,
+        config.mbx_out,
+        request,
+    );
 
+    var full_service_data_buffer: [4096]u8 = undefined; // TODO: this is arbitrary
+    const full_service_data = try readSDOInfoFragments(
+        port,
+        station_address,
+        recv_timeout_us,
+        mbx_timeout_us,
+        config,
+        .get_od_list_response,
+        &full_service_data_buffer,
+    );
+    const response = try server.GetODListResponse.deserialize(full_service_data);
+    if (response.list_type != list_type) return error.WrongProtocol;
+    return response.index_list;
+}
+
+pub fn readSDOInfoFragments(
+    port: *Port,
+    station_address: u16,
+    recv_timeout_us: u32,
+    mbx_timeout_us: u32,
+    config: mailbox.Configuration,
+    opcode: SDOInfoOpCode,
+    out: []u8,
+) ![]u8 {
+    var fbs = std.io.fixedBufferStream(out);
+    const writer = fbs.writer();
     var expected_fragments_left: u16 = 0;
-
-    var full_service_data = std.BoundedArray(u8, 4096){};
-
     get_fragments: for (0..1024) |i| {
         const in_content = try mailbox.readMailboxInTimeout(port, station_address, recv_timeout_us, config.mbx_in, mbx_timeout_us);
         if (in_content != .coe) return error.WrongProtocol;
@@ -1132,8 +1161,9 @@ pub fn readODList(
             .emergency => return error.Emergency,
             .sdo_info_response => |response| {
                 if (i == 0) expected_fragments_left = response.sdo_info_header.fragments_left;
+                if (response.sdo_info_header.opcode != opcode) return error.WrongProtocol;
                 if (response.sdo_info_header.fragments_left != expected_fragments_left) return error.MissedFragment;
-                try full_service_data.appendSlice(response.service_data.slice());
+                try writer.writeAll(response.service_data.slice());
                 if (response.sdo_info_header.fragments_left == 0) break :get_fragments;
                 assert(expected_fragments_left > 0);
                 expected_fragments_left -= 1;
@@ -1142,10 +1172,18 @@ pub fn readODList(
         }
     } else return error.WrongProtocol;
 
-    const response = try server.GetODListResponse.deserialize(full_service_data.slice());
-    if (response.list_type != list_type) return error.WrongProtocol;
-    return response.index_list;
+    return fbs.getWritten();
 }
+
+// pub fn readObjectDescription(
+//     port: *Port,
+//     station_address: u16,
+//     recv_timeout_us: u32,
+//     mbx_timeout_us: u32,
+//     cnt: *Cnt,
+//     config: mailbox.Configuration,
+//     list_type: ODListType,
+// ) !server.GetObjectDescriptionResponse {}
 
 /// Basic Data Type Area
 ///

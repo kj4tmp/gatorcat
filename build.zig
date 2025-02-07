@@ -124,6 +124,19 @@ pub fn build(b: *std.Build) void {
     examples_step.dependOn(&simple2_install.step);
     if (target.result.os.tag == .windows) simple2_example.linkLibC();
 
+    // example: simple3
+    const simple3_example = b.addExecutable(.{
+        .name = "simple3",
+        .target = target,
+        .optimize = optimize,
+        .root_source_file = b.path("examples/simple3/main.zig"),
+    });
+    simple3_example.root_module.addImport("gatorcat", lib);
+    // using addInstallArtifact here so it only installs for the example step
+    const simple3_install = b.addInstallArtifact(simple3_example, .{});
+    examples_step.dependOn(&simple3_install.step);
+    if (target.result.os.tag == .windows) simple2_example.linkLibC();
+
     // sim tests
     const sim_test = b.addTest(.{
         .root_source_file = b.path("test/sim/root.zig"),

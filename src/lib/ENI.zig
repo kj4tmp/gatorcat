@@ -34,15 +34,13 @@ pub const SubDeviceConfiguration = struct {
 
     const PDO = struct {
         index: u16,
-        subindex: u8,
-        type: coe.DataTypeArea,
         entries: []const Entry,
-        name: ?[]const u8 = null,
+        name: []const u8 = &.{},
 
         const Entry = struct {
-            index: u16,
-            subindex: u8,
-            type: coe.DataTypeArea,
+            index: u16 = 0,
+            subindex: u8 = 0,
+            type: coe.DataTypeArea = .UNKNOWN,
             bits: u16,
             description: ?[]const u8 = null,
         };

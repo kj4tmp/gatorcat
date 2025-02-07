@@ -1,0 +1,110 @@
+.{
+    .subdevices = .{
+        .{
+            .name = "EK1100",
+            .identity = .{
+                .vendor_id = 0x2,
+                .product_code = 0x44c2c52,
+                .revision_number = 0x110000,
+            },
+        },
+        .{
+            .name = "EL2008",
+            .identity = .{
+                .vendor_id = 0x2,
+                .product_code = 0x7d83052,
+                .revision_number = 0x100000,
+            },
+            .outputs = .{
+                .{
+                    .name = "Channel 1",
+                    .index = 0x1600,
+                    .entries = .{
+                        .{
+                            .description = "Output",
+                            .bits = 1,
+                            .type = .BOOLEAN,
+                        },
+                    },
+                },
+                .{
+                    .name = "Channel 2",
+                    .index = 0x1601,
+                    .entries = .{
+                        .{
+                            .description = "Output",
+                            .bits = 1,
+                            .type = .BOOLEAN,
+                        },
+                    },
+                },
+                .{
+                    .name = "Channel 3",
+                    .index = 0x1602,
+                    .entries = .{
+                        .{
+                            .description = "Output",
+                            .bits = 1,
+                            .type = .BOOLEAN,
+                        },
+                    },
+                },
+                .{
+                    .name = "Channel 4",
+                    .index = 0x1603,
+                    .entries = .{
+                        .{
+                            .description = "Output",
+                            .bits = 1,
+                            .type = .BOOLEAN,
+                        },
+                    },
+                },
+                .{
+                    .name = "Channel 5",
+                    .index = 0x1604,
+                    .entries = .{
+                        .{
+                            .description = "Output",
+                            .bits = 1,
+                            .type = .BOOLEAN,
+                        },
+                    },
+                },
+                .{
+                    .name = "Channel 6",
+                    .index = 0x1605,
+                    .entries = .{
+                        .{
+                            .description = "Output",
+                            .bits = 1,
+                            .type = .BOOLEAN,
+                        },
+                    },
+                },
+                .{
+                    .name = "Channel 7",
+                    .index = 0x1606,
+                    .entries = .{
+                        .{
+                            .description = "Output",
+                            .bits = 1,
+                            .type = .BOOLEAN,
+                        },
+                    },
+                },
+                .{
+                    .name = "Channel 8",
+                    .index = 0x1607,
+                    .entries = .{
+                        .{
+                            .description = "Output",
+                            .bits = 1,
+                            .type = .BOOLEAN,
+                        },
+                    },
+                },
+            },
+        },
+    },
+}

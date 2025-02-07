@@ -1,7 +1,7 @@
 .{
     .name = "gatorcat",
     .version = "0.1.2",
-    .minimum_zig_version = "0.14.0-dev.2802+257054a14",
+    .minimum_zig_version = "0.14.0-dev.3062+ff551374a",
     .dependencies = .{
         .flags = .{
             .url = "git+https://github.com/kj4tmp/flags.git#11f494bfbe372e1b9b647ffc1ce5ed8a1642c81d",

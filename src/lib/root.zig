@@ -93,3 +93,27 @@ pub const max_subdevices = 65535;
 test {
     std.testing.refAllDecls(@This());
 }
+
+// TODO: remove this if its in std
+pub fn Exhaustive(@"enum": type) type {
+    comptime assert(@typeInfo(@"enum").@"enum".is_exhaustive == false);
+    var type_info = @typeInfo(@"enum");
+    type_info.@"enum".is_exhaustive = true;
+    return @Type(type_info);
+}
+
+test Exhaustive {
+    const MyEnum = enum(u8) {
+        zero,
+        one,
+        two,
+        _,
+    };
+
+    const NewEnum = Exhaustive(MyEnum);
+
+    try std.testing.expect(@typeInfo(NewEnum).@"enum".is_exhaustive);
+    try std.testing.expectEqual(0, @intFromEnum(NewEnum.zero));
+    try std.testing.expectEqual(1, @intFromEnum(NewEnum.one));
+    try std.testing.expectEqual(2, @intFromEnum(NewEnum.two));
+}

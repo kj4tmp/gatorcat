@@ -20,7 +20,39 @@ pub const Args = struct {
     };
 };
 
-pub fn scan(args: Args) !void {
+pub fn scan(allocator: std.mem.Allocator, args: Args) !void {
+    var raw_socket = switch (builtin.target.os.tag) {
+        .linux => try gcat.nic.RawSocket.init(args.ifname),
+        .windows => try gcat.nic.WindowsRawSocket.init(args.ifname),
+        else => @compileError("unsupported target os"),
+    };
+    defer raw_socket.deinit();
+
+    var port2 = gcat.Port.init(raw_socket.linkLayer(), .{});
+    const port = &port2;
+
+    try port.ping(args.recv_timeout_us);
+
+    const res: gcat.ENI = .{ .subdevices = &.{} };
+
+    const subdevice_configs = std.ArrayList(gcat.ENI.SubDeviceConfiguration).init(allocator);
+    defer subdevice_configs.deinit();
+
+    var scanner = gcat.Scanner.init(port, .{ .eeprom_timeout_us = args.eeprom_timeout_us, .mbx_timeout_us = args.mbx_timeout_us, .recv_timeout_us = args.recv_timeout_us });
+
+    const num_subdevices = try scanner.countSubdevices();
+    try scanner.busInit(args.INIT_timeout_us, num_subdevices);
+
+    for (0..num_subdevices) |i| {
+        _ = try scanner.subdevicePREOP(args.PREOP_timeout_us, @intCast(i));
+    }
+
+    var std_out = std.io.getStdOut();
+    try std.zon.stringify.serialize(res, .{ .emit_default_optional_fields = false }, std_out.writer());
+    try std_out.writer().writeByte('\n');
+}
+
+pub fn scan2(args: Args) !void {
     var raw_socket = switch (builtin.target.os.tag) {
         .linux => try gcat.nic.RawSocket.init(args.ifname),
         .windows => try gcat.nic.WindowsRawSocket.init(args.ifname),

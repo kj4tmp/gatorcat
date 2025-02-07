@@ -45,14 +45,8 @@ pub fn main() !void {
     };
 
     switch (parsed_args.command) {
-        .scan => |scan_args| {
-            try scan.scan(scan_args);
-        },
-        .benchmark => |benchmark_args| {
-            try benchmark.benchmark(benchmark_args);
-        },
-        .read_eeprom => |read_eeprom_args| {
-            try read_eeprom.read_eeprom(gpa.allocator(), read_eeprom_args);
-        },
+        .scan => |scan_args| try scan.scan(scan_args),
+        .benchmark => |benchmark_args| try benchmark.benchmark(benchmark_args),
+        .read_eeprom => |read_eeprom_args| try read_eeprom.read_eeprom(gpa.allocator(), read_eeprom_args),
     }
 }

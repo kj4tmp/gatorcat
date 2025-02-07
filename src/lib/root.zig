@@ -40,13 +40,13 @@ pub fn initSubdevicesFromENI(eni: ENI, subdevices: []SubDevice, process_image: [
         // of the image and outputs in the last half
         // we will do the smae.
         // subdevices without inputs or outputs will receive empty slice
-        const inputs_byte_size: u32 = (subdevice_config.inputs_bit_length + 7) / 8;
-        const outputs_byte_size: u32 = (subdevice_config.outputs_bit_length + 7) / 8;
+        const inputs_byte_size: u32 = (subdevice_config.inputsBitLength() + 7) / 8;
+        const outputs_byte_size: u32 = (subdevice_config.outputsBitLength() + 7) / 8;
         const pi = SubDevice.ProcessImage{
             .inputs = process_image[last_input_byte_idx .. last_input_byte_idx + inputs_byte_size],
-            .inputs_area = .{ .start_addr = last_input_byte_idx, .bit_length = subdevice_config.inputs_bit_length },
+            .inputs_area = .{ .start_addr = last_input_byte_idx, .bit_length = subdevice_config.inputsBitLength() },
             .outputs = process_image[last_output_byte_idx .. last_output_byte_idx + outputs_byte_size],
-            .outputs_area = .{ .start_addr = last_output_byte_idx, .bit_length = subdevice_config.outputs_bit_length },
+            .outputs_area = .{ .start_addr = last_output_byte_idx, .bit_length = subdevice_config.outputsBitLength() },
         };
         last_input_byte_idx += inputs_byte_size;
         last_output_byte_idx += outputs_byte_size;

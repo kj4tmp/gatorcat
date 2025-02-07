@@ -26,7 +26,7 @@ const beckhoff_EL3314 = gcat.ENI.SubDeviceConfiguration{
         .product_code = 0xcf23052,
         .revision_number = 0x120000,
     },
-    .coe_startup_parameters = &.{
+    .startup_parameters = &.{
         .{
             .transition = .PS,
             .direction = .write,
@@ -37,7 +37,7 @@ const beckhoff_EL3314 = gcat.ENI.SubDeviceConfiguration{
             .timeout_us = 10_000,
         },
     },
-    .inputs_bit_length = 128,
+    // .inputs_bit_length = 128,
 };
 
 const beckhoff_EL3048 = gcat.ENI.SubDeviceConfiguration{
@@ -46,7 +46,7 @@ const beckhoff_EL3048 = gcat.ENI.SubDeviceConfiguration{
         .product_code = 0xbe83052,
         .revision_number = 0x130000,
     },
-    .inputs_bit_length = 256,
+    // .inputs_bit_length = 256,
 };
 
 const beckhoff_EL7041_1000 = gcat.ENI.SubDeviceConfiguration{
@@ -55,9 +55,9 @@ const beckhoff_EL7041_1000 = gcat.ENI.SubDeviceConfiguration{
         .product_code = 0x1b813052,
         .revision_number = 0x1503e8,
     },
-    .inputs_bit_length = 64,
-    .outputs_bit_length = 64,
-    .coe_startup_parameters = &.{
+    // .inputs_bit_length = 64,
+    // .outputs_bit_length = 64,
+    .startup_parameters = &.{
         .{
             .transition = .PS,
             .direction = .write,
@@ -94,7 +94,7 @@ const beckhoff_EL2008 = gcat.ENI.SubDeviceConfiguration{
         .product_code = 0x7d83052,
         .revision_number = 0x100000,
     },
-    .outputs_bit_length = 8,
+    // .outputs_bit_length = 8,
 };
 
 const beckhoff_EL7031_0030 = gcat.ENI.SubDeviceConfiguration{
@@ -103,10 +103,10 @@ const beckhoff_EL7031_0030 = gcat.ENI.SubDeviceConfiguration{
         .product_code = 0x1b773052,
         .revision_number = 0x0010001e,
     },
-    .inputs_bit_length = 128,
-    .outputs_bit_length = 64,
+    // .inputs_bit_length = 128,
+    // .outputs_bit_length = 64,
     .auto_config = .auto,
-    .coe_startup_parameters = &.{
+    .startup_parameters = &.{
         // restore default params
         .{
             .transition = .PS,
@@ -155,10 +155,10 @@ const beckhoff_EL7041 = gcat.ENI.SubDeviceConfiguration{
         .product_code = 0x1b813052,
         .revision_number = 0x00190000,
     },
-    .inputs_bit_length = 64,
-    .outputs_bit_length = 64,
+    // .inputs_bit_length = 64,
+    // .outputs_bit_length = 64,
     .auto_config = .auto,
-    .coe_startup_parameters = &.{
+    .startup_parameters = &.{
         .{
             .transition = .PS,
             .direction = .write,

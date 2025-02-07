@@ -208,8 +208,6 @@ pub fn subdevicePREOP(self: *Scanner, change_timeout_us: u32, ring_position: u16
                 .revision_number = info.revision_number,
             },
             .auto_config = .auto,
-            .inputs_bit_length = 0,
-            .outputs_bit_length = 0,
         },
         @intCast(ring_position),
         .{

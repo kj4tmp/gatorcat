@@ -8,6 +8,7 @@
 //! The ENI is constant, and will never be modified by the MainDevice.
 const std = @import("std");
 
+const coe = @import("mailbox.zig").coe;
 const sii = @import("sii.zig");
 
 const ENI = @This();
@@ -20,31 +21,58 @@ pub const SubDeviceConfiguration = struct {
     identity: sii.SubDeviceIdentity,
 
     /// Process image
-    inputs_bit_length: u32 = 0,
-    outputs_bit_length: u32 = 0,
+    // inputs_bit_length: u32 = 0,
+    // outputs_bit_length: u32 = 0,
 
     /// SDO startup parameters
-    coe_startup_parameters: ?[]const CoEStartupParameter = null,
-
-    // process_data: ProcessData,
+    startup_parameters: ?[]const StartupParameter = null,
 
     /// Autoconfigure strategy
     auto_config: enum { auto } = .auto,
 
-    // const ProcessData = struct {
-    //     inputs_bit_length: u32 = 0,
-    //     outputs_bit_length: u32 = 0,
-    //     auto_config: AutoConfig,
+    /// Inputs w/r/t the maindevice, also called TxPDO's
+    inputs: []const PDO = &.{},
+    /// Outputs w/r/t the maindevice, also called the RxPDO's
+    outputs: []const PDO = &.{},
 
-    //     const AutoConfig = union(enum) {
-    //         none: void,
-    //         sii: void,
-    //         coe: void,
-    //     };
-    // };
+    const PDO = struct {
+        index: u16,
+        subindex: u8,
+        type: coe.DataTypeArea,
+        entries: []const Entry,
+        name: ?[]const u8 = null,
+
+        const Entry = struct {
+            index: u16,
+            subindex: u8,
+            type: coe.DataTypeArea,
+            bits: u16,
+            description: ?[]const u8 = null,
+        };
+    };
+
+    pub fn inputsBitLength(self: SubDeviceConfiguration) u32 {
+        var res: u32 = 0;
+        for (self.inputs) |input| {
+            for (input.entries) |entry| {
+                res += entry.bits;
+            }
+        }
+        return res;
+    }
+
+    pub fn outputsBitLength(self: SubDeviceConfiguration) u32 {
+        var res: u32 = 0;
+        for (self.outputs) |output| {
+            for (output.entries) |entry| {
+                res += entry.bits;
+            }
+        }
+        return res;
+    }
 };
 
-pub const CoEStartupParameter = struct {
+pub const StartupParameter = struct {
     transition: Transition,
     timeout_us: u32,
     direction: Direction,
@@ -57,42 +85,37 @@ pub const CoEStartupParameter = struct {
         read,
         write,
     };
-};
 
-pub const Transition = enum {
-    /// INIT -> PREOP
-    IP,
-    /// INIT -> SAFEOP
-    PS,
-    /// PREOP -> INIT
-    PI,
-    /// SAFEOP -> PREOP
-    SP,
-    /// SAFEOP -> OP
-    SO,
-    /// SAFEOP -> INIT
-    SI,
-    /// OP -> SAFEOP
-    OS,
-    /// OP -> PREOP
-    OP,
-    /// OP -> INIT
-    OI,
-    /// INIT -> BOOT
-    IB,
-    /// BOOT -> INIT
-    BI,
-    /// INIT -> INIT
-    II,
-    /// PREOP -> PREOP
-    PP,
-    /// SAFEOP -> SAFEOP
-    SS,
-};
-
-pub const ProcessImageStats = struct {
-    input_bytes: u32,
-    output_bytes: u32,
+    pub const Transition = enum {
+        /// INIT -> PREOP
+        IP,
+        /// INIT -> SAFEOP
+        PS,
+        /// PREOP -> INIT
+        PI,
+        /// SAFEOP -> PREOP
+        SP,
+        /// SAFEOP -> OP
+        SO,
+        /// SAFEOP -> INIT
+        SI,
+        /// OP -> SAFEOP
+        OS,
+        /// OP -> PREOP
+        OP,
+        /// OP -> INIT
+        OI,
+        /// INIT -> BOOT
+        IB,
+        /// BOOT -> INIT
+        BI,
+        /// INIT -> INIT
+        II,
+        /// PREOP -> PREOP
+        PP,
+        /// SAFEOP -> SAFEOP
+        SS,
+    };
 };
 
 pub fn processImageSize(self: *const ENI) u32 {
@@ -100,14 +123,19 @@ pub fn processImageSize(self: *const ENI) u32 {
     return stats.input_bytes + stats.output_bytes;
 }
 
+pub const ProcessImageStats = struct {
+    input_bytes: u32,
+    output_bytes: u32,
+};
+
 pub fn processImageStats(self: *const ENI) ProcessImageStats {
     // each subdevices will be given a byte aligned area for inputs
     // and a byte aligned area for outputs.
     var input_bytes: u32 = 0;
     var output_bytes: u32 = 0;
     for (self.subdevices) |subdevice_config| {
-        input_bytes += (subdevice_config.inputs_bit_length + 7) / 8;
-        output_bytes += (subdevice_config.outputs_bit_length + 7) / 8;
+        input_bytes += (subdevice_config.inputsBitLength() + 7) / 8;
+        output_bytes += (subdevice_config.outputsBitLength() + 7) / 8;
     }
     return ProcessImageStats{ .input_bytes = input_bytes, .output_bytes = output_bytes };
 }

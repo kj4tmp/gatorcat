@@ -1264,7 +1264,7 @@ pub fn readEntryDescription(
 pub const DataTypeArea = enum(u16) {
     /// the table does not explicitly mark this as padding but it
     /// seems beckhoff is using 0 for padding.
-    PADDING = 0x0000,
+    UNKNOWN = 0x0000,
     BOOLEAN = 0x0001,
     INTEGER8 = 0x0002,
     INTEGER16 = 0x0003,

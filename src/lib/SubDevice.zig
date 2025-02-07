@@ -409,8 +409,8 @@ pub fn transitionPS(
             }
 
             var min_fmmu_required: u8 = 0;
-            if (self.config.inputs_bit_length > 0) min_fmmu_required += 1;
-            if (self.config.outputs_bit_length > 0) min_fmmu_required += 1;
+            if (self.config.inputsBitLength() > 0) min_fmmu_required += 1;
+            if (self.config.outputsBitLength() > 0) min_fmmu_required += 1;
 
             const fmmus = try sii.readFMMUCatagory(
                 port,
@@ -422,17 +422,17 @@ pub fn transitionPS(
 
             const totals = sm_assigns.totalBitLengths();
 
-            if (totals.inputs_bit_length != self.config.inputs_bit_length) {
+            if (totals.inputs_bit_length != self.config.inputsBitLength()) {
                 std.log.err(
                     "station addr: 0x{x}, expected inputs bit length: {}, got {}",
-                    .{ station_address, self.config.inputs_bit_length, totals.inputs_bit_length },
+                    .{ station_address, self.config.inputsBitLength(), totals.inputs_bit_length },
                 );
                 return error.InvalidInputsBitLength;
             }
-            if (totals.outputs_bit_length != self.config.outputs_bit_length) {
+            if (totals.outputs_bit_length != self.config.outputsBitLength()) {
                 std.log.err(
                     "station addr: 0x{x}, expected outputs bit length: {}, got {}",
-                    .{ station_address, self.config.outputs_bit_length, totals.outputs_bit_length },
+                    .{ station_address, self.config.outputsBitLength(), totals.outputs_bit_length },
                 );
                 return error.InvalidOutputsBitLength;
             }
@@ -475,10 +475,10 @@ pub fn transitionSO(
 pub fn doStartupParameters(
     self: *SubDevice,
     port: *Port,
-    transition: ENI.Transition,
+    transition: ENI.StartupParameter.Transition,
     recv_timeout_us: u32,
 ) !void {
-    const parameters = self.config.coe_startup_parameters orelse return;
+    const parameters = self.config.startup_parameters orelse return;
     for (parameters) |parameter| {
         // TODO: support reads?
         if (parameter.transition == transition) {

@@ -21,10 +21,10 @@ const beckhoff_EL7031_0030 = gcat.ENI.SubDeviceConfiguration{
         .product_code = 0x1b773052,
         .revision_number = 0x0010001e,
     },
-    .inputs_bit_length = 128,
-    .outputs_bit_length = 64,
+    // .inputs_bit_length = 128,
+    // .outputs_bit_length = 64,
     .auto_config = .auto,
-    .coe_startup_parameters = &.{
+    .startup_parameters = &.{
         .{
             .transition = .PS,
             .direction = .write,

@@ -34,7 +34,7 @@ pub fn processImageInputsSize(subdevices: []const SubDevice) u32 {
     // and a byte aligned area for outputs.
     var bytes_used: u32 = 0;
     for (subdevices) |subdevice| {
-        bytes_used += (subdevice.config.inputs_bit_length + 7) / 8;
+        bytes_used += (subdevice.config.inputsBitLength() + 7) / 8;
     }
     return bytes_used;
 }
@@ -45,7 +45,7 @@ pub fn processImageOutputsSize(subdevices: []const SubDevice) u32 {
     // and a byte aligned area for outputs.
     var bytes_used: u32 = 0;
     for (subdevices) |subdevice| {
-        bytes_used += (subdevice.config.outputs_bit_length + 7) / 8;
+        bytes_used += (subdevice.config.outputsBitLength() + 7) / 8;
     }
     return bytes_used;
 }

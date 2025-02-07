@@ -29,6 +29,9 @@ pub const SubDeviceConfiguration = struct {
     /// Outputs w/r/t the maindevice, also called the RxPDO's
     outputs: []const PDO = &.{},
 
+    // TODO: subdevice groups
+    group: u8 = 0,
+
     const PDO = struct {
         index: u16,
         subindex: u8,

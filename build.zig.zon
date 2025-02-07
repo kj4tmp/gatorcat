@@ -4,8 +4,8 @@
     .minimum_zig_version = "0.14.0-dev.3062+ff551374a",
     .dependencies = .{
         .flags = .{
-            .url = "git+https://github.com/kj4tmp/flags.git#11f494bfbe372e1b9b647ffc1ce5ed8a1642c81d",
-            .hash = "12208568f1875c10484968bb7cfa5a08c786feb2eb2f09d0631cedf6299d335f538a",
+            .url = "git+https://github.com/n0s4/flags.git#372501d1576b5723829bcba98e41361132c7b618",
+            .hash = "1220ae181067a549c7a99cc0868193a7889b151381410419191ab1a79304f914336e",
         },
         .npcap_sdk = .{
             .url = "https://npcap.com/dist/npcap-sdk-1.13.zip",

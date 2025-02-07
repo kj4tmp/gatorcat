@@ -4,6 +4,7 @@ const builtin = @import("builtin");
 const flags = @import("flags");
 const gcat = @import("gatorcat");
 
+const benchmark = @import("benchmark.zig");
 const scan = @import("scan.zig");
 
 pub const std_options: std.Options = .{
@@ -27,23 +28,7 @@ pub fn main() !void {
             try scan.scan(scan_args);
         },
         .benchmark => |benchmark_args| {
-            var raw_socket = switch (builtin.target.os.tag) {
-                .linux => try gcat.nic.RawSocket.init(benchmark_args.ifname),
-                .windows => try gcat.nic.WindowsRawSocket.init(benchmark_args.ifname),
-                else => @compileError("unsupported target os"),
-            };
-            defer raw_socket.deinit();
-
-            var port = gcat.Port.init(raw_socket.linkLayer(), .{});
-            try port.ping(benchmark_args.recv_timeout_us);
-            try benchmark(
-                &port,
-                benchmark_args.recv_timeout_us,
-                benchmark_args.duration_s,
-                benchmark_args.cycle_time_us,
-                benchmark_args.rt_prio,
-                benchmark_args.affinity,
-            );
+            try benchmark.benchmark(benchmark_args);
         },
         .read_eeprom => |read_eeprom_args| {
             var raw_socket = switch (builtin.target.os.tag) {
@@ -77,25 +62,8 @@ const Flags = struct {
     // sub commands
     command: union(enum) {
         // scan bus
-        scan: scan.ScanArgs,
-        benchmark: struct {
-            ifname: [:0]const u8,
-            recv_timeout_us: u32 = 10_000,
-            duration_s: f64 = 10.0,
-            cycle_time_us: u32 = 2000,
-            rt_prio: ?i32 = null,
-            affinity: ?u10 = null,
-
-            pub const descriptions = .{
-                .ifname = "Network interface to use for the benchmark (e.g. \"eth0\").",
-                .recv_timeout_us = "Frame receive timeout in microseconds.",
-                .duration_s = "Duration of the test in seconds.",
-                .cycle_time_us = "Intended cycle time in microseconds.",
-                .rt_prio = "Set the real-time priority of this process.",
-                .affinity = "Set the cpu affinity of the this process.",
-            };
-        },
-
+        scan: scan.Args,
+        benchmark: benchmark.Args,
         read_eeprom: struct {
             ifname: [:0]const u8,
             ring_position: u16,
@@ -194,68 +162,4 @@ fn read_eeprom(
         // const path = std.fs.
         // try std.fs.cre
     }
-}
-
-fn benchmark(
-    port: *gcat.Port,
-    recv_timeout_us: u32,
-    duration_s: f64,
-    cycle_time_us: u32,
-    maybe_rt_prio: ?i32,
-    maybe_affinity: ?u10,
-) !void {
-    var writer = std.io.getStdOut().writer();
-    if (builtin.os.tag == .linux) {
-        if (maybe_affinity) |affinity| {
-            // using pid = 0 means this process will have the scheduler set.
-            const cpu_set: std.os.linux.cpu_set_t = @bitCast(@as(u1024, 1) << affinity);
-            try std.os.linux.sched_setaffinity(0, &cpu_set);
-            try writer.print("Set cpu affinity to {}.\n", .{affinity});
-        }
-        if (maybe_rt_prio) |rt_prio| {
-            // using pid = 0 means this process will have the scheduler set.
-            const rval = std.os.linux.sched_setscheduler(0, .{ .mode = .FIFO }, &.{
-                .priority = rt_prio,
-            });
-            switch (std.posix.errno(rval)) {
-                .SUCCESS => {
-                    try writer.print("Set real-time priority to {}.\n", .{rt_prio});
-                },
-                else => |err| {
-                    try writer.print("Error when setting real-time priority: {}\n", .{err});
-                    return error.CannotSetRealtimePriority;
-                },
-            }
-        }
-    }
-
-    try writer.print("benchmarking for {d:.2}s...\n", .{duration_s});
-
-    var run_timer = try std.time.Timer.start();
-    var n_cycles: u64 = 0;
-    var max_cycle_time_ns: u64 = 0;
-    var min_cycle_time_ns: u64 = @as(u64, recv_timeout_us) * std.time.ns_per_us;
-    var cycle_timer = try std.time.Timer.start();
-    const first_cycle_time = std.time.Instant.now() catch @panic("Timer unsupported");
-    while (@as(f64, @floatFromInt(run_timer.read())) < duration_s * std.time.ns_per_s) {
-        try port.ping(recv_timeout_us);
-        n_cycles += 1;
-
-        gcat.sleepUntilNextCycle(first_cycle_time, cycle_time_us);
-        const cycle_time_ns = cycle_timer.read();
-        cycle_timer.reset();
-        if (cycle_time_ns > max_cycle_time_ns) {
-            max_cycle_time_ns = cycle_time_ns;
-        }
-        if (cycle_time_ns < min_cycle_time_ns) {
-            min_cycle_time_ns = cycle_time_ns;
-        }
-    }
-    const total_time_s: f64 = @as(f64, @floatFromInt(run_timer.read())) / std.time.ns_per_s;
-    const cycles_per_second: f64 = @as(f64, @floatFromInt(n_cycles)) / total_time_s;
-    const max_cycle_time_s: f64 = @as(f64, @floatFromInt(max_cycle_time_ns)) / std.time.ns_per_s;
-    const min_cycle_time_s: f64 = @as(f64, @floatFromInt(min_cycle_time_ns)) / std.time.ns_per_s;
-    try writer.print("Completed {} cycles in {d:.2}s or {d:.2} cycles/s.\n", .{ n_cycles, total_time_s, cycles_per_second });
-    try writer.print("Max cycle time: {d:.6}s.\n", .{max_cycle_time_s});
-    try writer.print("Min cycle time: {d:.6}s.\n", .{min_cycle_time_s});
 }

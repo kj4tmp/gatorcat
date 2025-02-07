@@ -3,7 +3,7 @@ const builtin = @import("builtin");
 
 const gcat = @import("gatorcat");
 
-pub const ScanArgs = struct {
+pub const Args = struct {
     ifname: [:0]const u8,
     ring_position: ?u16 = null,
     recv_timeout_us: u32 = 10_000,
@@ -20,7 +20,7 @@ pub const ScanArgs = struct {
     };
 };
 
-pub fn scan(args: ScanArgs) !void {
+pub fn scan(args: Args) !void {
     var raw_socket = switch (builtin.target.os.tag) {
         .linux => try gcat.nic.RawSocket.init(args.ifname),
         .windows => try gcat.nic.WindowsRawSocket.init(args.ifname),

@@ -47,6 +47,8 @@ pub fn scan(allocator: std.mem.Allocator, args: Args) !void {
         _ = try scanner.subdevicePREOP(args.PREOP_timeout_us, @intCast(i));
     }
 
+    // TODO: finish the rest of auto scan
+
     var std_out = std.io.getStdOut();
     try std.zon.stringify.serialize(res, .{ .emit_default_optional_fields = false }, std_out.writer());
     try std_out.writer().writeByte('\n');

@@ -478,8 +478,7 @@ pub fn doStartupParameters(
     transition: ENI.StartupParameter.Transition,
     recv_timeout_us: u32,
 ) !void {
-    const parameters = self.config.startup_parameters orelse return;
-    for (parameters) |parameter| {
+    for (self.config.startup_parameters) |parameter| {
         // TODO: support reads?
         if (parameter.transition == transition) {
             std.log.info("station address: 0x{x}, doing startup parameter: {}", .{ stationAddressFromRingPos(self.runtime_info.ring_position), parameter });

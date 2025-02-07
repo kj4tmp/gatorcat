@@ -17,19 +17,13 @@ const ENI = @This();
 subdevices: []const SubDeviceConfiguration,
 
 pub const SubDeviceConfiguration = struct {
-    /// identity
+    /// ex. "EL7031-0030"
+    name: []const u8 = &.{},
     identity: sii.SubDeviceIdentity,
-
-    /// Process image
-    // inputs_bit_length: u32 = 0,
-    // outputs_bit_length: u32 = 0,
-
     /// SDO startup parameters
-    startup_parameters: ?[]const StartupParameter = null,
-
+    startup_parameters: []const StartupParameter = &.{},
     /// Autoconfigure strategy
     auto_config: enum { auto } = .auto,
-
     /// Inputs w/r/t the maindevice, also called TxPDO's
     inputs: []const PDO = &.{},
     /// Outputs w/r/t the maindevice, also called the RxPDO's

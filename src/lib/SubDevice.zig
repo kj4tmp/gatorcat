@@ -475,7 +475,7 @@ pub fn transitionSO(
 pub fn doStartupParameters(
     self: *SubDevice,
     port: *Port,
-    transition: ENI.StartupParameter.Transition,
+    transition: ENI.SubDeviceConfiguration.StartupParameter.Transition,
     recv_timeout_us: u32,
 ) !void {
     for (self.config.startup_parameters) |parameter| {

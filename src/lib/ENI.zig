@@ -64,51 +64,50 @@ pub const SubDeviceConfiguration = struct {
         }
         return res;
     }
-};
+    pub const StartupParameter = struct {
+        transition: Transition,
+        timeout_us: u32,
+        direction: Direction,
+        index: u16,
+        subindex: u8,
+        complete_access: bool,
+        data: []const u8,
 
-pub const StartupParameter = struct {
-    transition: Transition,
-    timeout_us: u32,
-    direction: Direction,
-    index: u16,
-    subindex: u8,
-    complete_access: bool,
-    data: []const u8,
+        pub const Direction = enum {
+            read,
+            write,
+        };
 
-    pub const Direction = enum {
-        read,
-        write,
-    };
-
-    pub const Transition = enum {
-        /// INIT -> PREOP
-        IP,
-        /// INIT -> SAFEOP
-        PS,
-        /// PREOP -> INIT
-        PI,
-        /// SAFEOP -> PREOP
-        SP,
-        /// SAFEOP -> OP
-        SO,
-        /// SAFEOP -> INIT
-        SI,
-        /// OP -> SAFEOP
-        OS,
-        /// OP -> PREOP
-        OP,
-        /// OP -> INIT
-        OI,
-        /// INIT -> BOOT
-        IB,
-        /// BOOT -> INIT
-        BI,
-        /// INIT -> INIT
-        II,
-        /// PREOP -> PREOP
-        PP,
-        /// SAFEOP -> SAFEOP
-        SS,
+        pub const Transition = enum {
+            /// INIT -> PREOP
+            IP,
+            /// INIT -> SAFEOP
+            PS,
+            /// PREOP -> INIT
+            PI,
+            /// SAFEOP -> PREOP
+            SP,
+            /// SAFEOP -> OP
+            SO,
+            /// SAFEOP -> INIT
+            SI,
+            /// OP -> SAFEOP
+            OS,
+            /// OP -> PREOP
+            OP,
+            /// OP -> INIT
+            OI,
+            /// INIT -> BOOT
+            IB,
+            /// BOOT -> INIT
+            BI,
+            /// INIT -> INIT
+            II,
+            /// PREOP -> PREOP
+            PP,
+            /// SAFEOP -> SAFEOP
+            SS,
+        };
     };
 };
 

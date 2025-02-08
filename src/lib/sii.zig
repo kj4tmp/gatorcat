@@ -1,4 +1,4 @@
-//! SubDevice Information Interface (SII)
+//! Subdevice Information Interface (SII)
 //!
 //! Address is word (two-byte) address.
 
@@ -66,7 +66,7 @@ pub const MailboxProtocolSupported = packed struct(u16) {
     }
 };
 
-pub const SubDeviceInfo = packed struct {
+pub const SubdeviceInfo = packed struct {
     PDI_control: u16,
     PDI_configuration: u16,
     sync_inpulse_length_10ns: u16,
@@ -94,7 +94,7 @@ pub const SubDeviceInfo = packed struct {
     version: u16,
 };
 
-pub const SubDeviceInfoCompact = packed struct {
+pub const SubdeviceInfoCompact = packed struct {
     PDI_control: u16,
     PDI_configuration: u16,
     sync_inpulse_length_10ns: u16,
@@ -118,7 +118,7 @@ pub const SubDeviceInfoCompact = packed struct {
     mbx_protocol: MailboxProtocolSupported,
 };
 
-pub const SubDeviceIdentity = packed struct {
+pub const SubdeviceIdentity = packed struct {
     vendor_id: u32,
     product_code: u32,
     revision_number: u32,
@@ -508,10 +508,10 @@ pub fn readGeneralCatagory(port: *Port, station_address: u16, recv_timeout_us: u
 
     if (catagory.byte_length < @divExact(@bitSizeOf(CatagoryGeneral), 8)) {
         std.log.err(
-            "SubDevice station addr: 0x{x} has invalid eeprom sii general length: {}. Expected >= {}",
+            "Subdevice station addr: 0x{x} has invalid eeprom sii general length: {}. Expected >= {}",
             .{ station_address, catagory.byte_length, @divExact(@bitSizeOf(CatagoryGeneral), 8) },
         );
-        return error.InvalidSubDeviceEEPROM;
+        return error.InvalidSubdeviceEEPROM;
     }
 
     const general = try readSIIFP_ps(
@@ -1426,10 +1426,10 @@ pub fn readSubdeviceInfoCompact(
     station_address: u16,
     recv_timeout_us: u32,
     eeprom_timeout_us: u32,
-) !SubDeviceInfoCompact {
+) !SubdeviceInfoCompact {
     return try readSIIFP_ps(
         port,
-        SubDeviceInfoCompact,
+        SubdeviceInfoCompact,
         station_address,
         @intFromEnum(ParameterMap.PDI_control),
         recv_timeout_us,
@@ -1442,10 +1442,10 @@ pub fn readSubdeviceInfo(
     station_address: u16,
     recv_timeout_us: u32,
     eeprom_timeout_us: u32,
-) !SubDeviceInfo {
+) !SubdeviceInfo {
     return try readSIIFP_ps(
         port,
-        SubDeviceInfo,
+        SubdeviceInfo,
         station_address,
         @intFromEnum(ParameterMap.PDI_control),
         recv_timeout_us,

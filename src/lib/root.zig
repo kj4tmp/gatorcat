@@ -11,7 +11,7 @@ pub const Port = @import("Port.zig");
 pub const Scanner = @import("Scanner.zig");
 pub const sii = @import("sii.zig");
 pub const sim = @import("sim.zig");
-pub const SubDevice = @import("SubDevice.zig");
+pub const Subdevice = @import("Subdevice.zig");
 pub const telegram = @import("telegram.zig");
 pub const wire = @import("wire.zig");
 
@@ -19,7 +19,7 @@ const gcat = @This();
 
 /// initialize a slice of undefined subdevices using information from the ENI.
 /// Returns slice of subdevices that has been initialized.
-pub fn initSubdevicesFromENI(eni: ENI, subdevices: []SubDevice, process_image: []u8) ![]SubDevice {
+pub fn initSubdevicesFromENI(eni: ENI, subdevices: []Subdevice, process_image: []u8) ![]Subdevice {
     assert(eni.subdevices.len <= max_subdevices);
     if (eni.subdevices.len < subdevices.len) {
         return error.NotEnoughSubdevices;
@@ -42,7 +42,7 @@ pub fn initSubdevicesFromENI(eni: ENI, subdevices: []SubDevice, process_image: [
         // subdevices without inputs or outputs will receive empty slice
         const inputs_byte_size: u32 = (subdevice_config.inputsBitLength() + 7) / 8;
         const outputs_byte_size: u32 = (subdevice_config.outputsBitLength() + 7) / 8;
-        const pi = SubDevice.ProcessImage{
+        const pi = Subdevice.ProcessImage{
             .inputs = process_image[last_input_byte_idx .. last_input_byte_idx + inputs_byte_size],
             .inputs_area = .{ .start_addr = last_input_byte_idx, .bit_length = subdevice_config.inputsBitLength() },
             .outputs = process_image[last_output_byte_idx .. last_output_byte_idx + outputs_byte_size],
@@ -50,7 +50,7 @@ pub fn initSubdevicesFromENI(eni: ENI, subdevices: []SubDevice, process_image: [
         };
         last_input_byte_idx += inputs_byte_size;
         last_output_byte_idx += outputs_byte_size;
-        subdevice.* = SubDevice.init(subdevice_config, @intCast(i), pi);
+        subdevice.* = Subdevice.init(subdevice_config, @intCast(i), pi);
     }
     assert(last_input_byte_idx == process_image_stats.input_bytes);
     assert(last_output_byte_idx == eni.processImageSize());

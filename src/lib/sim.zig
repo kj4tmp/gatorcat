@@ -23,7 +23,7 @@ pub const Simulator = struct {
     /// Appended by tick().
     out_frames: *std.ArrayList(Frame),
     /// simulated subdevices
-    subdevices: []SubDevice,
+    subdevices: []Subdevice,
 
     const Frame = std.BoundedArray(u8, telegram.max_frame_length);
 
@@ -49,9 +49,9 @@ pub const Simulator = struct {
         out_frames.* = std.ArrayList(Frame).fromOwnedSlice(std.testing.failing_allocator, out_frames_slice);
         out_frames.shrinkRetainingCapacity(0);
 
-        const subdevices = try arena.allocator().alloc(SubDevice, eni.subdevices.len);
+        const subdevices = try arena.allocator().alloc(Subdevice, eni.subdevices.len);
         for (subdevices, eni.subdevices) |*subdevice, config| {
-            subdevice.* = SubDevice.init(config);
+            subdevice.* = Subdevice.init(config);
         }
 
         return Simulator{
@@ -106,14 +106,14 @@ pub const Simulator = struct {
     }
 };
 
-pub const SubDevice = struct {
-    config: ENI.SubDeviceConfiguration,
-    pub fn init(config: ENI.SubDeviceConfiguration) SubDevice {
-        return SubDevice{
+pub const Subdevice = struct {
+    config: ENI.SubdeviceConfiguration,
+    pub fn init(config: ENI.SubdeviceConfiguration) Subdevice {
+        return Subdevice{
             .config = config,
         };
     }
-    pub fn processFrame(self: *SubDevice, frame: *Simulator.Frame) void {
+    pub fn processFrame(self: *Subdevice, frame: *Simulator.Frame) void {
         _ = self;
         var ethernet_frame = telegram.EthernetFrame.deserialize(frame.slice()) catch return;
 

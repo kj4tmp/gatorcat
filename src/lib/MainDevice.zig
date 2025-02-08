@@ -9,7 +9,7 @@ const nic = @import("nic.zig");
 const pdi = @import("pdi.zig");
 const Port = @import("Port.zig");
 const sii = @import("sii.zig");
-const SubDevice = @import("SubDevice.zig");
+const Subdevice = @import("Subdevice.zig");
 const telegram = @import("telegram.zig");
 const wire = @import("wire.zig");
 
@@ -17,7 +17,7 @@ const MainDevice = @This();
 
 port: *Port,
 settings: Settings,
-subdevices: []SubDevice,
+subdevices: []Subdevice,
 process_image: []u8,
 frames: []telegram.EtherCATFrame,
 transactions: std.BoundedArray(u8, max_frames_in_flight),
@@ -44,7 +44,7 @@ pub fn init(
     assert(frameCount(eni.processImageSize()) <= frames.len);
     @memset(frames, telegram.EtherCATFrame.empty);
 
-    const subdevices = try allocator.alloc(SubDevice, eni.subdevices.len);
+    const subdevices = try allocator.alloc(Subdevice, eni.subdevices.len);
     errdefer allocator.free(subdevices);
     const initialized_subdevices = gcat.initSubdevicesFromENI(eni, subdevices, process_image) catch |err| switch (err) {
         error.NotEnoughSubdevices => unreachable,
@@ -72,7 +72,7 @@ pub fn deinit(self: *MainDevice, allocator: std.mem.Allocator) void {
 pub fn estimateAllocSize(eni: ENI) usize {
     return @sizeOf(u8) * eni.processImageSize() +
         @sizeOf(telegram.EtherCATFrame) * frameCount(eni.processImageSize()) +
-        @sizeOf(SubDevice) * eni.subdevices.len;
+        @sizeOf(Subdevice) * eni.subdevices.len;
 }
 
 /// Initialize the ethercat bus.
@@ -232,7 +232,7 @@ pub fn busInit(self: *MainDevice, change_timeout_us: u32) !void {
     std.log.info("detected {} subdevices", .{res.wkc});
     if (res.wkc != self.subdevices.len) {
         std.log.warn("Found {} subdevices, expected {}.", .{ res.wkc, self.subdevices.len });
-        return error.WrongNumberOfSubDevices;
+        return error.WrongNumberOfSubdevices;
     }
     try self.broadcastStateChange(.INIT, change_timeout_us);
 }
@@ -243,7 +243,7 @@ pub fn busPreop(self: *MainDevice, change_timeout_us: u32) !void {
     for (self.subdevices) |*subdevice| {
         try assignStationAddress(
             self.port,
-            SubDevice.stationAddressFromRingPos(subdevice.runtime_info.ring_position),
+            Subdevice.stationAddressFromRingPos(subdevice.runtime_info.ring_position),
             subdevice.runtime_info.ring_position,
             self.settings.recv_timeout_us,
         );
@@ -294,7 +294,7 @@ pub fn busSafeop(self: *MainDevice, change_timeout_us: u32) !void {
         for (self.subdevices) |subdevice| {
             const status = try subdevice.getALStatus(self.port, self.settings.recv_timeout_us);
             if (status.state != .SAFEOP) {
-                std.log.err("station address: 0x{x} failed state transition, status: {}", .{ SubDevice.stationAddressFromRingPos(subdevice.runtime_info.ring_position), status });
+                std.log.err("station address: 0x{x} failed state transition, status: {}", .{ Subdevice.stationAddressFromRingPos(subdevice.runtime_info.ring_position), status });
             }
         }
         return error.StateChangeTimeout;
@@ -687,7 +687,7 @@ pub fn expectedProcessDataWkc(self: *const MainDevice) u16 {
 
 /// Assign configured station address.
 pub fn assignStationAddress(port: *Port, station_address: u16, ring_position: u16, recv_timeout_us: u32) !void {
-    const autoinc_address = SubDevice.autoincAddressFromRingPos(ring_position);
+    const autoinc_address = Subdevice.autoincAddressFromRingPos(ring_position);
     try port.apwrPackWkc(
         esc.ConfiguredStationAddressRegister{
             .configured_station_address = station_address,

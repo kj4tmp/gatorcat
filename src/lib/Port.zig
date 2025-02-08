@@ -647,7 +647,7 @@ pub fn lrd(
 }
 
 /// Logical memory write.
-/// SubDevices write data to their memory area if the address received matches one of
+/// Subdevices write data to their memory area if the address received matches one of
 /// the FMMU areas configured for writing.
 pub fn lwr(
     self: *Port,
@@ -666,7 +666,7 @@ pub fn lwr(
 
 /// Logical memory read write.
 /// A subdevice writes data it has read to the EtherCAT datagram if the address received
-/// matches one of the FMMU areas configured for reading. SubDevices write data to their memory area
+/// matches one of the FMMU areas configured for reading. Subdevices write data to their memory area
 /// if the address received matches one of the FMMU areas configured for writing.
 pub fn lrw(
     self: *Port,

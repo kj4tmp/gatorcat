@@ -47,7 +47,7 @@ pub fn read_eeprom(allocator: std.mem.Allocator, args: Args) !void {
     try scanner.assignStationAddresses(num_subdevices);
     try writer.print("Successfully assigned station addresses.\n", .{});
 
-    const station_address = gcat.SubDevice.stationAddressFromRingPos(args.ring_position);
+    const station_address = gcat.Subdevice.stationAddressFromRingPos(args.ring_position);
     try writer.print("Reading EEPROM of ring position: {}, station address: {}\n", .{ args.ring_position, station_address });
 
     const eeprom_info = try gcat.sii.readSubdeviceInfo(

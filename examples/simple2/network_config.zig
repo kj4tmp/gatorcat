@@ -7,7 +7,7 @@ pub const eni = gcat.ENI{
     },
 };
 
-const beckhoff_EK1100 = gcat.ENI.SubDeviceConfiguration{
+const beckhoff_EK1100 = gcat.ENI.SubdeviceConfiguration{
     .identity = .{
         .vendor_id = 0x2,
         .product_code = 0x44c2c52,
@@ -15,7 +15,7 @@ const beckhoff_EK1100 = gcat.ENI.SubDeviceConfiguration{
     },
 };
 
-const beckhoff_EL7031_0030 = gcat.ENI.SubDeviceConfiguration{
+const beckhoff_EL7031_0030 = gcat.ENI.SubdeviceConfiguration{
     .identity = .{
         .vendor_id = 0x2,
         .product_code = 0x1b773052,

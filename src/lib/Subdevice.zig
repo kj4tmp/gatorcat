@@ -15,10 +15,10 @@ const telegram = @import("telegram.zig");
 const wire = @import("wire.zig");
 
 runtime_info: RuntimeInfo,
-config: ENI.SubDeviceConfiguration,
+config: ENI.SubdeviceConfiguration,
 
-pub fn init(config: ENI.SubDeviceConfiguration, ring_position: u16, process_image: ProcessImage) SubDevice {
-    return SubDevice{
+pub fn init(config: ENI.SubdeviceConfiguration, ring_position: u16, process_image: ProcessImage) Subdevice {
+    return Subdevice{
         .config = config,
         .runtime_info = RuntimeInfo{
             .ring_position = ring_position,
@@ -53,10 +53,10 @@ pub const RuntimeInfo = struct {
     };
 };
 
-const SubDevice = @This();
+const Subdevice = @This();
 
 pub fn getALStatus(
-    self: *const SubDevice,
+    self: *const Subdevice,
     port: *Port,
     recv_timeout_us: u32,
 ) !esc.ALStatusRegister {
@@ -71,7 +71,7 @@ pub fn getALStatus(
 }
 
 pub fn setALState(
-    self: *const SubDevice,
+    self: *const Subdevice,
     port: *Port,
     state: esc.ALStateControl,
     change_timeout_us: u32,
@@ -157,7 +157,7 @@ pub fn setALState(
 ///
 /// Ref: EtherCAT Device Protocol Poster
 pub fn transitionIP(
-    self: *SubDevice,
+    self: *Subdevice,
     port: *Port,
     recv_timeout_us: u32,
     eeprom_timeout_us: u32,
@@ -166,7 +166,7 @@ pub fn transitionIP(
     // check subdevice identity
     const info = try sii.readSIIFP_ps(
         port,
-        sii.SubDeviceInfoCompact,
+        sii.SubdeviceInfoCompact,
         station_address,
         @intFromEnum(sii.ParameterMap.PDI_control),
         recv_timeout_us,
@@ -188,7 +188,7 @@ pub fn transitionIP(
                 self.config.identity.revision_number,
             },
         );
-        return error.UnexpectedSubDevice;
+        return error.UnexpectedSubdevice;
     }
 
     const general_catagory = try sii.readGeneralCatagory(
@@ -340,7 +340,7 @@ pub fn transitionIP(
 ///
 /// Ref: EtherCAT Device Protocol Poster
 pub fn transitionPS(
-    self: *SubDevice,
+    self: *Subdevice,
     port: *Port,
     recv_timeout_us: u32,
     eeprom_timeout_us: u32,
@@ -465,7 +465,7 @@ pub fn transitionPS(
 }
 
 pub fn transitionSO(
-    self: *SubDevice,
+    self: *Subdevice,
     port: *Port,
     recv_timeout_us: u32,
 ) !void {
@@ -473,9 +473,9 @@ pub fn transitionSO(
 }
 
 pub fn doStartupParameters(
-    self: *SubDevice,
+    self: *Subdevice,
     port: *Port,
-    transition: ENI.SubDeviceConfiguration.StartupParameter.Transition,
+    transition: ENI.SubdeviceConfiguration.StartupParameter.Transition,
     recv_timeout_us: u32,
 ) !void {
     for (self.config.startup_parameters) |parameter| {
@@ -497,7 +497,7 @@ pub fn doStartupParameters(
 }
 
 pub fn sdoWrite(
-    self: *SubDevice,
+    self: *Subdevice,
     port: *Port,
     buf: []const u8,
     index: u16,
@@ -525,7 +525,7 @@ pub fn sdoWrite(
 }
 
 pub fn sdoRead(
-    self: *SubDevice,
+    self: *Subdevice,
     port: *Port,
     out: []u8,
     index: u16,
@@ -580,21 +580,21 @@ pub fn stationAddressFromRingPos(position: u16) u16 {
     return 0x1000 +% position;
 }
 
-pub fn getInputProcessData(self: *const SubDevice) []u8 {
+pub fn getInputProcessData(self: *const Subdevice) []u8 {
     return self.runtime_info.pi.inputs;
 }
 
-pub fn getOutputProcessData(self: *const SubDevice) []u8 {
+pub fn getOutputProcessData(self: *const Subdevice) []u8 {
     return self.runtime_info.pi.outputs;
 }
 
 /// pack should include padding to align to bytes
-pub fn packFromInputProcessData(self: *const SubDevice, comptime T: type) T {
+pub fn packFromInputProcessData(self: *const Subdevice, comptime T: type) T {
     return wire.packFromECatSlice(T, self.getInputProcessData());
 }
 
 /// pack should include padding to align to bytes
-pub fn packToOutputProcessData(self: *const SubDevice, pack: anytype) void {
+pub fn packToOutputProcessData(self: *const Subdevice, pack: anytype) void {
     @memcpy(self.getOutputProcessData(), &wire.eCatFromPack(pack));
 }
 

@@ -15,12 +15,12 @@ const sii = @import("sii.zig");
 const ENI = @This();
 
 /// Subdevices in the order they appear in the ethercat ring (index 0 is first subdevice).
-subdevices: []const SubDeviceConfiguration,
+subdevices: []const SubdeviceConfiguration,
 
-pub const SubDeviceConfiguration = struct {
+pub const SubdeviceConfiguration = struct {
     /// ex. "EL7031-0030"
     name: []const u8 = &.{},
-    identity: sii.SubDeviceIdentity,
+    identity: sii.SubdeviceIdentity,
     /// SDO startup parameters
     startup_parameters: []const StartupParameter = &.{},
     /// Autoconfigure strategy
@@ -47,7 +47,7 @@ pub const SubDeviceConfiguration = struct {
         };
     };
 
-    pub fn inputsBitLength(self: SubDeviceConfiguration) u32 {
+    pub fn inputsBitLength(self: SubdeviceConfiguration) u32 {
         var res: u32 = 0;
         for (self.inputs) |input| {
             for (input.entries) |entry| {
@@ -57,7 +57,7 @@ pub const SubDeviceConfiguration = struct {
         return res;
     }
 
-    pub fn outputsBitLength(self: SubDeviceConfiguration) u32 {
+    pub fn outputsBitLength(self: SubdeviceConfiguration) u32 {
         var res: u32 = 0;
         for (self.outputs) |output| {
             for (output.entries) |entry| {

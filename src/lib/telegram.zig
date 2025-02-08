@@ -56,12 +56,12 @@ pub const Command = enum(u8) {
     /// matches one of the FMMU areas configured for reading.
     LRD,
     /// Logical memory write.
-    /// SubDevices write data to their memory area if the address received matches one of
+    /// Subdevices write data to their memory area if the address received matches one of
     /// the FMMU areas configured for writing.
     LWR,
     /// Logical memory read write.
     /// A subdevice writes data it has read to the EtherCAT datagram if the address received
-    /// matches one of the FMMU areas configured for reading. SubDevices write data to their memory area
+    /// matches one of the FMMU areas configured for reading. Subdevices write data to their memory area
     /// if the address received matches one of the FMMU areas configured for writing.
     LRW,
     /// Auto increment physical read multiple write.

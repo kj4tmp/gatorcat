@@ -35,7 +35,7 @@ pub fn scan(allocator: std.mem.Allocator, args: Args) !void {
 
     const res: gcat.ENI = .{ .subdevices = &.{} };
 
-    const subdevice_configs = std.ArrayList(gcat.ENI.SubDeviceConfiguration).init(allocator);
+    const subdevice_configs = std.ArrayList(gcat.ENI.SubdeviceConfiguration).init(allocator);
     defer subdevice_configs.deinit();
 
     var scanner = gcat.Scanner.init(port, .{ .eeprom_timeout_us = args.eeprom_timeout_us, .mbx_timeout_us = args.mbx_timeout_us, .recv_timeout_us = args.recv_timeout_us });
@@ -89,7 +89,7 @@ pub fn scan2(args: Args) !void {
             port,
             args.recv_timeout_us,
             args.eeprom_timeout_us,
-            gcat.SubDevice.stationAddressFromRingPos(@intCast(position)),
+            gcat.Subdevice.stationAddressFromRingPos(@intCast(position)),
         );
         var subdevice = try scanner.subdevicePREOP(args.PREOP_timeout_us, position);
         try printSubdeviceCoePDOs(writer, port, args.recv_timeout_us, args.mbx_timeout_us, &subdevice);
@@ -101,7 +101,7 @@ pub fn scan2(args: Args) !void {
                 port,
                 args.recv_timeout_us,
                 args.eeprom_timeout_us,
-                gcat.SubDevice.stationAddressFromRingPos(@intCast(i)),
+                gcat.Subdevice.stationAddressFromRingPos(@intCast(i)),
             );
             var subdevice = try scanner.subdevicePREOP(args.PREOP_timeout_us, @intCast(i));
             try printSubdeviceCoePDOs(writer, port, args.recv_timeout_us, args.mbx_timeout_us, &subdevice);
@@ -122,8 +122,8 @@ fn printBusSummary(
     try writer.print("---------------------------------------------------------------------------------\n", .{});
     for (0..num_subdevices) |i| {
         const ring_position: u16 = @intCast(i);
-        const autoinc_address: u16 = gcat.SubDevice.autoincAddressFromRingPos(ring_position);
-        const station_address: u16 = gcat.SubDevice.stationAddressFromRingPos(ring_position);
+        const autoinc_address: u16 = gcat.Subdevice.autoincAddressFromRingPos(ring_position);
+        const station_address: u16 = gcat.Subdevice.stationAddressFromRingPos(ring_position);
 
         const info = try gcat.sii.readSubdeviceInfoCompact(
             port,
@@ -167,8 +167,8 @@ fn printSubdeviceDetails(
     eeprom_timeout_us: u32,
     ring_position: u16,
 ) !void {
-    const autoinc_address: u16 = gcat.SubDevice.autoincAddressFromRingPos(ring_position);
-    const station_address: u16 = gcat.SubDevice.stationAddressFromRingPos(ring_position);
+    const autoinc_address: u16 = gcat.Subdevice.autoincAddressFromRingPos(ring_position);
+    const station_address: u16 = gcat.Subdevice.stationAddressFromRingPos(ring_position);
 
     const info = try gcat.sii.readSubdeviceInfoCompact(
         port,
@@ -445,11 +445,11 @@ fn printSubdeviceCoePDOs(
     port: *gcat.Port,
     recv_timeout_us: u32,
     mbx_timeout_us: u32,
-    subdevice: *gcat.SubDevice,
+    subdevice: *gcat.Subdevice,
 ) !void {
     const coe_info = &(subdevice.runtime_info.coe orelse return);
     try writer.print("COE PDO Assignment:\n", .{});
-    const station_address = gcat.SubDevice.stationAddressFromRingPos(subdevice.runtime_info.ring_position);
+    const station_address = gcat.Subdevice.stationAddressFromRingPos(subdevice.runtime_info.ring_position);
     const cnt = &coe_info.cnt;
     const mailbox_config = coe_info.config;
 
@@ -535,7 +535,7 @@ fn printSubdeviceCoePDOs(
 
     // const mapping = try gcat.mailbox.coe.readPDOMapping(
     //     port,
-    //     gcat.SubDevice.stationAddressFromRingPos(subdevice.runtime_info.ring_position),
+    //     gcat.Subdevice.stationAddressFromRingPos(subdevice.runtime_info.ring_position),
     //     recv_timeout_us,
     //     mbx_timeout_us,
     //     &subdevice.runtime_info.coe.?.cnt,

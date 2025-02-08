@@ -68,7 +68,7 @@ pub const PortDescriptor = enum(u2) {
     MII_RMII,
 };
 
-/// SubDevice Information (DL Info)
+/// Subdevice Information (DL Info)
 ///
 /// The DL information registers contain type, version, and supported resources of the subdevice controller (ESC).
 ///
@@ -501,7 +501,7 @@ pub const SIIAccessOwner = enum(u1) {
     PDI = 1,
 };
 
-/// SubDevice Information Interface (SII) Access Register
+/// Subdevice Information Interface (SII) Access Register
 ///
 /// Ref: IEC 61158-4-12:2019 6.4.2
 pub const SIIAccessRegister = packed struct {

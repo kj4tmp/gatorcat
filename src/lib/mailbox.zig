@@ -325,7 +325,7 @@ pub const Header = packed struct(u48) {
     /// counter for the mailbox services
     /// zero is reserved. 1 is start value. next value after 7 is 1.
     ///
-    /// SubDevice shall increment the counter for each new mailbox service. The maindevice
+    /// Subdevice shall increment the counter for each new mailbox service. The maindevice
     /// shall check this for detection of lost mailbox services. The maindevice shall
     /// increment the counter value before retrying and the subdevice shall check for this
     /// for detection of repeat service. The subdevice shall not check the sequence of the

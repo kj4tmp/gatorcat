@@ -113,7 +113,7 @@ const Cyclic = struct {
     };
 };
 
-const SubDevice = struct {
+const Subdevice = struct {
     info: Info,
     process_data: ?ProcessData,
     mailbox: ?Mailbox,
@@ -369,7 +369,7 @@ const MainDevice = struct {
 /// EtherCAT Network Information
 pub const ENI = struct {
     main_device: MainDevice,
-    subdevices: []SubDevice,
+    subdevices: []Subdevice,
     cyclics: []Cyclic,
     process_image: ?ProcessImage,
 };

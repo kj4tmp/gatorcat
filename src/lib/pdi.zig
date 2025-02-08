@@ -8,7 +8,7 @@ const std = @import("std");
 const assert = std.debug.assert;
 
 const ENI = @import("ENI.zig");
-const SubDevice = @import("SubDevice.zig");
+const Subdevice = @import("Subdevice.zig");
 
 pub const Direction = enum {
     /// subdevice writes data to image
@@ -23,11 +23,11 @@ pub const LogicalMemoryArea = struct {
 };
 
 /// get the size of the process image in bytes
-pub fn processImageSize(subdevices: []const SubDevice) u32 {
+pub fn processImageSize(subdevices: []const Subdevice) u32 {
     return processImageInputsSize(subdevices) + processImageOutputsSize(subdevices);
 }
 
-pub fn processImageInputsSize(subdevices: []const SubDevice) u32 {
+pub fn processImageInputsSize(subdevices: []const Subdevice) u32 {
     if (subdevices.len == 0) return 0;
 
     // each subdevices will be given a byte aligned area for inputs
@@ -38,7 +38,7 @@ pub fn processImageInputsSize(subdevices: []const SubDevice) u32 {
     }
     return bytes_used;
 }
-pub fn processImageOutputsSize(subdevices: []const SubDevice) u32 {
+pub fn processImageOutputsSize(subdevices: []const Subdevice) u32 {
     if (subdevices.len == 0) return 0;
 
     // each subdevices will be given a byte aligned area for inputs
@@ -50,7 +50,7 @@ pub fn processImageOutputsSize(subdevices: []const SubDevice) u32 {
     return bytes_used;
 }
 
-pub fn processImageOutputsLogicalStartAddr(subdevices: []const SubDevice) u32 {
+pub fn processImageOutputsLogicalStartAddr(subdevices: []const Subdevice) u32 {
     return 0 + processImageInputsSize(subdevices);
 }
 

@@ -421,8 +421,110 @@ pub fn readSubdeviceConfigurationLeaky(
         self.settings.recv_timeout_us,
         self.settings.eeprom_timeout_us,
     );
-
     try subdevice.setALState(self.port, .PREOP, state_change_timeout_us, self.settings.recv_timeout_us);
+
+    // read PDOs from CoE, but only if CoE is supported and PDOs were not obtained from SII.
+    if (subdevice.runtime_info.coe != null and inputs.items.len == 0 and outputs.items.len == 0) {
+
+        // 1. scan sync manager communication types => number of used sync managers
+        // 2. scan each sync manager channel => mapped PDOs
+        // 3. scan each PDO => profit
+
+        // TODO: shift these APIs into the subdevice? The cnt is subdevice specific...
+
+        const sm_comms = try gcat.mailbox.coe.readSMComms(
+            self.port,
+            station_address,
+            self.settings.recv_timeout_us,
+            self.settings.mbx_timeout_us,
+            &subdevice.runtime_info.coe.?.cnt,
+            subdevice.runtime_info.coe.?.config,
+        );
+
+        sm_comm_loop: for (sm_comms.slice(), 0..) |sm_comm_type, sm_idx| {
+            switch (sm_comm_type) {
+                .input, .output => {},
+                .mailbox_in, .mailbox_out, .unused => continue :sm_comm_loop,
+                _ => continue :sm_comm_loop,
+            }
+            const sm_pdo_assignment = try gcat.mailbox.coe.readSMChannel(
+                self.port,
+                station_address,
+                self.settings.recv_timeout_us,
+                self.settings.mbx_timeout_us,
+                &subdevice.runtime_info.coe.?.cnt,
+                subdevice.runtime_info.coe.?.config,
+                @intCast(sm_idx),
+            );
+            for (sm_pdo_assignment.slice()) |pdo_index| {
+                const pdo_mapping = try gcat.mailbox.coe.readPDOMapping(
+                    self.port,
+                    station_address,
+                    self.settings.recv_timeout_us,
+                    self.settings.mbx_timeout_us,
+                    &subdevice.runtime_info.coe.?.cnt,
+                    subdevice.runtime_info.coe.?.config,
+                    pdo_index,
+                );
+                const object_description = try coe.readObjectDescription(
+                    self.port,
+                    station_address,
+                    self.settings.recv_timeout_us,
+                    self.settings.mbx_timeout_us,
+                    &subdevice.runtime_info.coe.?.cnt,
+                    subdevice.runtime_info.coe.?.config,
+                    pdo_index,
+                );
+
+                var entries = std.ArrayList(ENI.SubdeviceConfiguration.PDO.Entry).init(allocator);
+                defer entries.deinit();
+
+                for (pdo_mapping.entries.slice()) |entry| {
+                    const entry_description = try coe.readEntryDescription(
+                        self.port,
+                        station_address,
+                        self.settings.recv_timeout_us,
+                        self.settings.mbx_timeout_us,
+                        &subdevice.runtime_info.coe.?.cnt,
+                        subdevice.runtime_info.coe.?.config,
+                        entry.index,
+                        entry.subindex,
+                        .description_only,
+                    );
+                    try entries.append(ENI.SubdeviceConfiguration.PDO.Entry{
+                        .description = try allocator.dupe(u8, entry_description.data.slice()),
+                        .index = entry_description.index,
+                        .subindex = entry_description.subindex,
+                        .bits = entry_description.bit_length,
+                        // TODO: there is probably a bettter function for this
+                        .type = std.meta.intToEnum(gcat.Exhaustive(coe.DataTypeArea), @as(u16, @intFromEnum(entry_description.data_type))) catch .UNKNOWN,
+                    });
+                }
+                switch (sm_comm_type) {
+                    .input => {
+                        try inputs.append(
+                            ENI.SubdeviceConfiguration.PDO{
+                                .name = try allocator.dupe(u8, object_description.name.slice()),
+                                .index = pdo_index,
+                                .entries = try entries.toOwnedSlice(),
+                            },
+                        );
+                    },
+                    .output => {
+                        try outputs.append(
+                            ENI.SubdeviceConfiguration.PDO{
+                                .name = try allocator.dupe(u8, object_description.name.slice()),
+                                .index = pdo_index,
+                                .entries = try entries.toOwnedSlice(),
+                            },
+                        );
+                    },
+                    .mailbox_in, .mailbox_out, .unused => unreachable,
+                    _ => unreachable,
+                }
+            }
+        }
+    }
 
     const res = ENI.SubdeviceConfiguration{
         .name = name,

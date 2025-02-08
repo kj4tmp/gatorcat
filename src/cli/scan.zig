@@ -40,6 +40,7 @@ pub fn scan(allocator: std.mem.Allocator, args: Args) !void {
 
     const num_subdevices = try scanner.countSubdevices();
     try scanner.busInit(args.INIT_timeout_us, num_subdevices);
+    try scanner.assignStationAddresses(num_subdevices);
 
     const eni = try scanner.readEni(allocator, args.PREOP_timeout_us);
     defer eni.deinit();

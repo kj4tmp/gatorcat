@@ -117,3 +117,16 @@ test Exhaustive {
     try std.testing.expectEqual(1, @intFromEnum(NewEnum.one));
     try std.testing.expectEqual(2, @intFromEnum(NewEnum.two));
 }
+
+/// Call deinit() on this to free it.
+pub fn Arena(comptime T: type) type {
+    return struct {
+        arena: *std.heap.ArenaAllocator,
+        value: T,
+        pub fn deinit(self: @This()) void {
+            const allocator = self.arena.child_allocator;
+            self.arena.deinit();
+            allocator.destroy(self.arena);
+        }
+    };
+}

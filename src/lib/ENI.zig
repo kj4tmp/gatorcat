@@ -33,12 +33,12 @@ pub const SubdeviceConfiguration = struct {
     // TODO: subdevice groups
     group: u8 = 0,
 
-    const PDO = struct {
+    pub const PDO = struct {
         index: u16,
         entries: []const Entry,
         name: []const u8 = &.{},
 
-        const Entry = struct {
+        pub const Entry = struct {
             index: u16 = 0,
             subindex: u8 = 0,
             type: root.Exhaustive(coe.DataTypeArea) = .UNKNOWN,

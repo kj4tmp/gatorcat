@@ -6,8 +6,11 @@ const ns_per_us = std.time.ns_per_us;
 
 const ENI = @import("ENI.zig");
 const esc = @import("esc.zig");
+const gcat = @import("root.zig");
+const coe = @import("mailbox/coe.zig");
 const MainDevice = @import("MainDevice.zig");
 const nic = @import("nic.zig");
+const pdi = @import("pdi.zig");
 const Port = @import("Port.zig");
 const sii = @import("sii.zig");
 const Subdevice = @import("Subdevice.zig");
@@ -229,45 +232,210 @@ pub fn subdevicePREOP(self: *Scanner, change_timeout_us: u32, ring_position: u16
     return subdevice;
 }
 
-// pub fn readSubdeviceConfiguration(self: *Scanner, allocator: std.mem.Allocator, ring_position: u16) !ENI.SubdeviceConfiguration {
-//     const station_address = Subdevice.stationAddressFromRingPos(ring_position);
-//     const info = try sii.readSIIFP_ps(
-//         self.port,
-//         sii.SubdeviceInfoCompact,
-//         station_address,
-//         @intFromEnum(sii.ParameterMap.PDI_control),
-//         self.settings.recv_timeout_us,
-//         self.settings.eeprom_timeout_us,
-//     );
+pub fn readEni(
+    self: *Scanner,
+    allocator: std.mem.Allocator,
+    state_change_timeout_us: u32,
+) !gcat.Arena(ENI) {
+    const arena = try allocator.create(std.heap.ArenaAllocator);
+    errdefer allocator.destroy(arena);
+    arena.* = .init(allocator);
+    errdefer arena.deinit();
+    return gcat.Arena(ENI){
+        .arena = arena,
+        .value = try self.readEniLeaky(
+            arena.allocator(),
+            state_change_timeout_us,
+        ),
+    };
+}
 
-//     var fake_process_data: [1]u8 = .{0};
-//     var subdevice = Subdevice.init(
-//         .{
-//             .identity = .{
-//                 .vendor_id = info.vendor_id,
-//                 .product_code = info.product_code,
-//                 .revision_number = info.revision_number,
-//             },
-//             .auto_config = .auto,
-//         },
-//         @intCast(ring_position),
-//         .{
-//             .inputs = fake_process_data[0..0],
-//             .inputs_area = .{ .start_addr = 0, .bit_length = 0 },
-//             .outputs = fake_process_data[0..0],
-//             .outputs_area = .{ .start_addr = 0, .bit_length = 0 },
-//         },
-//     );
-//     try subdevice.transitionIP(
-//         self.port,
-//         self.settings.recv_timeout_us,
-//         self.settings.eeprom_timeout_us,
-//     );
+/// This function leaks memory, it is the callers responsibilty to use an arena.
+pub fn readEniLeaky(
+    self: *Scanner,
+    allocator: std.mem.Allocator,
+    state_change_timeout_us: u32,
+) !ENI {
+    var subdevice_configs = std.ArrayList(gcat.ENI.SubdeviceConfiguration).init(allocator);
+    defer subdevice_configs.deinit();
+    const num_subdevices = try self.countSubdevices();
+    for (0..num_subdevices) |i| {
+        const config = try self.readSubdeviceConfigurationLeaky(allocator, @intCast(i), state_change_timeout_us);
+        try subdevice_configs.append(config);
+    }
+    return gcat.ENI{ .subdevices = try subdevice_configs.toOwnedSlice() };
+}
 
-//     try subdevice.setALState(self.port, .PREOP, change_timeout_us, self.settings.recv_timeout_us);
+pub fn readSubdeviceConfiguration(
+    self: *Scanner,
+    allocator: std.mem.Allocator,
+    ring_position: u16,
+    state_change_timeout_us: u32,
+) !gcat.Arena(ENI.SubdeviceConfiguration) {
+    const arena = try allocator.create(std.heap.ArenaAllocator);
+    errdefer allocator.destroy(arena);
+    arena.* = .init(allocator);
+    errdefer arena.deinit();
+    return gcat.Arena(ENI.SubdeviceConfiguration){
+        .arena = arena,
+        .value = try self.readSubdeviceConfigurationLeaky(
+            arena.allocator(),
+            ring_position,
+            state_change_timeout_us,
+        ),
+    };
+}
 
-//     return subdevice;
-// }
+/// This function leaks memory, it is the callers responsibilty to use an arena.
+pub fn readSubdeviceConfigurationLeaky(
+    self: *Scanner,
+    allocator: std.mem.Allocator,
+    ring_position: u16,
+    state_change_timeout_us: u32,
+) !ENI.SubdeviceConfiguration {
+    const station_address = Subdevice.stationAddressFromRingPos(ring_position);
+    const info = try sii.readSIIFP_ps(
+        self.port,
+        sii.SubdeviceInfoCompact,
+        station_address,
+        @intFromEnum(sii.ParameterMap.PDI_control),
+        self.settings.recv_timeout_us,
+        self.settings.eeprom_timeout_us,
+    );
+
+    var name: []const u8 = "";
+    if (try sii.readGeneralCatagory(
+        self.port,
+        station_address,
+        self.settings.recv_timeout_us,
+        self.settings.eeprom_timeout_us,
+    )) |general| {
+        const name_idx = general.order_idx;
+        if (try sii.readSIIString(
+            self.port,
+            station_address,
+            name_idx,
+            self.settings.recv_timeout_us,
+            self.settings.eeprom_timeout_us,
+        )) |sii_name| {
+            name = try allocator.dupe(u8, sii_name.slice());
+        }
+    }
+
+    var inputs = std.ArrayList(ENI.SubdeviceConfiguration.PDO).init(allocator);
+    defer inputs.deinit();
+    var outputs = std.ArrayList(ENI.SubdeviceConfiguration.PDO).init(allocator);
+    defer outputs.deinit();
+
+    const directions: []const pdi.Direction = &.{ .input, .output };
+    for (directions) |direction| {
+        const sii_pdos = try sii.readPDOs(
+            self.port,
+            station_address,
+            direction,
+            self.settings.recv_timeout_us,
+            self.settings.eeprom_timeout_us,
+        );
+
+        const pdos: []const sii.PDO = sii_pdos.slice();
+
+        for (pdos) |pdo| {
+            var pdo_name: ?[]const u8 = null;
+            if (try sii.readSIIString(
+                self.port,
+                station_address,
+                pdo.header.name_idx,
+                self.settings.recv_timeout_us,
+                self.settings.eeprom_timeout_us,
+            )) |pdo_name_array| {
+                pdo_name = try allocator.dupe(u8, pdo_name_array.slice());
+            }
+
+            var entries = std.ArrayList(ENI.SubdeviceConfiguration.PDO.Entry).init(allocator);
+            defer entries.deinit();
+
+            const sii_entries: []const sii.PDO.Entry = pdo.entries.slice();
+            for (sii_entries) |entry| {
+                var entry_name: ?[]const u8 = null;
+                if (try sii.readSIIString(
+                    self.port,
+                    station_address,
+                    entry.name_idx,
+                    self.settings.recv_timeout_us,
+                    self.settings.eeprom_timeout_us,
+                )) |entry_name_array| {
+                    entry_name = try allocator.dupe(u8, entry_name_array.slice());
+                }
+                try entries.append(ENI.SubdeviceConfiguration.PDO.Entry{
+                    .index = entry.index,
+                    .subindex = entry.subindex,
+                    .bits = entry.bit_length,
+                    .type = std.meta.intToEnum(gcat.Exhaustive(coe.DataTypeArea), entry.data_type) catch .UNKNOWN,
+                    .description = entry_name orelse "",
+                });
+            }
+
+            switch (direction) {
+                .input => {
+                    try inputs.append(
+                        ENI.SubdeviceConfiguration.PDO{
+                            .name = pdo_name orelse "",
+                            .index = pdo.header.index,
+                            .entries = try entries.toOwnedSlice(),
+                        },
+                    );
+                },
+                .output => {
+                    try outputs.append(
+                        ENI.SubdeviceConfiguration.PDO{
+                            .name = pdo_name orelse "",
+                            .index = pdo.header.index,
+                            .entries = try entries.toOwnedSlice(),
+                        },
+                    );
+                },
+            }
+        }
+    }
+
+    var fake_process_data: [1]u8 = .{0};
+    var subdevice = Subdevice.init(
+        .{
+            .identity = .{
+                .vendor_id = info.vendor_id,
+                .product_code = info.product_code,
+                .revision_number = info.revision_number,
+            },
+            .auto_config = .auto,
+        },
+        @intCast(ring_position),
+        .{
+            .inputs = fake_process_data[0..0],
+            .inputs_area = .{ .start_addr = 0, .bit_length = 0 },
+            .outputs = fake_process_data[0..0],
+            .outputs_area = .{ .start_addr = 0, .bit_length = 0 },
+        },
+    );
+    try subdevice.transitionIP(
+        self.port,
+        self.settings.recv_timeout_us,
+        self.settings.eeprom_timeout_us,
+    );
+
+    try subdevice.setALState(self.port, .PREOP, state_change_timeout_us, self.settings.recv_timeout_us);
+
+    const res = ENI.SubdeviceConfiguration{
+        .name = name,
+        .identity = .{
+            .vendor_id = info.vendor_id,
+            .product_code = info.product_code,
+            .revision_number = info.revision_number,
+        },
+        .inputs = try inputs.toOwnedSlice(),
+        .outputs = try outputs.toOwnedSlice(),
+    };
+    return res;
+}
 
 pub fn broadcastALStatusCheck(
     self: *const Scanner,

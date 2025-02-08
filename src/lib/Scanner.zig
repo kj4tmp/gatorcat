@@ -4,6 +4,7 @@ const std = @import("std");
 const Timer = std.time.Timer;
 const ns_per_us = std.time.ns_per_us;
 
+const ENI = @import("ENI.zig");
 const esc = @import("esc.zig");
 const MainDevice = @import("MainDevice.zig");
 const nic = @import("nic.zig");
@@ -190,6 +191,46 @@ pub fn busInit(self: *const Scanner, state_change_timeout_us: u32, subdevice_cou
 
 pub fn subdevicePREOP(self: *Scanner, change_timeout_us: u32, ring_position: u16) !SubDevice {
     const station_address = SubDevice.stationAddressFromRingPos(@intCast(ring_position));
+    const info = try sii.readSIIFP_ps(
+        self.port,
+        sii.SubDeviceInfoCompact,
+        station_address,
+        @intFromEnum(sii.ParameterMap.PDI_control),
+        self.settings.recv_timeout_us,
+        self.settings.eeprom_timeout_us,
+    );
+
+    var fake_process_data: [1]u8 = .{0};
+    var subdevice = SubDevice.init(
+        .{
+            .identity = .{
+                .vendor_id = info.vendor_id,
+                .product_code = info.product_code,
+                .revision_number = info.revision_number,
+            },
+            .auto_config = .auto,
+        },
+        @intCast(ring_position),
+        .{
+            .inputs = fake_process_data[0..0],
+            .inputs_area = .{ .start_addr = 0, .bit_length = 0 },
+            .outputs = fake_process_data[0..0],
+            .outputs_area = .{ .start_addr = 0, .bit_length = 0 },
+        },
+    );
+    try subdevice.transitionIP(
+        self.port,
+        self.settings.recv_timeout_us,
+        self.settings.eeprom_timeout_us,
+    );
+
+    try subdevice.setALState(self.port, .PREOP, change_timeout_us, self.settings.recv_timeout_us);
+
+    return subdevice;
+}
+
+pub fn readSubdeviceConfiguration(self: *Scanner, allocator: std.mem.Allocator, ring_position: u16) !ENI.SubDeviceConfiguration {
+    const station_address = SubDevice.stationAddressFromRingPos(ring_position);
     const info = try sii.readSIIFP_ps(
         self.port,
         sii.SubDeviceInfoCompact,

@@ -23,13 +23,13 @@ Documentation can be found in [doc](doc/README.md).
 - [x] CoE startup parameters
 - [x] CLI for scanning networks and getting information about subdevices
 - [x] multi-OS support (Linux and Windows)
+- [x] generate starting point for the network configuration (ENI) using the CLI (scan)
 
 ### Notably Missing Features
 
 - [ ] distributed clocks
 - [ ] Ethernet Over EtherCAT (EoE), also AoE, FoE, SoE, VoE
 - [ ] user configurable processing of CoE emergency messages
-- [ ] generate starting point for the network configuration (ENI) using the CLI
 - [ ] mapping the mailbox status into the process data
 - [ ] async / event loop frames
 - [ ] multi-threading friendly API
@@ -42,6 +42,12 @@ Documentation can be found in [doc](doc/README.md).
 - [ ] EEPROM write access
 - [ ] Embedded friendly API / timers
 - [ ] Network diagnosis in the CLI (CRC counters etc.)
+
+### In work
+
+- [ ] refactor the whole frame queue implementation
+- [ ] robust state machine for network topology change detection etc
+- [ ] no-config docker deployment with valkey integration
 
 ## Sponsors
 

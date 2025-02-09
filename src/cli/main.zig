@@ -22,6 +22,7 @@ const Flags = struct {
     command: union(enum) {
         // scan bus
         scan: scan.Args,
+        scan2: scan.Args,
         benchmark: benchmark.Args,
         read_eeprom: read_eeprom.Args,
         pub const descriptions = .{
@@ -46,6 +47,7 @@ pub fn main() !void {
 
     switch (parsed_args.command) {
         .scan => |scan_args| try scan.scan(gpa.allocator(), scan_args),
+        .scan2 => |scan_args| try scan.scan2(scan_args),
         .benchmark => |benchmark_args| try benchmark.benchmark(benchmark_args),
         .read_eeprom => |read_eeprom_args| try read_eeprom.read_eeprom(gpa.allocator(), read_eeprom_args),
     }

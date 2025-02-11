@@ -40,7 +40,7 @@ pub fn init(link_layer: nic.LinkLayer, settings: Settings) Port {
 /// claim transaction
 ///
 /// claim a transaction idx with the ethercat bus.
-pub fn claim_transaction(self: *Port) error{NoTransactionAvailable}!u8 {
+pub fn claimTransaction(self: *Port) error{NoTransactionAvailable}!u8 {
     self.recv_frames_status_mutex.lock();
     defer self.recv_frames_status_mutex.unlock();
 
@@ -53,7 +53,7 @@ pub fn claim_transaction(self: *Port) error{NoTransactionAvailable}!u8 {
 }
 
 /// Send a transaction with the ethercat bus.
-pub fn send_transaction(self: *Port, idx: u8, send_frame: *const telegram.EtherCATFrame, recv_frame_ptr: *telegram.EtherCATFrame) !void {
+pub fn sendTransaction(self: *Port, idx: u8, send_frame: *const telegram.EtherCATFrame, recv_frame_ptr: *telegram.EtherCATFrame) !void {
     assert(send_frame.datagrams().slice().len > 0); // no datagrams
     assert(send_frame.datagrams().slice().len <= 15); // too many datagrams
     assert(self.recv_frames_status[idx] == FrameStatus.in_use); // should claim transaction first
@@ -96,7 +96,7 @@ pub fn send_transaction(self: *Port, idx: u8, send_frame: *const telegram.EtherC
 /// Returns false if return frame was not found (call again to try to recieve it).
 ///
 /// Returns true when frame has been deserialized successfully.
-pub fn continue_transaction(self: *Port, idx: u8) !bool {
+pub fn continueTransaction(self: *Port, idx: u8) !bool {
     switch (self.recv_frames_status[idx]) {
         .available => unreachable,
         .in_use => unreachable,
@@ -104,7 +104,7 @@ pub fn continue_transaction(self: *Port, idx: u8) !bool {
         .in_use_received => return true,
         .in_use_currupted => return error.CurruptedFrame,
     }
-    self.recv_frame() catch |err| switch (err) {
+    self.recvFrame() catch |err| switch (err) {
         error.FrameNotFound => {},
         error.LinkError => {
             return error.LinkError;
@@ -120,7 +120,7 @@ pub fn continue_transaction(self: *Port, idx: u8) !bool {
     }
 }
 
-fn recv_frame(self: *Port) !void {
+fn recvFrame(self: *Port) !void {
     var buf: [telegram.max_frame_length]u8 = undefined;
     var frame_size: usize = 0;
 
@@ -167,7 +167,7 @@ fn recv_frame(self: *Port) !void {
 ///
 /// Caller is inteded to use the idx returned by a previous
 /// call to send_frame.
-pub fn release_transaction(self: *Port, idx: u8) void {
+pub fn releaseTransaction(self: *Port, idx: u8) void {
     {
         self.recv_frames_status_mutex.lock();
         defer self.recv_frames_status_mutex.unlock();
@@ -183,7 +183,7 @@ pub const SendRecvError = error{
     CurruptedFrame,
 };
 
-pub fn send_recv_frame(
+pub fn sendRecvFrame(
     self: *Port,
     send_frame: *telegram.EtherCATFrame,
     recv_frame_ptr: *telegram.EtherCATFrame,
@@ -197,19 +197,19 @@ pub fn send_recv_frame(
     };
     var idx: u8 = undefined;
     while (timer.read() < @as(u64, timeout_us) * std.time.ns_per_us) {
-        idx = self.claim_transaction() catch |err| switch (err) {
+        idx = self.claimTransaction() catch |err| switch (err) {
             error.NoTransactionAvailable => continue,
         };
         break;
     } else {
         return error.TransactionContention;
     }
-    defer self.release_transaction(idx);
+    defer self.releaseTransaction(idx);
 
-    try self.send_transaction(idx, send_frame, recv_frame_ptr);
+    try self.sendTransaction(idx, send_frame, recv_frame_ptr);
 
     while (timer.read() < @as(u64, timeout_us) * 1000) {
-        if (try self.continue_transaction(idx)) {
+        if (try self.continueTransaction(idx)) {
             return;
         }
     } else {
@@ -243,7 +243,7 @@ fn sendDatagram(
         error.Overflow => unreachable,
         error.NoSpaceLeft => unreachable,
     };
-    self.send_recv_frame(
+    self.sendRecvFrame(
         &frame,
         &frame,
         timeout_us,

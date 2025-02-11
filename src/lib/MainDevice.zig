@@ -445,18 +445,18 @@ pub fn sendCyclicFrames(self: *MainDevice) !void {
     var transactions = std.BoundedArray(u8, max_frames_in_flight){};
     errdefer {
         for (transactions.slice()) |transaction| {
-            self.port.release_transaction(transaction);
+            self.port.releaseTransaction(transaction);
         }
     }
     assert(used_frames <= max_frames_in_flight);
     assert(used_frames <= self.frames.len);
     for (self.frames[0..used_frames]) |*frame| {
-        const transaction_idx = try self.port.claim_transaction();
+        const transaction_idx = try self.port.claimTransaction();
 
         transactions.append(transaction_idx) catch |err| switch (err) {
             error.Overflow => unreachable,
         };
-        try self.port.send_transaction(transaction_idx, frame, frame);
+        try self.port.sendTransaction(transaction_idx, frame, frame);
     }
     self.transactions = transactions;
 
@@ -474,7 +474,7 @@ pub fn recvCyclicFrames(self: *MainDevice) SendRecvCycleFramesDiagError!SendRecv
     defer assert(self.transactions.len == 0);
     errdefer {
         for (self.transactions.slice()) |transaction| {
-            self.port.release_transaction(transaction);
+            self.port.releaseTransaction(transaction);
         }
         self.transactions = .{};
     }
@@ -482,8 +482,8 @@ pub fn recvCyclicFrames(self: *MainDevice) SendRecvCycleFramesDiagError!SendRecv
     recv: for (0..(n_transactions * 2) + 1) |_| {
         if (self.transactions.len == 0) break :recv;
         const transaction = self.transactions.pop();
-        if (try self.port.continue_transaction(transaction)) {
-            self.port.release_transaction(transaction);
+        if (try self.port.continueTransaction(transaction)) {
+            self.port.releaseTransaction(transaction);
         } else {
             self.transactions.append(transaction) catch |err| switch (err) {
                 error.Overflow => unreachable,
@@ -544,8 +544,8 @@ pub fn continueAllTransactionsRecvCyclicFrames(self: *MainDevice) SendRecvCycleF
     recv: for (0..(n_transactions * 2) + 1) |_| {
         if (self.transactions.len == 0) break :recv;
         const transaction = self.transactions.pop();
-        if (try self.port.continue_transaction(transaction)) {
-            self.port.release_transaction(transaction);
+        if (try self.port.continueTransaction(transaction)) {
+            self.port.releaseTransaction(transaction);
         } else {
             self.transactions.append(transaction) catch |err| switch (err) {
                 error.Overflow => unreachable,

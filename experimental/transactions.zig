@@ -10,7 +10,7 @@ const assert = std.debug.assert;
 // The network adapter ("LinkLayer") is provided as a VTable with `send()` and `recv()` methods. Critically, two tasks must not attempt to
 // `send` at the same time. However, `send` and `recv` may happen simultaneously.
 // The performance cost of a VTable is accepted since the maximum number of VTable traversals is fixed and low, and we would like
-// to provide an interface that can be later be easily extended by users on embedded systems.
+// to provide an interface that can later be easily extended by users on embedded systems.
 
 // The VTable for the LinkLayer Looks like this:
 

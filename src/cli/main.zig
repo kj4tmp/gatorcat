@@ -26,7 +26,7 @@ const Flags = struct {
         benchmark: benchmark.Args,
         read_eeprom: read_eeprom.Args,
         pub const descriptions = .{
-            .scan = "Scan the EtherCAT bus and print information about the subdevices.",
+            .scan = "Scan the EtherCAT bus and print an EtherCAT Network Information (ENI) ZON.",
             .benchmark = "Benchmark the performance of the EtherCAT bus.",
             .read_eeprom = "Read the eeprom of a subdevice.",
         };

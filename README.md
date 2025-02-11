@@ -45,6 +45,9 @@ Documentation can be found in [doc](doc/README.md).
 
 ### In work
 
+- [ ] generate process image packed struct from ENI
+- [ ] generate recursive data structure (like zon.Value) from ENI so ENI can change at runtime
+- [ ] validate more than just bit counts per subdevice match the ENI
 - [ ] refactor the whole frame queue implementation
 - [ ] robust state machine for network topology change detection etc
 - [ ] no-config docker deployment with valkey integration

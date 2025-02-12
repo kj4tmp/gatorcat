@@ -30,9 +30,6 @@ pub const SubdeviceConfiguration = struct {
     /// Outputs w/r/t the maindevice, also called the RxPDO's
     outputs: []const PDO = &.{},
 
-    // TODO: subdevice groups
-    group: u8 = 0,
-
     pub const PDO = struct {
         index: u16,
         entries: []const Entry,
@@ -42,7 +39,7 @@ pub const SubdeviceConfiguration = struct {
             index: u16 = 0,
             subindex: u8 = 0,
             type: root.Exhaustive(coe.DataTypeArea) = .UNKNOWN,
-            bits: u16,
+            bits: u8,
             description: ?[]const u8 = null,
         };
     };

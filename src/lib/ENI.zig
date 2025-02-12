@@ -39,7 +39,7 @@ pub const SubdeviceConfiguration = struct {
             index: u16 = 0,
             subindex: u8 = 0,
             type: root.Exhaustive(coe.DataTypeArea) = .UNKNOWN,
-            bits: u8,
+            bits: u16,
             description: ?[]const u8 = null,
         };
     };

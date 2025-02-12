@@ -11,12 +11,14 @@ pub const Args = struct {
     INIT_timeout_us: u32 = 5_000_000,
     PREOP_timeout_us: u32 = 10_000_000,
     mbx_timeout_us: u32 = 50_000,
+    json: bool = false,
     pub const descriptions = .{
         .ifname = "Network interface to use for the bus scan.",
         .recv_timeout_us = "Frame receive timeout in microseconds.",
         .eeprom_timeout_us = "SII EEPROM timeout in microseconds.",
         .INIT_timeout_us = "state transition to INIT timeout in microseconds.",
         .ring_position = "Optionally specify only a single subdevice at this ring position to be scanned.",
+        .json = "Export the ENI as JSON instead of ZON.",
     };
 };
 
@@ -46,8 +48,14 @@ pub fn scan(allocator: std.mem.Allocator, args: Args) !void {
     defer eni.deinit();
 
     var std_out = std.io.getStdOut();
-    try std.zon.stringify.serialize(eni.value, .{ .emit_default_optional_fields = false }, std_out.writer());
-    try std_out.writer().writeByte('\n');
+
+    if (args.json) {
+        try std.json.stringify(eni.value, .{}, std_out.writer());
+        try std_out.writer().writeByte('\n');
+    } else {
+        try std.zon.stringify.serialize(eni.value, .{ .emit_default_optional_fields = false }, std_out.writer());
+        try std_out.writer().writeByte('\n');
+    }
 }
 
 pub fn scan2(args: Args) !void {

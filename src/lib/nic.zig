@@ -61,9 +61,15 @@ pub const LinuxRawSocket = struct {
     recv_mutex: std.Thread.Mutex = .{},
     socket: std.posix.socket_t,
 
+    pub const InitError = error{
+        /// The ifname argument provided is too long.
+        InterfaceNameTooLong,
+        /// Non-descriptive error. OS returned an error.
+        NicError,
+    } || std.posix.SocketError || std.posix.SetSockOptError || std.posix.IoCtl_SIOCGIFINDEX_Error || std.posix.BindError;
     pub fn init(
         ifname: [:0]const u8,
-    ) !LinuxRawSocket {
+    ) InitError!LinuxRawSocket {
         if (ifname.len > std.posix.IFNAMESIZE - 1) return error.InterfaceNameTooLong;
         assert(ifname.len <= std.posix.IFNAMESIZE - 1); // ifname too long
         const ETH_P_ETHERCAT = @intFromEnum(telegram.EtherType.ETHERCAT);
@@ -110,7 +116,7 @@ pub const LinuxRawSocket = struct {
         switch (rval) {
             .SUCCESS => {},
             else => {
-                return error.nicError;
+                return error.NicError;
             },
         }
         ifr.ifru.flags.BROADCAST = true;
@@ -119,7 +125,7 @@ pub const LinuxRawSocket = struct {
         switch (rval) {
             .SUCCESS => {},
             else => {
-                return error.nicError;
+                return error.NicError;
             },
         }
         const sockaddr_ll = std.posix.sockaddr.ll{

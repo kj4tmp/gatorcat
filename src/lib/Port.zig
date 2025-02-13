@@ -222,13 +222,19 @@ pub fn ping(self: *Port, timeout_us: u32) !void {
     try self.nop(1, timeout_us);
 }
 
-fn sendDatagram(
+pub const SendDatagramError = error{
+    RecvTimeout,
+    LinkError,
+    CurruptedFrame,
+    TransactionContention,
+};
+pub fn sendDatagram(
     self: *Port,
     command: telegram.Command,
     address: u32,
     data: []u8,
     timeout_us: u32,
-) !u16 {
+) SendDatagramError!u16 {
     assert(data.len <= telegram.Datagram.max_data_length);
 
     var datagrams: [1]telegram.Datagram = .{
@@ -263,7 +269,7 @@ fn sendDatagram(
 
 /// No operation.
 /// The subdevice ignores the command.
-pub fn nop(self: *Port, data_size: u16, timeout_us: u32) !void {
+pub fn nop(self: *Port, data_size: u16, timeout_us: u32) SendDatagramError!void {
     assert(data_size <= telegram.Datagram.max_data_length);
     assert(data_size > 0);
     var zeros = std.mem.zeroes([telegram.Datagram.max_data_length]u8);
@@ -286,7 +292,7 @@ pub fn aprd(
     address: telegram.PositionAddress,
     data: []u8,
     timeout_us: u32,
-) !u16 {
+) SendDatagramError!u16 {
     return sendDatagram(
         self,
         telegram.Command.APRD,
@@ -302,7 +308,7 @@ pub fn aprdPack(
     comptime packed_type: type,
     address: telegram.PositionAddress,
     timeout_us: u32,
-) !struct { ps: packed_type, wkc: u16 } {
+) SendDatagramError!struct { ps: packed_type, wkc: u16 } {
     var data = wire.zerosFromPack(packed_type);
     const wkc = try aprd(self, address, &data, timeout_us);
     return .{ .ps = wire.packFromECat(packed_type, data), .wkc = wkc };
@@ -316,7 +322,7 @@ pub fn apwr(
     address: telegram.PositionAddress,
     data: []u8,
     timeout_us: u32,
-) !u16 {
+) SendDatagramError!u16 {
     return sendDatagram(
         self,
         telegram.Command.APWR,
@@ -326,13 +332,14 @@ pub fn apwr(
     );
 }
 
+pub const SendDatagramWkcError = error{Wkc} || SendDatagramError;
 pub fn apwrPackWkc(
     self: *Port,
     packed_type: anytype,
     address: telegram.PositionAddress,
     timeout_us: u32,
     expected_wkc: u16,
-) !void {
+) SendDatagramWkcError!void {
     var data = wire.eCatFromPack(packed_type);
     const wkc = try apwr(self, address, &data, timeout_us);
     if (wkc != expected_wkc) return error.Wkc;
@@ -344,7 +351,7 @@ pub fn apwrPack(
     packed_type: anytype,
     address: telegram.PositionAddress,
     timeout_us: u32,
-) !u16 {
+) SendDatagramError!u16 {
     var data = wire.eCatFromPack(packed_type);
     const wkc = try apwr(self, address, &data, timeout_us);
     return wkc;
@@ -359,7 +366,7 @@ pub fn aprw(
     address: telegram.PositionAddress,
     data: []u8,
     timeout_us: u32,
-) !u16 {
+) SendDatagramError!u16 {
     return sendDatagram(
         self,
         telegram.Command.APRW,
@@ -375,7 +382,7 @@ pub fn aprwPack(
     packed_type: anytype,
     address: telegram.PositionAddress,
     timeout_us: u32,
-) !struct { ps: @TypeOf(packed_type), wkc: u16 } {
+) SendDatagramError!struct { ps: @TypeOf(packed_type), wkc: u16 } {
     var data = wire.eCatFromPack(packed_type);
     const wkc = try aprw(self, address, &data, timeout_us);
     return .{ .ps = wire.packFromECat(@TypeOf(packed_type), data), .wkc = wkc };
@@ -389,7 +396,7 @@ pub fn fprd(
     address: telegram.StationAddress,
     data: []u8,
     timeout_us: u32,
-) !u16 {
+) SendDatagramError!u16 {
     return sendDatagram(
         self,
         telegram.Command.FPRD,
@@ -405,7 +412,7 @@ pub fn fprdWkc(
     data: []u8,
     timeout_us: u32,
     expected_wkc: u16,
-) !void {
+) SendDatagramWkcError!void {
     const wkc = try fprd(self, address, data, timeout_us);
     if (wkc != expected_wkc) return error.Wkc;
 }
@@ -416,7 +423,7 @@ pub fn fprdPack(
     comptime packed_type: type,
     address: telegram.StationAddress,
     timeout_us: u32,
-) !struct { ps: packed_type, wkc: u16 } {
+) SendDatagramError!struct { ps: packed_type, wkc: u16 } {
     var data = wire.zerosFromPack(packed_type);
     const wkc = try fprd(self, address, &data, timeout_us);
     return .{ .ps = wire.packFromECat(packed_type, data), .wkc = wkc };
@@ -429,7 +436,7 @@ pub fn fprdPackWkc(
     address: telegram.StationAddress,
     timeout_us: u32,
     expected_wkc: u16,
-) !packed_type {
+) SendDatagramWkcError!packed_type {
     const res = try fprdPack(
         self,
         packed_type,
@@ -450,7 +457,7 @@ pub fn fpwr(
     address: telegram.StationAddress,
     data: []u8,
     timeout_us: u32,
-) !u16 {
+) SendDatagramError!u16 {
     return sendDatagram(
         self,
         telegram.Command.FPWR,
@@ -466,7 +473,7 @@ pub fn fpwrWkc(
     data: []u8,
     timeout_us: u32,
     expected_wkc: u16,
-) !void {
+) SendDatagramWkcError!void {
     const wkc = try fpwr(self, address, data, timeout_us);
     if (wkc != expected_wkc) return error.Wkc;
 }
@@ -477,7 +484,7 @@ pub fn fpwrPack(
     packed_type: anytype,
     address: telegram.StationAddress,
     timeout_us: u32,
-) !u16 {
+) SendDatagramError!u16 {
     var data = wire.eCatFromPack(packed_type);
     const wkc = try fpwr(self, address, &data, timeout_us);
     return wkc;
@@ -489,7 +496,7 @@ pub fn fpwrPackWkc(
     address: telegram.StationAddress,
     timeout_us: u32,
     expected_wkc: u16,
-) !void {
+) SendDatagramWkcError!void {
     const wkc = try fpwrPack(self, packed_type, address, timeout_us);
     if (wkc != expected_wkc) return error.Wkc;
 }
@@ -503,7 +510,7 @@ pub fn fprw(
     address: telegram.StationAddress,
     data: []u8,
     timeout_us: u32,
-) !u16 {
+) SendDatagramError!u16 {
     return sendDatagram(
         self,
         telegram.Command.FPRW,
@@ -519,7 +526,7 @@ pub fn fprwPack(
     packed_type: anytype,
     address: telegram.StationAddress,
     timeout_us: u32,
-) !struct { ps: @TypeOf(packed_type), wkc: u16 } {
+) SendDatagramError!struct { ps: @TypeOf(packed_type), wkc: u16 } {
     var data = wire.eCatFromPack(packed_type);
     const wkc = try fprw(self, address, &data, timeout_us);
     return .{ .ps = wire.packFromECat(@TypeOf(packed_type), data), .wkc = wkc };
@@ -534,7 +541,7 @@ pub fn brd(
     address: telegram.PositionAddress,
     data: []u8,
     timeout_us: u32,
-) !u16 {
+) SendDatagramError!u16 {
     return sendDatagram(
         self,
         telegram.Command.BRD,
@@ -550,7 +557,7 @@ pub fn brdPack(
     comptime packed_type: type,
     address: telegram.PositionAddress,
     timeout_us: u32,
-) !struct { ps: packed_type, wkc: u16 } {
+) SendDatagramError!struct { ps: packed_type, wkc: u16 } {
     var data = wire.zerosFromPack(packed_type);
     const wkc = try brd(self, address, &data, timeout_us);
     return .{ .ps = wire.packFromECat(packed_type, data), .wkc = wkc };
@@ -563,7 +570,7 @@ pub fn bwr(
     address: telegram.PositionAddress,
     data: []u8,
     timeout_us: u32,
-) !u16 {
+) SendDatagramError!u16 {
     return sendDatagram(
         self,
         telegram.Command.BWR,
@@ -579,7 +586,7 @@ pub fn bwrPackWkc(
     address: telegram.PositionAddress,
     timeout_us: u32,
     expected_wkc: u16,
-) !void {
+) SendDatagramWkcError!void {
     var data = wire.eCatFromPack(packed_type);
     const wkc = try bwr(self, address, &data, timeout_us);
     if (wkc != expected_wkc) return error.Wkc;
@@ -591,7 +598,7 @@ pub fn bwrPack(
     packed_type: anytype,
     address: telegram.PositionAddress,
     timeout_us: u32,
-) !u16 {
+) SendDatagramError!u16 {
     var data = wire.eCatFromPack(packed_type);
     const wkc = try bwr(self, address, &data, timeout_us);
     return wkc;
@@ -606,7 +613,7 @@ pub fn brw(
     address: telegram.PositionAddress,
     data: []u8,
     timeout_us: u32,
-) !u16 {
+) SendDatagramError!u16 {
     return sendDatagram(
         self,
         telegram.Command.BRW,
@@ -622,7 +629,7 @@ pub fn brwPack(
     packed_type: anytype,
     address: telegram.PositionAddress,
     timeout_us: u32,
-) !struct { ps: @TypeOf(packed_type), wkc: u16 } {
+) SendDatagramError!struct { ps: @TypeOf(packed_type), wkc: u16 } {
     var data = wire.eCatFromPack(packed_type);
     const wkc = try brw(self, address, &data, timeout_us);
     return .{ .ps = wire.packFromECat(@TypeOf(packed_type), data), .wkc = wkc };
@@ -636,7 +643,7 @@ pub fn lrd(
     address: telegram.LogicalAddress,
     data: []u8,
     timeout_us: u32,
-) !u16 {
+) SendDatagramError!u16 {
     return sendDatagram(
         self,
         telegram.Command.LRD,
@@ -654,7 +661,7 @@ pub fn lwr(
     address: telegram.LogicalAddress,
     data: []u8,
     timeout_us: u32,
-) !u16 {
+) SendDatagramError!u16 {
     return sendDatagram(
         self,
         telegram.Command.LWR,
@@ -673,7 +680,7 @@ pub fn lrw(
     address: telegram.LogicalAddress,
     data: []u8,
     timeout_us: u32,
-) !u16 {
+) SendDatagramError!u16 {
     return sendDatagram(
         self,
         telegram.Command.LRW,
@@ -691,7 +698,7 @@ pub fn armw(
     address: telegram.PositionAddress,
     data: []u8,
     timeout_us: u32,
-) !u16 {
+) SendDatagramError!u16 {
     return sendDatagram(
         self,
         telegram.Command.ARMW,
@@ -707,7 +714,7 @@ pub fn frmw(
     address: telegram.StationAddress,
     data: []u8,
     timeout_us: u32,
-) !u16 {
+) SendDatagramError!u16 {
     return sendDatagram(
         self,
         telegram.Command.FRMW,

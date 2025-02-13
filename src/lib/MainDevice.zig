@@ -686,7 +686,7 @@ pub fn expectedProcessDataWkc(self: *const MainDevice) u16 {
 }
 
 /// Assign configured station address.
-pub fn assignStationAddress(port: *Port, station_address: u16, ring_position: u16, recv_timeout_us: u32) !void {
+pub fn assignStationAddress(port: *Port, station_address: u16, ring_position: u16, recv_timeout_us: u32) Port.SendDatagramWkcError!void {
     const autoinc_address = Subdevice.autoincAddressFromRingPos(ring_position);
     try port.apwrPackWkc(
         esc.ConfiguredStationAddressRegister{

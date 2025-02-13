@@ -725,7 +725,7 @@ pub fn findCatagoryFP(
 
     const reader = stream.reader();
     for (0..1000) |_| {
-        const catagory_header = try wire.packFromECatReader(CatagoryHeader, reader.any());
+        const catagory_header = try wire.packFromECatReader(CatagoryHeader, reader);
 
         if (catagory_header.catagory_type == catagory) {
             // + 2 for catagory header, byte length = 2 * word length
@@ -744,6 +744,8 @@ pub fn findCatagoryFP(
     }
 }
 
+pub const readSII_ps_error = error{EndOfStream} || SIIStream.ReadError;
+
 /// read a packed struct from SII, using station addressing
 pub fn readSIIFP_ps(
     port: *Port,
@@ -752,7 +754,7 @@ pub fn readSIIFP_ps(
     eeprom_address: u16,
     recv_timeout_us: u32,
     eeprom_timeout_us: u32,
-) !T {
+) readSII_ps_error!T {
     var bytes: [@divExact(@bitSizeOf(T), 8)]u8 = undefined;
     var stream = SIIStream.init(
         port,

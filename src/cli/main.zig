@@ -9,9 +9,9 @@ const read_eeprom = @import("read_eeprom.zig");
 const run = @import("run.zig");
 const scan = @import("scan.zig");
 
-pub const std_options: std.Options = .{
-    .log_level = .warn,
-};
+// pub const std_options: std.Options = .{
+//     .log_level = .warn,
+// };
 
 // CLI options
 const Flags = struct {

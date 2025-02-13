@@ -481,7 +481,7 @@ pub fn recvCyclicFrames(self: *MainDevice) SendRecvCycleFramesDiagError!SendRecv
     const n_transactions = self.transactions.len;
     recv: for (0..(n_transactions * 2) + 1) |_| {
         if (self.transactions.len == 0) break :recv;
-        const transaction = self.transactions.pop();
+        const transaction = self.transactions.pop().?;
         if (try self.port.continueTransaction(transaction)) {
             self.port.releaseTransaction(transaction);
         } else {
@@ -543,7 +543,7 @@ pub fn continueAllTransactionsRecvCyclicFrames(self: *MainDevice) SendRecvCycleF
     const n_transactions = self.transactions.len;
     recv: for (0..(n_transactions * 2) + 1) |_| {
         if (self.transactions.len == 0) break :recv;
-        const transaction = self.transactions.pop();
+        const transaction = self.transactions.pop().?;
         if (try self.port.continueTransaction(transaction)) {
             self.port.releaseTransaction(transaction);
         } else {

@@ -80,7 +80,7 @@ pub const Simulator = struct {
         self.tick();
         // TODO: re-order frames randomly
         var out_stream = std.io.fixedBufferStream(out);
-        if (self.out_frames.popOrNull()) |frame| {
+        if (self.out_frames.pop()) |frame| {
             return out_stream.write(frame.slice()) catch |err| switch (err) {
                 error.NoSpaceLeft => return 0,
             };
@@ -96,7 +96,7 @@ pub const Simulator = struct {
     }
 
     pub fn tick(self: *Simulator) void {
-        while (self.in_frames.popOrNull()) |frame| {
+        while (self.in_frames.pop()) |frame| {
             var mut_frame = frame;
             for (self.subdevices) |*subdevice| {
                 subdevice.processFrame(&mut_frame);

@@ -1,5 +1,6 @@
 const std = @import("std");
 const assert = std.debug.assert;
+const builtin = @import("builtin");
 
 const telegram = @import("telegram.zig");
 
@@ -46,15 +47,23 @@ pub const LinkLayer = struct {
     }
 };
 
+/// Raw socket based link layer. Supports Linux and Windows.
+/// Windows is NOT recommended for real-time applications.
+pub const RawSocket = switch (builtin.os.tag) {
+    .linux => LinuxRawSocket,
+    .windows => WindowsRawSocket,
+    else => unreachable,
+};
+
 /// Raw socket implementation for LinkLayer
-pub const RawSocket = struct {
+pub const LinuxRawSocket = struct {
     send_mutex: std.Thread.Mutex = .{},
     recv_mutex: std.Thread.Mutex = .{},
     socket: std.posix.socket_t,
 
     pub fn init(
         ifname: [:0]const u8,
-    ) !RawSocket {
+    ) !LinuxRawSocket {
         if (ifname.len > std.posix.IFNAMESIZE - 1) return error.InterfaceNameTooLong;
         assert(ifname.len <= std.posix.IFNAMESIZE - 1); // ifname too long
         const ETH_P_ETHERCAT = @intFromEnum(telegram.EtherType.ETHERCAT);
@@ -123,30 +132,30 @@ pub const RawSocket = struct {
             .hatype = 0, //not used
         };
         try std.posix.bind(socket, @ptrCast(&sockaddr_ll), @sizeOf(@TypeOf(sockaddr_ll)));
-        return RawSocket{
+        return LinuxRawSocket{
             .socket = socket,
         };
     }
 
-    pub fn deinit(self: *RawSocket) void {
+    pub fn deinit(self: *LinuxRawSocket) void {
         std.posix.close(self.socket);
     }
 
     pub fn send(ctx: *anyopaque, bytes: []const u8) std.posix.SendError!void {
-        const self: *RawSocket = @ptrCast(@alignCast(ctx));
+        const self: *LinuxRawSocket = @ptrCast(@alignCast(ctx));
         self.send_mutex.lock();
         defer self.send_mutex.unlock();
         _ = try std.posix.send(self.socket, bytes, 0);
     }
 
     pub fn recv(ctx: *anyopaque, out: []u8) std.posix.RecvFromError!usize {
-        const self: *RawSocket = @ptrCast(@alignCast(ctx));
+        const self: *LinuxRawSocket = @ptrCast(@alignCast(ctx));
         self.recv_mutex.lock();
         defer self.recv_mutex.unlock();
         return try std.posix.recv(self.socket, out, std.posix.MSG.TRUNC);
     }
 
-    pub fn linkLayer(self: *RawSocket) LinkLayer {
+    pub fn linkLayer(self: *LinuxRawSocket) LinkLayer {
         return LinkLayer{
             .ptr = self,
             .vtable = &.{ .send = send, .recv = recv },

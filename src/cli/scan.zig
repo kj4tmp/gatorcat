@@ -23,11 +23,7 @@ pub const Args = struct {
 };
 
 pub fn scan(allocator: std.mem.Allocator, args: Args) !void {
-    var raw_socket = switch (builtin.target.os.tag) {
-        .linux => try gcat.nic.RawSocket.init(args.ifname),
-        .windows => try gcat.nic.WindowsRawSocket.init(args.ifname),
-        else => @compileError("unsupported target os"),
-    };
+    var raw_socket = try gcat.nic.RawSocket.init(args.ifname);
     defer raw_socket.deinit();
 
     var port2 = gcat.Port.init(raw_socket.linkLayer(), .{});
@@ -56,11 +52,7 @@ pub fn scan(allocator: std.mem.Allocator, args: Args) !void {
 }
 
 pub fn scan2(args: Args) !void {
-    var raw_socket = switch (builtin.target.os.tag) {
-        .linux => try gcat.nic.RawSocket.init(args.ifname),
-        .windows => try gcat.nic.WindowsRawSocket.init(args.ifname),
-        else => @compileError("unsupported target os"),
-    };
+    var raw_socket = try gcat.nic.RawSocket.init(args.ifname);
     defer raw_socket.deinit();
 
     var port2 = gcat.Port.init(raw_socket.linkLayer(), .{});

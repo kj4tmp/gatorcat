@@ -11,11 +11,7 @@ pub const std_options: std.Options = .{
 };
 
 pub fn main() !void {
-    var raw_socket = switch (builtin.target.os.tag) {
-        .linux => try gcat.nic.RawSocket.init("enx00e04c68191a"),
-        .windows => try gcat.nic.WindowsRawSocket.init("\\Device\\NPF_{538CF305-6539-480E-ACD9-BEE598E7AE8F}"),
-        else => @compileError("unsupported target os"),
-    };
+    var raw_socket = try gcat.nic.RawSocket.init("enx00e04c68191a");
     defer raw_socket.deinit();
     var port = gcat.Port.init(raw_socket.linkLayer(), .{});
     try port.ping(10000);

@@ -22,11 +22,7 @@ pub const Args = struct {
 };
 
 pub fn benchmark(args: Args) !void {
-    var raw_socket = switch (builtin.target.os.tag) {
-        .linux => try gcat.nic.RawSocket.init(args.ifname),
-        .windows => try gcat.nic.WindowsRawSocket.init(args.ifname),
-        else => @compileError("unsupported target os"),
-    };
+    var raw_socket = try gcat.nic.RawSocket.init(args.ifname);
     defer raw_socket.deinit();
 
     var port = gcat.Port.init(raw_socket.linkLayer(), .{});

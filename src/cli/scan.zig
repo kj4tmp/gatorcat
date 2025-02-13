@@ -35,9 +35,6 @@ pub fn scan(allocator: std.mem.Allocator, args: Args) !void {
 
     try port.ping(args.recv_timeout_us);
 
-    var subdevice_configs = std.ArrayList(gcat.ENI.SubdeviceConfiguration).init(allocator);
-    defer subdevice_configs.deinit();
-
     var scanner = gcat.Scanner.init(port, .{ .eeprom_timeout_us = args.eeprom_timeout_us, .mbx_timeout_us = args.mbx_timeout_us, .recv_timeout_us = args.recv_timeout_us });
 
     const num_subdevices = try scanner.countSubdevices();

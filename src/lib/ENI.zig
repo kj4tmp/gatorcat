@@ -9,7 +9,7 @@
 const std = @import("std");
 
 const coe = @import("mailbox.zig").coe;
-const root = @import("root.zig");
+const gcat = @import("root.zig");
 const sii = @import("sii.zig");
 
 const ENI = @This();
@@ -38,7 +38,7 @@ pub const SubdeviceConfiguration = struct {
         pub const Entry = struct {
             index: u16 = 0,
             subindex: u8 = 0,
-            type: root.Exhaustive(coe.DataTypeArea) = .UNKNOWN,
+            type: gcat.Exhaustive(coe.DataTypeArea) = .UNKNOWN,
             bits: u16,
             description: ?[]const u8 = null,
         };

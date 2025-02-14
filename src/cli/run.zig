@@ -231,7 +231,7 @@ pub fn run(allocator: std.mem.Allocator, args: Args) error{NonRecoverable}!void 
 
             if (print_timer.read() > std.time.ns_per_s * 1) {
                 print_timer.reset();
-                std.log.warn("frames/s: {}", .{cycle_count});
+                std.log.info("frames/s: {}", .{cycle_count});
                 cycle_count = 0;
             }
             gcat.sleepUntilNextCycle(md.first_cycle_time.?, args.cycle_time_us);

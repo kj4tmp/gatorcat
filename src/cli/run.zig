@@ -236,9 +236,5 @@ pub fn run(allocator: std.mem.Allocator, args: Args) error{NonRecoverable}!void 
             }
             gcat.sleepUntilNextCycle(md.first_cycle_time.?, args.cycle_time_us);
         }
-
-        break :bus_scan;
     }
-
-    std.log.info("Finished run command.", .{});
 }

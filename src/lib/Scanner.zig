@@ -286,6 +286,7 @@ pub fn readSubdeviceConfiguration(
     };
 }
 
+// TODO: this function is freaking massive.
 /// This function leaks memory, it is the callers responsibilty to use an arena.
 pub fn readSubdeviceConfigurationLeaky(
     self: *Scanner,
@@ -327,77 +328,6 @@ pub fn readSubdeviceConfigurationLeaky(
     var outputs = std.ArrayList(ENI.SubdeviceConfiguration.PDO).init(allocator);
     defer outputs.deinit();
 
-    const directions: []const pdi.Direction = &.{ .input, .output };
-    for (directions) |direction| {
-        const sii_pdos = try sii.readPDOs(
-            self.port,
-            station_address,
-            direction,
-            self.settings.recv_timeout_us,
-            self.settings.eeprom_timeout_us,
-        );
-
-        const pdos: []const sii.PDO = sii_pdos.slice();
-
-        for (pdos) |pdo| {
-            var pdo_name: ?[]const u8 = null;
-            if (try sii.readSIIString(
-                self.port,
-                station_address,
-                pdo.header.name_idx,
-                self.settings.recv_timeout_us,
-                self.settings.eeprom_timeout_us,
-            )) |pdo_name_array| {
-                pdo_name = try allocator.dupe(u8, pdo_name_array.slice());
-            }
-
-            var entries = std.ArrayList(ENI.SubdeviceConfiguration.PDO.Entry).init(allocator);
-            defer entries.deinit();
-
-            const sii_entries: []const sii.PDO.Entry = pdo.entries.slice();
-            for (sii_entries) |entry| {
-                var entry_name: ?[]const u8 = null;
-                if (try sii.readSIIString(
-                    self.port,
-                    station_address,
-                    entry.name_idx,
-                    self.settings.recv_timeout_us,
-                    self.settings.eeprom_timeout_us,
-                )) |entry_name_array| {
-                    entry_name = try allocator.dupe(u8, entry_name_array.slice());
-                }
-                try entries.append(ENI.SubdeviceConfiguration.PDO.Entry{
-                    .index = entry.index,
-                    .subindex = entry.subindex,
-                    .bits = entry.bit_length,
-                    .type = std.meta.intToEnum(gcat.Exhaustive(coe.DataTypeArea), entry.data_type) catch .UNKNOWN,
-                    .description = entry_name orelse "",
-                });
-            }
-
-            switch (direction) {
-                .input => {
-                    try inputs.append(
-                        ENI.SubdeviceConfiguration.PDO{
-                            .name = pdo_name orelse "",
-                            .index = pdo.header.index,
-                            .entries = try entries.toOwnedSlice(),
-                        },
-                    );
-                },
-                .output => {
-                    try outputs.append(
-                        ENI.SubdeviceConfiguration.PDO{
-                            .name = pdo_name orelse "",
-                            .index = pdo.header.index,
-                            .entries = try entries.toOwnedSlice(),
-                        },
-                    );
-                },
-            }
-        }
-    }
-
     var fake_process_data: [1]u8 = .{0};
     var subdevice = Subdevice.init(
         .{
@@ -423,8 +353,9 @@ pub fn readSubdeviceConfigurationLeaky(
     );
     try subdevice.setALState(self.port, .PREOP, state_change_timeout_us, self.settings.recv_timeout_us);
 
-    // read PDOs from CoE, but only if CoE is supported and PDOs were not obtained from SII.
-    if (subdevice.runtime_info.coe != null and inputs.items.len == 0 and outputs.items.len == 0) {
+    // If the subdevices supports CoE, grab the PDOs from the CoE.
+
+    if (subdevice.runtime_info.coe != null) {
 
         // 1. scan sync manager communication types => number of used sync managers
         // 2. scan each sync manager channel => mapped PDOs
@@ -475,30 +406,48 @@ pub fn readSubdeviceConfigurationLeaky(
                     subdevice.runtime_info.coe.?.config,
                     pdo_index,
                 );
+                // TODO: remove
+                for (pdo_mapping.entries.slice(), 0..) |entry, i| {
+                    std.log.info("entry: {} {any}", .{ i, entry });
+                }
 
                 var entries = std.ArrayList(ENI.SubdeviceConfiguration.PDO.Entry).init(allocator);
                 defer entries.deinit();
 
                 for (pdo_mapping.entries.slice()) |entry| {
-                    const entry_description = try coe.readEntryDescription(
-                        self.port,
-                        station_address,
-                        self.settings.recv_timeout_us,
-                        self.settings.mbx_timeout_us,
-                        &subdevice.runtime_info.coe.?.cnt,
-                        subdevice.runtime_info.coe.?.config,
-                        entry.index,
-                        entry.subindex,
-                        .description_only,
-                    );
-                    try entries.append(ENI.SubdeviceConfiguration.PDO.Entry{
-                        .description = try allocator.dupe(u8, entry_description.data.slice()),
-                        .index = entry_description.index,
-                        .subindex = entry_description.subindex,
-                        .bits = entry_description.bit_length,
-                        // TODO: there is probably a bettter function for this
-                        .type = std.meta.intToEnum(gcat.Exhaustive(coe.DataTypeArea), @as(u16, @intFromEnum(entry_description.data_type))) catch .UNKNOWN,
-                    });
+                    if (entry.isGap()) {
+                        try entries.append(ENI.SubdeviceConfiguration.PDO.Entry{
+                            .description = null,
+                            .index = 0,
+                            .subindex = 0,
+                            .bits = entry.bit_length,
+                            .type = .UNKNOWN,
+                        });
+                    } else {
+                        const entry_description = try coe.readEntryDescription(
+                            self.port,
+                            station_address,
+                            self.settings.recv_timeout_us,
+                            self.settings.mbx_timeout_us,
+                            &subdevice.runtime_info.coe.?.cnt,
+                            subdevice.runtime_info.coe.?.config,
+                            entry.index,
+                            entry.subindex,
+                            .description_only,
+                        );
+                        try entries.append(ENI.SubdeviceConfiguration.PDO.Entry{
+                            .description = try allocator.dupe(u8, entry_description.data.slice()),
+                            .index = entry_description.index,
+                            .subindex = entry_description.subindex,
+                            // NOTE: entry description bit length sometimes differs from PDO mapping bit length.
+                            // The entry description apparently reports the underlying data size, but the PDO mapping
+                            // can be smaller.
+                            // We trust the PDO mapping bit length. Example: EL7031-0030 0x1A00 vs 0x1A01 (16 vs 32 bit counters)
+                            .bits = entry.bit_length,
+                            // TODO: there is probably a bettter function for this
+                            .type = std.meta.intToEnum(gcat.Exhaustive(coe.DataTypeArea), @as(u16, @intFromEnum(entry_description.data_type))) catch .UNKNOWN,
+                        });
+                    }
                 }
                 switch (sm_comm_type) {
                     .input => {
@@ -521,6 +470,77 @@ pub fn readSubdeviceConfigurationLeaky(
                     },
                     .mailbox_in, .mailbox_out, .unused => unreachable,
                     _ => unreachable,
+                }
+            }
+        }
+    } else {
+        const directions: []const pdi.Direction = &.{ .input, .output };
+        for (directions) |direction| {
+            const sii_pdos = try sii.readPDOs(
+                self.port,
+                station_address,
+                direction,
+                self.settings.recv_timeout_us,
+                self.settings.eeprom_timeout_us,
+            );
+
+            const pdos: []const sii.PDO = sii_pdos.slice();
+
+            for (pdos) |pdo| {
+                var pdo_name: ?[]const u8 = null;
+                if (try sii.readSIIString(
+                    self.port,
+                    station_address,
+                    pdo.header.name_idx,
+                    self.settings.recv_timeout_us,
+                    self.settings.eeprom_timeout_us,
+                )) |pdo_name_array| {
+                    pdo_name = try allocator.dupe(u8, pdo_name_array.slice());
+                }
+
+                var entries = std.ArrayList(ENI.SubdeviceConfiguration.PDO.Entry).init(allocator);
+                defer entries.deinit();
+
+                const sii_entries: []const sii.PDO.Entry = pdo.entries.slice();
+                for (sii_entries) |entry| {
+                    var entry_name: ?[]const u8 = null;
+                    if (try sii.readSIIString(
+                        self.port,
+                        station_address,
+                        entry.name_idx,
+                        self.settings.recv_timeout_us,
+                        self.settings.eeprom_timeout_us,
+                    )) |entry_name_array| {
+                        entry_name = try allocator.dupe(u8, entry_name_array.slice());
+                    }
+                    try entries.append(ENI.SubdeviceConfiguration.PDO.Entry{
+                        .index = entry.index,
+                        .subindex = entry.subindex,
+                        .bits = entry.bit_length,
+                        .type = std.meta.intToEnum(gcat.Exhaustive(coe.DataTypeArea), entry.data_type) catch .UNKNOWN,
+                        .description = entry_name,
+                    });
+                }
+
+                switch (direction) {
+                    .input => {
+                        try inputs.append(
+                            ENI.SubdeviceConfiguration.PDO{
+                                .name = pdo_name orelse "",
+                                .index = pdo.header.index,
+                                .entries = try entries.toOwnedSlice(),
+                            },
+                        );
+                    },
+                    .output => {
+                        try outputs.append(
+                            ENI.SubdeviceConfiguration.PDO{
+                                .name = pdo_name orelse "",
+                                .index = pdo.header.index,
+                                .entries = try entries.toOwnedSlice(),
+                            },
+                        );
+                    },
                 }
             }
         }

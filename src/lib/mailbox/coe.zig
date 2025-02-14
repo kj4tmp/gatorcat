@@ -1027,6 +1027,8 @@ pub fn readSMPDOAssigns(
     cnt: *Cnt,
     config: mailbox.Configuration,
 ) !sii.SMPDOAssigns {
+    // We need the start addr of the SM from the SII, but we want to trust the CoE
+    // on what PDOs are mapped. What a pain.
     var res = sii.SMPDOAssigns{};
 
     const sm_catagory = try sii.readSMCatagory(
@@ -1193,6 +1195,7 @@ pub fn readObjectDescription(
     config: mailbox.Configuration,
     index: u16,
 ) !server.GetObjectDescriptionResponse {
+    std.log.info("station address: 0x{x}. Attempt read od description of index 0x{x}", .{ station_address, index });
     const request = mailbox.OutContent{
         .coe = .{
             .get_object_description_request = .init(cnt.nextCnt(), index),
@@ -1232,6 +1235,7 @@ pub fn readEntryDescription(
     subindex: u8,
     value_info: ValueInfo,
 ) !server.GetEntryDescriptionResponse {
+    std.log.info("station address: 0x{x}. Attempt read entry description of index 0x{x}:{x}", .{ station_address, index, subindex });
     const request = mailbox.OutContent{
         .coe = .{ .get_entry_description_request = .init(cnt.nextCnt(), index, subindex, value_info) },
     };

@@ -369,6 +369,7 @@ pub fn transitionPS(
             // write that length to the SM.
             const sm_assigns = blk: {
                 if (self.runtime_info.coe) |*this_coe| {
+                    std.log.info("station addr: 0x{x}, reading sm_assigns from CoE.", .{station_address});
                     break :blk try coe.readSMPDOAssigns(
                         port,
                         station_address,
@@ -388,9 +389,9 @@ pub fn transitionPS(
                 }
             };
 
-            // for (sm_assigns.data.slice()) |sm_assign| {
-            //     std.log.info("station addr: 0x{x}, sm assign: {}", .{ station_address, sii_sms.slice()[sm_assign.sm_idx] });
-            // }
+            for (sm_assigns.data.slice()) |sm_assign| {
+                std.log.info("station addr: 0x{x}, sm assign: {}", .{ station_address, sm_assign });
+            }
 
             for (sm_assigns.dumpESCSMs().slice()) |esc_sm| {
                 try port.fpwrPackWkc(

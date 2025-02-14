@@ -126,7 +126,7 @@ pub fn writeMailboxOut(
         1,
     );
 
-    std.log.info("station address: 0x{x}. wrote {} bytes to mailbox out.", .{ station_address, size });
+    std.log.info("station address: 0x{x}. wrote {} bytes to mailbox out: {}", .{ station_address, size, content });
 }
 
 pub fn readMailboxInTimeout(

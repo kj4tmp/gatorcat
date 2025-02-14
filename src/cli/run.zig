@@ -14,7 +14,10 @@ pub const Args = struct {
     INIT_timeout_us: u32 = 5_000_000,
     PREOP_timeout_us: u32 = 3_000_000,
     SAFEOP_timeout_us: u32 = 10_000_000,
+    OP_timeout_us: u32 = 10_000_000,
     mbx_timeout_us: u32 = 50_000,
+    cycle_time_us: u32 = 0,
+    max_recv_timeouts_before_rescan: u32 = 3,
     pub const descriptions = .{
         .ifname = "Network interface to use for the bus scan.",
         .recv_timeout_us = "Frame receive timeout in microseconds.",
@@ -128,6 +131,7 @@ pub fn run(allocator: std.mem.Allocator, args: Args) error{NonRecoverable}!void 
             => continue :bus_scan,
         };
 
+        // TODO: wtf jeff reduce the number of errors!
         md.busSafeop(args.SAFEOP_timeout_us) catch |err| switch (err) {
             error.LinkError,
             error.Overflow,
@@ -143,7 +147,6 @@ pub fn run(allocator: std.mem.Allocator, args: Args) error{NonRecoverable}!void 
             error.InvalidCoEEntries,
             error.WrongDirection,
             error.SyncManagerNotFound,
-            => return error.NonRecoverable,
             error.RecvTimeout,
             error.Wkc,
             error.StateChangeTimeout,
@@ -166,11 +169,73 @@ pub fn run(allocator: std.mem.Allocator, args: Args) error{NonRecoverable}!void 
             error.InvalidOutputsBitLength,
             error.WrongInputsBitLength,
             error.WrongOutputsBitLength,
-            => continue :bus_scan,
+            => return error.NonRecoverable,
+            // => continue :bus_scan,
             error.TransactionContention,
             error.NoTransactionAvailable,
             => unreachable,
         };
+
+        md.busOp(args.OP_timeout_us) catch |err| switch (err) {
+            error.LinkError,
+            error.CurruptedFrame,
+            error.CoENotSupported,
+            error.CoECompleteAccessNotSupported,
+            error.NotImplemented,
+            error.Aborted,
+            error.UnexpectedSegment,
+            error.UnexpectedNormal,
+            error.WrongProtocol,
+            => return error.NonRecoverable,
+            error.RecvTimeout,
+            error.Wkc,
+            error.StateChangeTimeout,
+            error.InvalidMbxConfiguration,
+            error.Emergency,
+            error.MbxOutFull,
+            error.InvalidMbxContent,
+            error.MbxTimeout,
+            error.NoTransactionAvailable, // WTF is this?
+            => continue :bus_scan,
+            error.TransactionContention => unreachable,
+        };
+        std.log.info("Look mom! I got to OP!", .{});
+
+        var print_timer = std.time.Timer.start() catch @panic("Timer unsupported");
+        var cycle_count: u32 = 0;
+        var recv_timeouts: u32 = 0;
+        while (true) {
+
+            // exchange process data
+            if (md.sendRecvCyclicFrames()) {
+                recv_timeouts = 0;
+            } else |err| switch (err) {
+                error.RecvTimeout => {
+                    std.log.info("recv timeout!", .{});
+                    recv_timeouts += 1;
+                    if (recv_timeouts > args.max_recv_timeouts_before_rescan) continue :bus_scan;
+                },
+                error.LinkError,
+                error.CurruptedFrame,
+                => return error.NonRecoverable,
+                error.NoTransactionAvailable,
+                => unreachable,
+                error.NotAllSubdevicesInOP,
+                error.TopologyChanged,
+                error.Wkc,
+                => continue :bus_scan,
+            }
+
+            // do application
+            cycle_count += 1;
+
+            if (print_timer.read() > std.time.ns_per_s * 1) {
+                print_timer.reset();
+                std.log.warn("frames/s: {}", .{cycle_count});
+                cycle_count = 0;
+            }
+            gcat.sleepUntilNextCycle(md.first_cycle_time.?, args.cycle_time_us);
+        }
 
         break :bus_scan;
     }

@@ -1,6 +1,6 @@
 //! Run subcommand of the GatorCAT CLI.
 //!
-//! Intended to exemplify a reasonable default way of doing things with at little configuratiuon as possible.
+//! Intended to exemplify a reasonable default way of doing things with as little configuratiuon as possible.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -77,8 +77,44 @@ pub fn run(allocator: std.mem.Allocator, args: Args) error{NonRecoverable}!void 
             error.RecvTimeout, error.Wkc => continue :bus_scan,
         };
 
-        // TODO: fix this anyerror
-        const eni = scanner.readEni(allocator, args.PREOP_timeout_us) catch continue :bus_scan;
+        const eni = scanner.readEni(allocator, args.PREOP_timeout_us) catch |err| switch (err) {
+            error.LinkError,
+            error.Overflow,
+            error.NoSpaceLeft,
+            error.OutOfMemory,
+            error.RecvTimeout,
+            error.CurruptedFrame,
+            error.TransactionContention,
+            error.Wkc,
+            error.StateChangeRefused,
+            error.StateChangeTimeout,
+            error.EndOfStream,
+            error.Timeout,
+            error.InvalidSubdeviceEEPROM,
+            error.UnexpectedSubdevice,
+            error.InvalidSII,
+            error.InvalidMbxConfiguration,
+            error.CoENotSupported,
+            error.CoECompleteAccessNotSupported,
+            error.Emergency,
+            error.NotImplemented,
+            error.MbxOutFull,
+            error.InvalidMbxContent,
+            error.MbxTimeout,
+            error.Aborted,
+            error.UnexpectedSegment,
+            error.UnexpectedNormal,
+            error.WrongProtocol,
+            error.WrongPackSize,
+            error.InvalidSMComms,
+            error.InvalidSMChannel,
+            error.InvalidSMChannelPDOIndex,
+            error.InvalidCoEEntries,
+            error.MissedFragment,
+            error.InvalidMailboxContent,
+            error.InvalidEEPROM,
+            => continue :bus_scan,
+        };
         defer eni.deinit();
 
         var md = gcat.MainDevice.init(

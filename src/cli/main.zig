@@ -5,6 +5,7 @@ const flags = @import("flags");
 const gcat = @import("gatorcat");
 
 const benchmark = @import("benchmark.zig");
+const info = @import("info.zig");
 const read_eeprom = @import("read_eeprom.zig");
 const run = @import("run.zig");
 const scan = @import("scan.zig");
@@ -23,15 +24,16 @@ const Flags = struct {
     command: union(enum) {
         // scan bus
         scan: scan.Args,
-        scan2: scan.Args,
         benchmark: benchmark.Args,
         read_eeprom: read_eeprom.Args,
         run: run.Args,
+        info: info.Args,
         pub const descriptions = .{
             .scan = "Scan the EtherCAT bus and print an EtherCAT Network Information (ENI) ZON.",
             .benchmark = "Benchmark the performance of the EtherCAT bus.",
             .read_eeprom = "Read the eeprom of a subdevice.",
             .run = "Run an EtherCAT maindevice.",
+            .info = "Prints as much human-readable information about the subdevices as possible.",
         };
     },
 };
@@ -50,9 +52,9 @@ pub fn main() !void {
 
     switch (parsed_args.command) {
         .scan => |scan_args| try scan.scan(gpa.allocator(), scan_args),
-        .scan2 => |scan_args| try scan.scan2(scan_args),
         .benchmark => |benchmark_args| try benchmark.benchmark(benchmark_args),
         .read_eeprom => |read_eeprom_args| try read_eeprom.read_eeprom(gpa.allocator(), read_eeprom_args),
         .run => |run_args| try run.run(gpa.allocator(), run_args),
+        .info => |info_args| try info.info(gpa.allocator(), info_args),
     }
 }

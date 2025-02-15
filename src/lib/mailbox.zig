@@ -125,8 +125,6 @@ pub fn writeMailboxOut(
         recv_timeout_us,
         1,
     );
-
-    std.log.info("station address: 0x{x}. wrote {} bytes to mailbox out: {}", .{ station_address, size, content });
 }
 
 pub fn readMailboxInTimeout(
@@ -213,7 +211,6 @@ pub fn readMailboxIn(
         1,
     );
     const in_content = try InContent.deserialize(&buf);
-    std.log.info("station address: 0x{x}. got mailbox in content: {}", .{ station_address, in_content });
     return in_content;
 }
 

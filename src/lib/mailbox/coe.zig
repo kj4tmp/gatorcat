@@ -198,7 +198,6 @@ pub fn sdoReadPack(
         mbx_timeout_us,
         cnt,
         config,
-        null,
     );
     if (n_bytes_read != bytes.len) {
         std.log.err("expected pack size: {}, got {}", .{ bytes.len, n_bytes_read });
@@ -227,7 +226,6 @@ pub fn sdoRead(
     mbx_timeout_us: u32,
     cnt: u3,
     config: mailbox.Configuration,
-    diag: ?*mailbox.InContent,
 ) !usize {
     assert(cnt != 0);
     if (complete_access) {
@@ -287,30 +285,18 @@ pub fn sdoRead(
             );
 
             if (in_content != .coe) {
-                if (diag) |diag_ptr| {
-                    diag_ptr.* = in_content;
-                }
                 return error.WrongProtocol;
             }
             switch (in_content.coe) {
                 .abort => {
-                    if (diag) |diag_ptr| {
-                        diag_ptr.* = in_content;
-                    }
                     return error.Aborted;
                 },
                 .expedited => continue :state .expedited,
                 .segment => {
-                    if (diag) |diag_ptr| {
-                        diag_ptr.* = in_content;
-                    }
                     return error.UnexpectedSegment;
                 },
                 .normal => continue :state .normal,
                 .emergency => {
-                    if (diag) |diag_ptr| {
-                        diag_ptr.* = in_content;
-                    }
                     return error.Emergency;
                 },
                 else => return error.WrongProtocol, // TODO: is this correct?

@@ -549,7 +549,6 @@ pub fn sdoRead(
         mbx_timeout_us,
         self.runtime_info.coe.?.cnt.nextCnt(),
         this_coe.config,
-        null,
     );
 }
 

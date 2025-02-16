@@ -406,10 +406,6 @@ pub fn readSubdeviceConfigurationLeaky(
                     subdevice.runtime_info.coe.?.config,
                     pdo_index,
                 );
-                // TODO: remove
-                for (pdo_mapping.entries.slice(), 0..) |entry, i| {
-                    std.log.info("entry: {} {any}", .{ i, entry });
-                }
 
                 var entries = std.ArrayList(ENI.SubdeviceConfiguration.PDO.Entry).init(allocator);
                 defer entries.deinit();

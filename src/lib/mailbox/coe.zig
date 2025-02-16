@@ -289,6 +289,7 @@ pub fn sdoRead(
             }
             switch (in_content.coe) {
                 .abort => {
+                    std.log.err("station addr: 0x{x}, aborted sdo read at index 0x{x}:{x}, code: {}", .{ station_address, index, subindex, in_content.coe.abort.abort_code });
                     return error.Aborted;
                 },
                 .expedited => continue :state .expedited,
@@ -1154,7 +1155,9 @@ pub fn readSDOInfoFragments(
         const in_content = try mailbox.readMailboxInTimeout(port, station_address, recv_timeout_us, config.mbx_in, mbx_timeout_us);
         if (in_content != .coe) return error.WrongProtocol;
         switch (in_content.coe) {
-            .abort => return error.Aborted,
+            .abort => {
+                return error.Aborted;
+            },
             .emergency => return error.Emergency,
             .sdo_info_response => |response| {
                 if (i == 0) expected_fragments_left = response.sdo_info_header.fragments_left;

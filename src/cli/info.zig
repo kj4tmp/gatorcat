@@ -33,20 +33,27 @@ pub fn info(allocator: std.mem.Allocator, args: Args) !void {
     try port.ping(args.recv_timeout_us);
 
     var scanner = gcat.Scanner.init(port, .{ .eeprom_timeout_us = args.eeprom_timeout_us, .recv_timeout_us = args.recv_timeout_us });
-    var writer = std.io.getStdOut().writer();
+    var std_out = std.io.getStdOut();
+    const writer = std_out.writer();
 
     const num_subdevices = try scanner.countSubdevices();
-    try writer.print("Detected {} subdevices.\n", .{num_subdevices});
+    std.log.warn("detected {} subdevices", .{num_subdevices});
 
     try scanner.busInit(args.INIT_timeout_us, num_subdevices);
-    try writer.print("Successfully reached INIT.\n", .{});
+    std.log.warn("bus reached INIT", .{});
 
     try scanner.assignStationAddresses(num_subdevices);
-    try writer.print("Successfully assigned station addresses.\n", .{});
+    std.log.warn("assigned station addresses", .{});
+
+    try writer.print("# Bus Info\n\n", .{});
+    try writer.print("```zon\n", .{});
+    try std.zon.stringify.serialize(args, .{}, writer);
     try writer.print("\n", .{});
+    try writer.print("```\n", .{});
 
     // summary table
-    try printBusSummary(writer, port, args.recv_timeout_us, args.eeprom_timeout_us, num_subdevices);
+    try writer.print("## Bus Summary\n\n", .{});
+    try printBusSummaryTable(writer, port, args.recv_timeout_us, args.eeprom_timeout_us, num_subdevices);
     // detailed info on each subdevice
     if (args.ring_position) |position| {
         try printSubdeviceDetails(writer, port, args.recv_timeout_us, args.eeprom_timeout_us, @intCast(position));
@@ -75,17 +82,31 @@ pub fn info(allocator: std.mem.Allocator, args: Args) !void {
     }
 }
 
-fn printBusSummary(
+fn printBusSummaryTable(
     writer: anytype,
     port: *gcat.Port,
     recv_timeout_us: u32,
     eeprom_timeout_us: u32,
     num_subdevices: u16,
 ) !void {
-    try writer.print("", .{});
-    try writer.print("Ring                      Auto-incr.  Station                 Product    Revision\n", .{});
-    try writer.print("Pos.    Order ID             Address  Address   Vendor ID        Code      Number\n", .{});
-    try writer.print("---------------------------------------------------------------------------------\n", .{});
+    const columns: []const []const u8 = &.{
+        "Ring Pos.",
+        "Order ID",
+        "Auto-incr. Addr.",
+        "Station Addr.",
+        "Vendor ID",
+        "Product Code",
+        "Revision Number",
+    };
+
+    for (columns) |column| {
+        try writer.print("| {s}", .{column});
+    }
+    try writer.print(" |\n", .{});
+    for (columns) |_| {
+        try writer.print("|---", .{});
+    }
+    try writer.print("|\n", .{});
     for (0..num_subdevices) |i| {
         const ring_position: u16 = @intCast(i);
         const autoinc_address: u16 = gcat.Subdevice.autoincAddressFromRingPos(ring_position);
@@ -119,7 +140,7 @@ fn printBusSummary(
             }
         }
         try writer.print(
-            "{d:<5}   {s:<16}      0x{x:04}   0x{x:04}  0x{x:08}  0x{x:08}  0x{x:08} \n",
+            "| {d:<5} | {s:<16} | 0x{x:04} | 0x{x:04} | 0x{x:08} | 0x{x:08} | 0x{x:08} |\n",
             .{ ring_position, order_id, autoinc_address, station_address, sub_info.vendor_id, sub_info.product_code, sub_info.revision_number },
         );
     }
@@ -182,26 +203,32 @@ fn printSubdeviceDetails(
             group = group_string.slice();
         }
     }
-    try writer.print("==================================\n", .{});
-    try writer.print("=   {d}: {s:^16} 0x{x:04}   =\n", .{ ring_position, order_id, station_address });
-    try writer.print("==================================\n", .{});
-    // strings
-    try writer.print("Order ID: {s}\n", .{order_id});
-    try writer.print("Name:     {s}\n", .{name});
-    try writer.print("Group:    {s}\n", .{group});
-    try writer.print("\n", .{});
+    try writer.print("### Subdevice {d}(0x{x:04}): {s} \n\n", .{ ring_position, station_address, order_id });
+
+    try writer.writeAll("#### Addressing\n\n");
 
     // position
-    try writer.print("Ring position:            {d:>5}\n", .{ring_position});
-    try writer.print("Auto-increment address:  0x{x:04}\n", .{autoinc_address});
-    try writer.print("Station address:         0x{x:04}\n\n", .{station_address});
-
-    // identity
-    try writer.print("Vendor ID:               0x{x:08}\n", .{sub_info.vendor_id});
-    try writer.print("Product code:            0x{x:08}\n", .{sub_info.product_code});
-    try writer.print("Revision number:         0x{x:08}\n", .{sub_info.revision_number});
-    try writer.print("Serial number:           0x{x:08}\n", .{sub_info.serial_number});
+    try writer.print("| Property               | Value  |\n", .{});
+    try writer.print("|---                     |---     |\n", .{});
+    try writer.print("| Ring position          | {d:>5}  |\n", .{ring_position});
+    try writer.print("| Auto-increment address | 0x{x:04} |\n", .{autoinc_address});
+    try writer.print("| Station address        | 0x{x:04} |\n", .{station_address});
     try writer.print("\n", .{});
+
+    try writer.writeAll("#### Identity\n\n");
+
+    try writer.print("| Property         | Value |\n", .{});
+    try writer.print("|---               |---    |\n", .{});
+    try writer.print("| Order ID         | {s} |\n", .{order_id});
+    try writer.print("| Name             | {s} |\n", .{name});
+    try writer.print("| Group            | {s} |\n", .{group});
+    try writer.print("| Vendor ID        | 0x{x:08} |\n", .{sub_info.vendor_id});
+    try writer.print("| Product code     | 0x{x:08} |\n", .{sub_info.product_code});
+    try writer.print("| Revision number  | 0x{x:08} |\n", .{sub_info.revision_number});
+    try writer.print("| Serial number    | 0x{x:08} |\n", .{sub_info.serial_number});
+    try writer.print("\n", .{});
+
+    try writer.writeAll("#### SII Mailbox Info\n\n");
 
     // supported protocols
     try writer.print("Supported mailbox protocols: ", .{});
@@ -220,12 +247,14 @@ fn printSubdeviceDetails(
     if (sub_info.mbx_protocol.SoE) try writer.print("SoE ", .{});
     if (sub_info.mbx_protocol.VoE) try writer.print("VoE ", .{});
     if (!has_mailbox) {
-        try writer.print("None\n", .{});
+        try writer.print("None\n\n", .{});
     } else {
         try writer.print("\n", .{});
     }
+    try writer.print("\n", .{});
+
     if (has_mailbox) {
-        try writer.print("Default mailbox configuration:\n", .{});
+        try writer.print("Default mailbox configuration:\n\n", .{});
         try writer.print(
             "    Mailbox out: offset: 0x{x:04} size: {}\n",
             .{ sub_info.std_recv_mbx_offset, sub_info.std_recv_mbx_size },
@@ -235,9 +264,10 @@ fn printSubdeviceDetails(
             .{ sub_info.std_send_mbx_offset, sub_info.std_send_mbx_size },
         );
     }
+    try writer.print("\n", .{});
 
     if (sub_info.mbx_protocol.FoE) {
-        try writer.print("Bootstrap mailbox configuration:\n", .{});
+        try writer.print("Bootstrap mailbox configuration:\n\n", .{});
         try writer.print(
             "    Mailbox out: offset: 0x{x:04} size: {}\n",
             .{ sub_info.bootstrap_recv_mbx_offset, sub_info.bootstrap_recv_mbx_size },
@@ -248,64 +278,71 @@ fn printSubdeviceDetails(
         );
     }
     try writer.print("\n", .{});
+
+    try writer.writeAll("#### SII Catagory: General\n\n");
+
     if (cat_general) |general| {
-        try writer.print("SII Catagory General:\n", .{});
+        try writer.print("| Property                               | Value |\n", .{});
+        try writer.print("|---                                     |---    |\n", .{});
         if (sub_info.mbx_protocol.CoE) {
-            try writer.print("    CoE Details:\n", .{});
             inline for (std.meta.fields(gcat.sii.CoEDetails)) |field| {
                 if (comptime std.mem.eql(u8, field.name, "reserved")) continue;
-                try writer.print("        {s:<26}  {:>5}\n", .{ field.name, @field(general.coe_details, field.name) });
+                try writer.print("| coe_details.{s:<26} | {:>5} |\n", .{ field.name, @field(general.coe_details, field.name) });
             }
         }
         if (sub_info.mbx_protocol.FoE) {
-            try writer.print("    FoE Details:\n", .{});
             inline for (std.meta.fields(gcat.sii.FoEDetails)) |field| {
                 if (comptime std.mem.eql(u8, field.name, "reserved")) continue;
-                try writer.print("        {s:<26}  {:>5}\n", .{ field.name, @field(general.foe_details, field.name) });
+                try writer.print("| foe_details.{s:<26} | {:>5} |\n", .{ field.name, @field(general.foe_details, field.name) });
             }
         }
         if (sub_info.mbx_protocol.EoE) {
-            try writer.print("    EoE Details:\n", .{});
             inline for (std.meta.fields(gcat.sii.EoEDetails)) |field| {
                 if (comptime std.mem.eql(u8, field.name, "reserved")) continue;
-                try writer.print("        {s:<26}  {:>5}\n", .{ field.name, @field(general.eoe_details, field.name) });
+                try writer.print("| eoe_details.{s:<26} | {:>5} |\n", .{ field.name, @field(general.eoe_details, field.name) });
             }
         }
         // flags
-        try writer.print("    Flags:\n", .{});
         inline for (std.meta.fields(gcat.sii.Flags)) |field| {
             if (comptime std.mem.eql(u8, field.name, "reserved")) continue;
-            try writer.print("        {s:<26}  {:>5}\n", .{ field.name, @field(general.flags, field.name) });
+            try writer.print("| flags.{s:<32} | {:>5} |\n", .{ field.name, @field(general.flags, field.name) });
         }
         if (general.flags.identity_physical_memory) {
-            try writer.print("    ID Switch Phys Mem Addr: 0x{x}\n", .{general.physical_memory_address});
+            try writer.print("| ID Switch Phys Mem Addr | 0x{x} |\n", .{general.physical_memory_address});
         }
+    } else {
+        try writer.writeAll("Catgory not present.\n\n");
     }
+    try writer.writeAll("\n");
+
+    try writer.writeAll("#### SII Catagory: Sync Managers\n\n");
 
     const sm_catagory = try gcat.sii.readSMCatagory(port, station_address, recv_timeout_us, eeprom_timeout_us);
     if (sm_catagory.len > 0) {
-        try writer.print("SII Catagory Sync Managers:\n", .{});
         for (sm_catagory.slice(), 0..) |sm, i| {
-            try writer.print("    SM Index: {}\n", .{i});
-            try writer.print("        type: {s}\n", .{std.enums.tagName(gcat.sii.SyncMType, sm.syncM_type) orelse "INVALID"});
-            try writer.print("        physical start addr: 0x{x}\n", .{sm.physical_start_address});
-            try writer.print("        length: {}\n", .{sm.length});
-            try writer.print("            control:\n", .{});
+            try writer.print("##### SM{d}\n\n", .{i});
+            try writer.print("    type: {s}\n", .{std.enums.tagName(gcat.sii.SyncMType, sm.syncM_type) orelse "INVALID"});
+            try writer.print("    physical start addr: 0x{x}\n", .{sm.physical_start_address});
+            try writer.print("    length: {}\n", .{sm.length});
+            try writer.print("    control:\n", .{});
             inline for (std.meta.fields(gcat.esc.SyncManagerControlRegister)) |field| {
                 if (comptime std.mem.eql(u8, field.name, "reserved")) continue;
-                try writer.print("                {s:<26}  {:<5}\n", .{ field.name, @field(sm.control, field.name) });
+                try writer.print("        {s:<26}  {:<5}\n", .{ field.name, @field(sm.control, field.name) });
             }
-            try writer.print("            status:\n", .{});
+            try writer.print("    status:\n", .{});
             inline for (std.meta.fields(gcat.esc.SyncManagerActivateRegister)) |field| {
                 if (comptime std.mem.eql(u8, field.name, "reserved")) continue;
-                try writer.print("                {s:<26}  {:<5}\n", .{ field.name, @field(sm.status, field.name) });
+                try writer.print("        {s:<26}  {:<5}\n", .{ field.name, @field(sm.status, field.name) });
             }
-            try writer.print("            enable:\n", .{});
+            try writer.print("    enable:\n", .{});
             inline for (std.meta.fields(gcat.sii.EnableSyncMangager)) |field| {
                 if (comptime std.mem.eql(u8, field.name, "reserved")) continue;
-                try writer.print("                {s:<26}  {:<5}\n", .{ field.name, @field(sm.enable_sync_manager, field.name) });
+                try writer.print("        {s:<26}  {:<5}\n", .{ field.name, @field(sm.enable_sync_manager, field.name) });
             }
+            try writer.print("\n", .{});
         }
+    } else {
+        try writer.writeAll("No sync managers.\n\n");
     }
 
     try writer.print("\n", .{});
@@ -414,20 +451,26 @@ fn printSubdeviceCoePDOs(
     subdevice: *gcat.Subdevice,
 ) !void {
     const coe_info = &(subdevice.runtime_info.coe orelse return);
-    try writer.print("COE PDO Assignment:\n", .{});
+
     const station_address = gcat.Subdevice.stationAddressFromRingPos(subdevice.runtime_info.ring_position);
     const cnt = &coe_info.cnt;
     const mailbox_config = coe_info.config;
 
     const sm_comms = try gcat.mailbox.coe.readSMComms(port, station_address, recv_timeout_us, mbx_timeout_us, cnt, mailbox_config);
-
+    try writer.print("CoE Sync Manager Communication Types:\n", .{});
     for (sm_comms.slice(), 0..) |sm_comm, sm_idx| {
         try writer.print("    Sync Manager: {}, type: {s}\n", .{ sm_idx, std.enums.tagName(gcat.mailbox.coe.SMComm, sm_comm) orelse "Invalid SM Comm Type" });
     }
+    try writer.print("CoE PDO Assignment:\n", .{});
     try writer.print("PDO Index  SM Bits  Mapped Index\n", .{});
     try writer.print("----------------------------------------------\n", .{});
 
-    for (sm_comms.slice(), 0..) |_, sm_idx| {
+    for (sm_comms.slice(), 0..) |sm_comm, sm_idx| {
+        switch (sm_comm) {
+            .input, .output => {},
+            .mailbox_in, .mailbox_out, .unused => continue,
+            _ => continue,
+        }
         const sm_pdo_assignment = gcat.mailbox.coe.readSMChannel(port, station_address, recv_timeout_us, mbx_timeout_us, cnt, mailbox_config, @intCast(sm_idx)) catch |err| switch (err) {
             error.Aborted => continue,
             else => |err2| return err2,
@@ -481,22 +524,23 @@ fn printSubdeviceCoePDOs(
 
         try writer.print("0x{x} :: {s} :: {} :: {}\n", .{ index, object_description.name.slice(), object_description.data_type, object_description.max_subindex });
 
-        if (object_description.max_subindex > 0) {
-            for (1..object_description.max_subindex) |subindex| {
-                const entry_description = try gcat.mailbox.coe.readEntryDescription(
-                    port,
-                    station_address,
-                    recv_timeout_us,
-                    mbx_timeout_us,
-                    cnt,
-                    mailbox_config,
-                    index,
-                    @intCast(subindex),
-                    .description_only,
-                );
-                try writer.print("      --- 0x{x}:{x} :: {} ::{s}\n", .{ index, subindex, entry_description.data_type, entry_description.data.slice() });
-            }
+        var total_bits: u32 = 0;
+        for (0..object_description.max_subindex + 1) |subindex| {
+            const entry_description = try gcat.mailbox.coe.readEntryDescription(
+                port,
+                station_address,
+                recv_timeout_us,
+                mbx_timeout_us,
+                cnt,
+                mailbox_config,
+                index,
+                @intCast(subindex),
+                .description_only,
+            );
+            total_bits += entry_description.bit_length;
+            try writer.print("      --- 0x{x}:{x} :: bits: {} :: {s} ::{s}\n", .{ index, subindex, entry_description.bit_length, std.enums.tagName(gcat.mailbox.coe.DataTypeArea, entry_description.data_type) orelse "INVALID", entry_description.data.slice() });
         }
+        try writer.print("      --- total bits: {}\n", .{total_bits});
     }
 
     // const mapping = try gcat.mailbox.coe.readPDOMapping(

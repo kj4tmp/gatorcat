@@ -1168,7 +1168,21 @@ pub fn readSDOInfoFragments(
                 assert(expected_fragments_left > 0);
                 expected_fragments_left -= 1;
             },
-            else => return error.WrongProtocol,
+            else => {
+                // TODO: handle this better?
+                std.log.err(
+                    "station addr: 0x{x:04}, unexpected protocol during sdo info fragment transfer: {}",
+                    .{ station_address, in_content.coe },
+                );
+                if (in_content.coe == .sdo_info_error) {
+                    if (in_content.coe.sdo_info_error.abort_code == .SubindexDoesNotExist or
+                        in_content.coe.sdo_info_error.abort_code == .ObjectDoesNotExistInObjectDirectory)
+                    {
+                        return error.ObjectDoesNotExist;
+                    }
+                }
+                return error.WrongProtocol;
+            },
         }
     } else return error.WrongProtocol;
 

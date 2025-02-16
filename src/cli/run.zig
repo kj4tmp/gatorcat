@@ -113,6 +113,7 @@ pub fn run(allocator: std.mem.Allocator, args: Args) error{NonRecoverable}!void 
             error.MissedFragment,
             error.InvalidMailboxContent,
             error.InvalidEEPROM,
+            error.ObjectDoesNotExist,
             => continue :bus_scan,
         };
         defer eni.deinit();

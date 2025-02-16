@@ -10,7 +10,7 @@ pub const Args = struct {
     ifname: [:0]const u8,
     ring_position: ?u16 = null,
     recv_timeout_us: u32 = 10_000,
-    eeprom_timeout_us: u32 = 10_000,
+    eeprom_timeout_us: u32 = 100_000,
     INIT_timeout_us: u32 = 5_000_000,
     PREOP_timeout_us: u32 = 10_000_000,
     mbx_timeout_us: u32 = 50_000,
@@ -371,15 +371,6 @@ fn printSubdeviceSIIPDOs(
         eeprom_timeout_us,
     );
 
-    if (output_pdos_bit_length == 0 and input_pdos_bit_length == 0) {
-        try writer.print("SII Process Data Information: None\n", .{});
-        return;
-    } else {
-        try writer.print("SII Process Data Information:\n", .{});
-    }
-
-    try writer.print("    Inputs bit length:  {d:>5}\n", .{input_pdos_bit_length});
-    try writer.print("    Outputs bit length: {d:>5}\n", .{output_pdos_bit_length});
     try writer.print("\n", .{});
 
     const input_pdos = try gcat.sii.readPDOs(
@@ -398,16 +389,24 @@ fn printSubdeviceSIIPDOs(
         eeprom_timeout_us,
     );
 
+    try writer.writeAll("#### SII Catagory: TxPDOs\n\n");
+
     if (input_pdos.len != 0) {
-        try writer.print("SII Input PDOs:\n", .{});
+        try writer.print("    Inputs bit length: {d:<5}\n", .{input_pdos_bit_length});
         try printPDOTable(writer, input_pdos, port, station_address, recv_timeout_us, eeprom_timeout_us);
         try writer.print("\n", .{});
+    } else {
+        try writer.writeAll("No TxPDOs catagory.\n\n");
     }
 
+    try writer.writeAll("#### SII Catagory: RxPDOs\n\n");
+
     if (output_pdos.len != 0) {
-        try writer.print("SII Output PDOs:\n", .{});
+        try writer.print("    Outputs bit length: {d:<5}\n", .{output_pdos_bit_length});
         try printPDOTable(writer, output_pdos, port, station_address, recv_timeout_us, eeprom_timeout_us);
         try writer.print("\n", .{});
+    } else {
+        try writer.writeAll("No RxPDOs catagory.\n\n");
     }
 }
 
@@ -419,23 +418,44 @@ fn printPDOTable(
     recv_timeout_us: u32,
     eeprom_timeout_us: u32,
 ) !void {
-    const pdo_slice: []const gcat.sii.PDO = pdos.slice();
-    if (pdo_slice.len > 0) {
-        try writer.print("Index    SM Bits  Type              Name \n", .{});
-        try writer.print("----------------------------------------------------------------------------------\n", .{});
+    const columns: []const []const u8 = &.{
+        "PDO Index",
+        "SM",
+        "Mapped Index",
+        "Bits",
+        "Type",
+        "Name",
+    };
+
+    for (columns) |column| {
+        try writer.print("| {s}", .{column});
     }
+    try writer.print(" |\n", .{});
+    for (columns) |_| {
+        try writer.print("|---", .{});
+    }
+    try writer.print("|\n", .{});
+
+    const pdo_slice: []const gcat.sii.PDO = pdos.slice();
+
     for (pdo_slice) |pdo| {
         var pdo_name: []const u8 = "";
         const maybe_name = try gcat.sii.readSIIString(port, station_address, pdo.header.name_idx, recv_timeout_us, eeprom_timeout_us);
         if (maybe_name) |name| pdo_name = name.slice();
-        try writer.print("0x{x:04}  {d:>3}    -  -                 {s:<64}\n", .{ pdo.header.index, pdo.header.syncM, pdo_name });
+        var total_bit_length: u32 = 0;
+        for (pdo.entries.slice()) |entry| {
+            total_bit_length += entry.bit_length;
+        }
+        try writer.print("| 0x{x:04} | {d:>3} |           | {d:>3} |                  | {s:<26} |\n", .{ pdo.header.index, pdo.header.syncM, total_bit_length, pdo_name });
 
         const entries_slice: []const gcat.sii.PDO.Entry = pdo.entries.slice();
         for (entries_slice) |entry| {
             var entry_name: []const u8 = "";
             const maybe_name2 = try gcat.sii.readSIIString(port, station_address, entry.name_idx, recv_timeout_us, eeprom_timeout_us);
             if (maybe_name2) |name2| entry_name = name2.slice();
-            try writer.print("     -    -  {d:>3}  {s:<16}  {s:<64}\n", .{
+            try writer.print("|        |     | 0x{x:04}:{x:02} | {d:>3} | {s:<16} | {s:<26} |\n", .{
+                entry.index,
+                entry.subindex,
                 entry.bit_length,
                 std.enums.tagName(gcat.mailbox.coe.DataTypeArea, @enumFromInt(entry.data_type)) orelse "-",
                 entry_name,
@@ -457,13 +477,35 @@ fn printSubdeviceCoePDOs(
     const mailbox_config = coe_info.config;
 
     const sm_comms = try gcat.mailbox.coe.readSMComms(port, station_address, recv_timeout_us, mbx_timeout_us, cnt, mailbox_config);
-    try writer.print("CoE Sync Manager Communication Types:\n", .{});
+
+    try writer.writeAll("#### CoE: Sync Manager Communication Types\n\n");
+
+    try writer.print("| SM  | Purpose          |\n", .{});
+    try writer.print("|---  |---               |\n", .{});
     for (sm_comms.slice(), 0..) |sm_comm, sm_idx| {
-        try writer.print("    Sync Manager: {}, type: {s}\n", .{ sm_idx, std.enums.tagName(gcat.mailbox.coe.SMComm, sm_comm) orelse "Invalid SM Comm Type" });
+        try writer.print("| {d:<3} | {s:<16} |\n", .{ sm_idx, std.enums.tagName(gcat.mailbox.coe.SMComm, sm_comm) orelse "Invalid SM Comm Type" });
     }
-    try writer.print("CoE PDO Assignment:\n", .{});
-    try writer.print("PDO Index  SM Bits  Mapped Index\n", .{});
-    try writer.print("----------------------------------------------\n", .{});
+    try writer.print("\n", .{});
+
+    try writer.writeAll("#### CoE: PDO Assignment\n\n");
+
+    const columns: []const []const u8 = &.{
+        "PDO Index",
+        "SM",
+        "Mapped Index",
+        "Bits",
+        "Type",
+        "Name",
+    };
+
+    for (columns) |column| {
+        try writer.print("| {s}", .{column});
+    }
+    try writer.print(" |\n", .{});
+    for (columns) |_| {
+        try writer.print("|---", .{});
+    }
+    try writer.print("|\n", .{});
 
     for (sm_comms.slice(), 0..) |sm_comm, sm_idx| {
         switch (sm_comm) {
@@ -478,16 +520,24 @@ fn printSubdeviceCoePDOs(
 
         for (sm_pdo_assignment.slice()) |pdo_index| {
             const pdo_mapping = try gcat.mailbox.coe.readPDOMapping(port, station_address, recv_timeout_us, mbx_timeout_us, cnt, mailbox_config, pdo_index);
-            try writer.print("0x{x:04}    {d:>3}  {d:>3}  -\n", .{ pdo_index, sm_idx, pdo_mapping.bitLength() });
+            try writer.print("| 0x{x:04} | {d:>3} |           | {d:>3} |         | |\n", .{ pdo_index, sm_idx, pdo_mapping.bitLength() });
             for (pdo_mapping.entries.slice()) |entry| {
                 if (entry.isGap()) {
-                    try writer.print("               {d:>3}  PADDING\n", .{entry.bit_length});
+                    try writer.print("|        |     |           | {d:>3} | PADDING | |\n", .{entry.bit_length});
                 } else {
-                    try writer.print("               {d:>3}  0x{x:04}:{x:02}\n", .{ entry.bit_length, entry.index, entry.subindex });
+                    try writer.print("|        |     | 0x{x:04}:{x:02} | {d:>3} |         | |\n", .{ entry.index, entry.subindex, entry.bit_length });
                 }
             }
         }
     }
+
+    try writer.print("\n", .{});
+    try writer.print("\n", .{});
+
+    try writer.writeAll("#### CoE: Object Description Lists\n\n");
+
+    try writer.print("| List                             | Length |\n", .{});
+    try writer.print("|---                               |---     |\n", .{});
 
     const od_list_lengths = try gcat.mailbox.coe.readODListLengths(
         port,
@@ -497,7 +547,10 @@ fn printSubdeviceCoePDOs(
         cnt,
         mailbox_config,
     );
-    try writer.print("od list lengths: {}\n", .{od_list_lengths});
+    inline for (std.meta.fields(gcat.mailbox.coe.ODListLengths)) |field| {
+        try writer.print("| {s:<32} |  {:>5} |\n", .{ field.name, @field(od_list_lengths, field.name) });
+    }
+    try writer.print("\n", .{});
 
     const od_list_all = try gcat.mailbox.coe.readODList(
         port,
@@ -508,25 +561,90 @@ fn printSubdeviceCoePDOs(
         mailbox_config,
         .all_objects,
     );
-    try writer.print("od list lengths: {}\n", .{od_list_lengths});
-    try writer.print("od list all (len: {}): {x}\n", .{ od_list_all.slice().len, od_list_all.slice() });
+    const od_list_rxpdo = try gcat.mailbox.coe.readODList(
+        port,
+        station_address,
+        recv_timeout_us,
+        mbx_timeout_us,
+        cnt,
+        mailbox_config,
+        .rxpdo_mappable,
+    );
+    const od_list_txpdo = try gcat.mailbox.coe.readODList(
+        port,
+        station_address,
+        recv_timeout_us,
+        mbx_timeout_us,
+        cnt,
+        mailbox_config,
+        .txpdo_mappable,
+    );
+    const od_list_stored = try gcat.mailbox.coe.readODList(
+        port,
+        station_address,
+        recv_timeout_us,
+        mbx_timeout_us,
+        cnt,
+        mailbox_config,
+        .device_replacement_stored,
+    );
+    const od_list_start = try gcat.mailbox.coe.readODList(
+        port,
+        station_address,
+        recv_timeout_us,
+        mbx_timeout_us,
+        cnt,
+        mailbox_config,
+        .startup_parameters,
+    );
 
-    for (od_list_all.slice()) |index| {
-        const object_description = try gcat.mailbox.coe.readObjectDescription(
-            port,
-            station_address,
-            recv_timeout_us,
-            mbx_timeout_us,
-            cnt,
-            mailbox_config,
-            index,
-        );
+    const od_lists: [5]struct {
+        heading: []const u8,
+        list: []const u16,
+    } = .{
+        .{
+            .heading = "#### CoE: Object Description List: All Objects\n\n",
+            .list = od_list_all.slice(),
+        },
+        .{
+            .heading = "#### CoE: Object Description List: RxPDO Mappable\n\n",
+            .list = od_list_rxpdo.slice(),
+        },
+        .{
+            .heading = "#### CoE: Object Description List: TxPDO Mappable\n\n",
+            .list = od_list_txpdo.slice(),
+        },
+        .{
+            .heading = "#### CoE: Object Description List: Stored for Device Replacement\n\n",
+            .list = od_list_stored.slice(),
+        },
+        .{
+            .heading = "#### CoE: Object Description List: Startup Parameters\n\n",
+            .list = od_list_start.slice(),
+        },
+    };
 
-        try writer.print("0x{x} :: {s} :: {} :: {}\n", .{ index, object_description.name.slice(), object_description.data_type, object_description.max_subindex });
+    for (od_lists) |od_list| {
+        try writer.writeAll(od_list.heading);
 
-        var total_bits: u32 = 0;
-        for (0..object_description.max_subindex + 1) |subindex| {
-            const entry_description = try gcat.mailbox.coe.readEntryDescription(
+        const columns2: []const []const u8 = &.{
+            "Index",
+            "Max Subindex / Subindex",
+            "Name",
+            "Type",
+        };
+
+        for (columns2) |column| {
+            try writer.print("| {s}", .{column});
+        }
+        try writer.print(" |\n", .{});
+        for (columns2) |_| {
+            try writer.print("|---", .{});
+        }
+        try writer.print("|\n", .{});
+
+        for (od_list.list) |index| {
+            const object_description = gcat.mailbox.coe.readObjectDescription(
                 port,
                 station_address,
                 recv_timeout_us,
@@ -534,13 +652,35 @@ fn printSubdeviceCoePDOs(
                 cnt,
                 mailbox_config,
                 index,
-                @intCast(subindex),
-                .description_only,
-            );
-            total_bits += entry_description.bit_length;
-            try writer.print("      --- 0x{x}:{x} :: bits: {} :: {s} ::{s}\n", .{ index, subindex, entry_description.bit_length, std.enums.tagName(gcat.mailbox.coe.DataTypeArea, entry_description.data_type) orelse "INVALID", entry_description.data.slice() });
+            ) catch |err| switch (err) {
+                error.ObjectDoesNotExist => continue,
+                else => |err2| return err2,
+            };
+
+            try writer.print("| 0x{x}    | {x:02} | {s:<48} | {s:<16} |     |\n", .{ index, object_description.max_subindex, object_description.name.slice(), std.enums.tagName(gcat.mailbox.coe.DataTypeArea, object_description.data_type) orelse "INVALID" });
+
+            for (1..object_description.max_subindex + 1) |subindex| {
+                const entry_description = gcat.mailbox.coe.readEntryDescription(
+                    port,
+                    station_address,
+                    recv_timeout_us,
+                    mbx_timeout_us,
+                    cnt,
+                    mailbox_config,
+                    index,
+                    @intCast(subindex),
+                    .description_only,
+                ) catch |err| switch (err) {
+                    error.ObjectDoesNotExist => {
+                        std.log.err("station addr: 0x{x:04}, index: 0x{x:04}:{x:02} does not exist.", .{ station_address, index, subindex });
+                        continue;
+                    },
+                    else => |err2| return err2,
+                };
+                try writer.print("|           | {x:02} | {s:<48} | {s:<16} | {d:<3} |\n", .{ subindex, entry_description.data.slice(), std.enums.tagName(gcat.mailbox.coe.DataTypeArea, entry_description.data_type) orelse "INVALID", entry_description.bit_length });
+            }
         }
-        try writer.print("      --- total bits: {}\n", .{total_bits});
+        try writer.writeAll("\n");
     }
 
     // const mapping = try gcat.mailbox.coe.readPDOMapping(

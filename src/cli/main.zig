@@ -33,7 +33,7 @@ const Flags = struct {
             .benchmark = "Benchmark the performance of the EtherCAT bus.",
             .read_eeprom = "Read the eeprom of a subdevice.",
             .run = "Run an EtherCAT maindevice.",
-            .info = "Prints as much human-readable information about the subdevices as possible.",
+            .info = "Prints as much human-readable information (in markdown) about the subdevices as possible.",
         };
     },
 };

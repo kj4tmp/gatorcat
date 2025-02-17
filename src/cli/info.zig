@@ -1,6 +1,6 @@
 //! The info subcommand of the GatorCAT CLI.
 //!
-//! Prints as much information about the subdevices as possible.
+//! Prints as much information about the subdevices as possible in markdown format.
 
 const std = @import("std");
 

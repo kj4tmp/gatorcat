@@ -37,16 +37,30 @@ pub fn scan(allocator: std.mem.Allocator, args: Args) !void {
     try scanner.busInit(args.INIT_timeout_us, num_subdevices);
     try scanner.assignStationAddresses(num_subdevices);
 
-    const eni = try scanner.readEni(allocator, args.PREOP_timeout_us);
-    defer eni.deinit();
+    if (args.ring_position) |ring_position| {
+        const subdevice_eni = try scanner.readSubdeviceConfiguration(allocator, ring_position, args.PREOP_timeout_us);
+        defer subdevice_eni.deinit();
+        var std_out = std.io.getStdOut();
 
-    var std_out = std.io.getStdOut();
-
-    if (args.json) {
-        try std.json.stringify(eni.value, .{}, std_out.writer());
-        try std_out.writer().writeByte('\n');
+        if (args.json) {
+            try std.json.stringify(subdevice_eni.value, .{}, std_out.writer());
+            try std_out.writer().writeByte('\n');
+        } else {
+            try std.zon.stringify.serialize(subdevice_eni.value, .{ .emit_default_optional_fields = false }, std_out.writer());
+            try std_out.writer().writeByte('\n');
+        }
     } else {
-        try std.zon.stringify.serialize(eni.value, .{ .emit_default_optional_fields = false }, std_out.writer());
-        try std_out.writer().writeByte('\n');
+        const eni = try scanner.readEni(allocator, args.PREOP_timeout_us);
+        defer eni.deinit();
+
+        var std_out = std.io.getStdOut();
+
+        if (args.json) {
+            try std.json.stringify(eni.value, .{}, std_out.writer());
+            try std_out.writer().writeByte('\n');
+        } else {
+            try std.zon.stringify.serialize(eni.value, .{ .emit_default_optional_fields = false }, std_out.writer());
+            try std_out.writer().writeByte('\n');
+        }
     }
 }

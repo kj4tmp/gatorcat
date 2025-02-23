@@ -71,7 +71,8 @@ pub fn main() !void {
         if (print_timer.read() > std.time.ns_per_s * 1) {
             print_timer.reset();
             std.log.warn("frames/s: {}", .{cycle_count});
-            std.debug.print("EL2008 PROCESS IMAGE: {}\n", .{md.subdevices[1].runtime_info.pi});
+            try std.zon.stringify.serialize(md.getProcessImage(eni), .{}, std.io.getStdOut().writer());
+            // std.debug.print("process image: {any}\n", .{md.getProcessImage(eni)});
             cycle_count = 0;
         }
         if (blink_timer.read() > std.time.ns_per_s * 0.1) {

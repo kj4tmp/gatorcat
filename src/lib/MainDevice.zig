@@ -46,16 +46,12 @@ pub fn init(
 
     const subdevices = try allocator.alloc(Subdevice, eni.subdevices.len);
     errdefer allocator.free(subdevices);
-    const initialized_subdevices = gcat.initSubdevicesFromENI(eni, subdevices, process_image) catch |err| switch (err) {
-        error.NotEnoughSubdevices => unreachable,
-        error.ProcessImageTooSmall => unreachable,
-    };
-    assert(subdevices.len == initialized_subdevices.len);
+    eni.initSubdevicesFromENI(subdevices, process_image);
 
     return MainDevice{
         .port = port,
         .settings = settings,
-        .subdevices = initialized_subdevices,
+        .subdevices = subdevices,
         .process_image = process_image,
         .frames = frames,
         .transactions = .{},
@@ -66,6 +62,13 @@ pub fn deinit(self: *MainDevice, allocator: std.mem.Allocator) void {
     allocator.free(self.process_image);
     allocator.free(self.frames);
     allocator.free(self.subdevices);
+}
+
+pub fn getProcessImage(
+    self: *MainDevice,
+    comptime eni: ENI,
+) eni.ProcessImageType() {
+    return wire.packFromECatSlice(eni.ProcessImageType(), self.process_image);
 }
 
 /// returns minimum required size of allocated memory from the ENI

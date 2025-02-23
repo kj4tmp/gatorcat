@@ -432,7 +432,7 @@ pub fn readSubdeviceConfigurationLeaky(
                             .description_only,
                         );
                         try entries.append(ENI.SubdeviceConfiguration.PDO.Entry{
-                            .description = try allocator.dupe(u8, entry_description.data.slice()),
+                            .description = try allocator.dupeZ(u8, entry_description.data.slice()),
                             .index = entry_description.index,
                             .subindex = entry_description.subindex,
                             // NOTE: entry description bit length sometimes differs from PDO mapping bit length.
@@ -449,7 +449,7 @@ pub fn readSubdeviceConfigurationLeaky(
                     .input => {
                         try inputs.append(
                             ENI.SubdeviceConfiguration.PDO{
-                                .name = try allocator.dupe(u8, object_description.name.slice()),
+                                .name = try allocator.dupeZ(u8, object_description.name.slice()),
                                 .index = pdo_index,
                                 .entries = try entries.toOwnedSlice(),
                             },
@@ -458,7 +458,7 @@ pub fn readSubdeviceConfigurationLeaky(
                     .output => {
                         try outputs.append(
                             ENI.SubdeviceConfiguration.PDO{
-                                .name = try allocator.dupe(u8, object_description.name.slice()),
+                                .name = try allocator.dupeZ(u8, object_description.name.slice()),
                                 .index = pdo_index,
                                 .entries = try entries.toOwnedSlice(),
                             },
@@ -483,7 +483,7 @@ pub fn readSubdeviceConfigurationLeaky(
             const pdos: []const sii.PDO = sii_pdos.slice();
 
             for (pdos) |pdo| {
-                var pdo_name: ?[]const u8 = null;
+                var pdo_name: ?[:0]const u8 = null;
                 if (try sii.readSIIString(
                     self.port,
                     station_address,
@@ -491,7 +491,7 @@ pub fn readSubdeviceConfigurationLeaky(
                     self.settings.recv_timeout_us,
                     self.settings.eeprom_timeout_us,
                 )) |pdo_name_array| {
-                    pdo_name = try allocator.dupe(u8, pdo_name_array.slice());
+                    pdo_name = try allocator.dupeZ(u8, pdo_name_array.slice());
                 }
 
                 var entries = std.ArrayList(ENI.SubdeviceConfiguration.PDO.Entry).init(allocator);
@@ -499,7 +499,7 @@ pub fn readSubdeviceConfigurationLeaky(
 
                 const sii_entries: []const sii.PDO.Entry = pdo.entries.slice();
                 for (sii_entries) |entry| {
-                    var entry_name: ?[]const u8 = null;
+                    var entry_name: ?[:0]const u8 = null;
                     if (try sii.readSIIString(
                         self.port,
                         station_address,
@@ -507,7 +507,7 @@ pub fn readSubdeviceConfigurationLeaky(
                         self.settings.recv_timeout_us,
                         self.settings.eeprom_timeout_us,
                     )) |entry_name_array| {
-                        entry_name = try allocator.dupe(u8, entry_name_array.slice());
+                        entry_name = try allocator.dupeZ(u8, entry_name_array.slice());
                     }
                     try entries.append(ENI.SubdeviceConfiguration.PDO.Entry{
                         .index = entry.index,

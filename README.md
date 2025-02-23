@@ -46,7 +46,7 @@ Documentation can be found in [doc](doc/README.md).
 ## Road to v0.2
 
 - [ ] runtime process image info
-- [ ] comptime process image
+- [x] comptime process image
 - [ ] no config executable with valkey integration
 - [ ] validate pdos at runtime
 - [ ] revise error handling

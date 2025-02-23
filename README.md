@@ -50,6 +50,10 @@ Documentation can be found in [doc](doc/README.md).
 - [ ] no config executable with valkey integration
 - [ ] validate pdos at runtime
 - [ ] revise error handling
+- [x] python package: hello world
+- [ ] python package: message pack models
+- [ ] python package: valkey driver
+- [ ] zig message pack models
 
 ## Sponsors
 

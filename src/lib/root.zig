@@ -30,10 +30,6 @@ pub fn sleepUntilNextCycle(start_time: std.time.Instant, cycle_time_us: u32) voi
 
 pub const max_subdevices = 65535;
 
-test {
-    std.testing.refAllDecls(@This());
-}
-
 // TODO: remove this if its in std
 pub fn Exhaustive(@"enum": type) type {
     comptime assert(@typeInfo(@"enum").@"enum".is_exhaustive == false);
@@ -69,4 +65,8 @@ pub fn Arena(comptime T: type) type {
             allocator.destroy(self.arena);
         }
     };
+}
+
+test {
+    std.testing.refAllDecls(@This());
 }

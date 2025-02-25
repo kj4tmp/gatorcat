@@ -431,3 +431,25 @@ pub fn initSubdevicesFromENI(eni: ENI, subdevices: []Subdevice, process_image: [
         assert(prev_start + prev_len <= this_start);
     }
 }
+
+// /// Representation of a single process variable.
+// ///
+// /// Ref: IEC 61158-5-12:2019 5
+// pub const ProcessVariable = struct {
+//     name: []const u8,
+//     value: Value,
+
+//     pub const Value = union(enum) {
+//         boolean: bool,
+//         bit2: u2,
+//         bit3: u3,
+//         bit4: u4,
+//         bit5: u5,
+//         bit6: u6,
+//         bit7: u7,
+//         bit8: u8,
+//         bitarr8: u8,
+//         bitarr16: u16,
+//         bitarr32: u32,
+//     };
+// };

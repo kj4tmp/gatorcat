@@ -387,7 +387,7 @@ pub fn readSubdeviceConfigurationLeaky(
                 subdevice.runtime_info.coe.?.config,
                 @intCast(sm_idx),
             );
-            for (sm_pdo_assignment.slice()) |pdo_index| {
+            for (sm_pdo_assignment.slice(), 0..) |pdo_index, pdo_cnt| {
                 const pdo_mapping = try gcat.mailbox.coe.readPDOMapping(
                     self.port,
                     station_address,
@@ -410,7 +410,7 @@ pub fn readSubdeviceConfigurationLeaky(
                 var entries = std.ArrayList(ENI.SubdeviceConfiguration.PDO.Entry).init(allocator);
                 defer entries.deinit();
 
-                for (pdo_mapping.entries.slice()) |entry| {
+                for (pdo_mapping.entries.slice(), 0..) |entry, entry_cnt| {
                     if (entry.isGap()) {
                         try entries.append(ENI.SubdeviceConfiguration.PDO.Entry{
                             .description = null,
@@ -431,6 +431,21 @@ pub fn readSubdeviceConfigurationLeaky(
                             entry.subindex,
                             .description_only,
                         );
+                        var pv_name: ?[:0]const u8 = null;
+                        if (entry.index == 0 and entry.subindex == 0) {
+                            pv_name = null;
+                        } else {
+                            pv_name = try processVariableNameZ(
+                                allocator,
+                                ring_position,
+                                if (sm_comm_type == .input) .input else .output,
+                                @intCast(pdo_cnt),
+                                @intCast(entry_cnt),
+                                name,
+                                try allocator.dupeZ(u8, object_description.name.slice()),
+                                try allocator.dupeZ(u8, entry_description.data.slice()),
+                            );
+                        }
                         try entries.append(ENI.SubdeviceConfiguration.PDO.Entry{
                             .description = try allocator.dupeZ(u8, entry_description.data.slice()),
                             .index = entry_description.index,
@@ -442,6 +457,7 @@ pub fn readSubdeviceConfigurationLeaky(
                             .bits = entry.bit_length,
                             // TODO: there is probably a bettter function for this
                             .type = std.meta.intToEnum(gcat.Exhaustive(coe.DataTypeArea), @as(u16, @intFromEnum(entry_description.data_type))) catch .UNKNOWN,
+                            .pv_name = pv_name,
                         });
                     }
                 }
@@ -482,7 +498,7 @@ pub fn readSubdeviceConfigurationLeaky(
 
             const pdos: []const sii.PDO = sii_pdos.slice();
 
-            for (pdos) |pdo| {
+            for (pdos, 0..) |pdo, pdo_cnt| {
                 var pdo_name: ?[:0]const u8 = null;
                 if (try sii.readSIIString(
                     self.port,
@@ -498,7 +514,7 @@ pub fn readSubdeviceConfigurationLeaky(
                 defer entries.deinit();
 
                 const sii_entries: []const sii.PDO.Entry = pdo.entries.slice();
-                for (sii_entries) |entry| {
+                for (sii_entries, 0..) |entry, entry_cnt| {
                     var entry_name: ?[:0]const u8 = null;
                     if (try sii.readSIIString(
                         self.port,
@@ -509,12 +525,30 @@ pub fn readSubdeviceConfigurationLeaky(
                     )) |entry_name_array| {
                         entry_name = try allocator.dupeZ(u8, entry_name_array.slice());
                     }
+
+                    var pv_name: ?[:0]const u8 = null;
+                    if (entry.index == 0 and entry.subindex == 0) {
+                        pv_name = null;
+                    } else {
+                        pv_name = try processVariableNameZ(
+                            allocator,
+                            ring_position,
+                            direction,
+                            @intCast(pdo_cnt),
+                            @intCast(entry_cnt),
+                            name,
+                            pdo_name orelse "",
+                            entry_name orelse "",
+                        );
+                    }
+
                     try entries.append(ENI.SubdeviceConfiguration.PDO.Entry{
                         .index = entry.index,
                         .subindex = entry.subindex,
                         .bits = entry.bit_length,
                         .type = std.meta.intToEnum(gcat.Exhaustive(coe.DataTypeArea), entry.data_type) catch .UNKNOWN,
                         .description = entry_name,
+                        .pv_name = pv_name,
                     });
                 }
 
@@ -553,6 +587,32 @@ pub fn readSubdeviceConfigurationLeaky(
         .outputs = try outputs.toOwnedSlice(),
     };
     return res;
+}
+
+/// Produces a unique process image variable name.
+pub fn processVariableNameZ(
+    allocator: std.mem.Allocator,
+    ring_position: u16,
+    direction: pdi.Direction,
+    pdo_cnt: u16,
+    entry_cnt: u16,
+    subdevice_name: []const u8,
+    pdo_name: []const u8,
+    entry_description: []const u8,
+) error{OutOfMemory}![:0]u8 {
+    const direction_str: []const u8 = if (direction == .input) "i" else "o";
+    const name = try std.fmt.allocPrintZ(allocator, "s{}_{s}_p{}_e{}_{s}_{s}_{s}", .{
+        ring_position,
+        direction_str,
+        pdo_cnt,
+        entry_cnt,
+        subdevice_name,
+        pdo_name,
+        entry_description,
+    });
+    _ = std.mem.replace(u8, name, " ", "_", name);
+    _ = std.mem.replace(u8, name, "-", "_", name);
+    return name;
 }
 
 pub fn broadcastALStatusCheck(

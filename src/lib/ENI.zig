@@ -36,14 +36,23 @@ pub const SubdeviceConfiguration = struct {
     pub const PDO = struct {
         index: u16,
         entries: []const Entry,
+        /// Name of the PDO as provided by the subdevice.
         name: ?[:0]const u8 = null,
 
         pub const Entry = struct {
+            /// Index and subindex are zero when the bits are padding.
             index: u16 = 0,
             subindex: u8 = 0,
             type: gcat.Exhaustive(coe.DataTypeArea) = .UNKNOWN,
+            /// Number of bits in the process image. This may conflict with the type.
+            /// The type may be larger than this, when that occurs, the least significant
+            /// bits are in the process image. For example, an INTERGER32 may have bits=16, which are
+            /// the 16 least significant bits.
             bits: u16,
+            /// Description as provided from the subdevice.
             description: ?[:0]const u8 = null,
+            /// Full name of the process variable in the process image.
+            pv_name: ?[:0]const u8 = null,
         };
     };
 

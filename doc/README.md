@@ -100,3 +100,54 @@ To obtain the name of network interfaces on windows:
 1. Use the [GatorCAT CLI](#gatorcat-cli) to scan the network.
 1. Write your network configuration (ENI). See [example](../examples/simple/network_config.zig).
 1. Write your application. See [example](../examples/simple/main.zig).
+
+
+## MainDevice Class
+
+Ref: ETG 1500
+
+Class A Features
+
+| Feature                           | Class A      | Class B      | Supported? |
+| --------------------------------- | ------------ | ------------ | ---------- |
+| service commands                  | shall if eni | shall if eni | yes        |
+| irq                               | should       | should       | no         |
+| subdevice device emulation        | shall        | shall        | yes?       |
+| ecat state machine                | shall        | shall        | yes?       |
+| error handling                    | shall        | shall        | yes        |
+| vlan tagging                      | may          | may          | no         |
+| ecat frames                       | shall        | shall        | yes        |
+| udp frames                        | may          | may          | no         |
+| cyclic pdo                        | shall        | shall        | yes        |
+| multiple cyclic tasks             | may          | may          | no         |
+| frame repetition                  | may          | may          | no         |
+| online scanning                   |              |              | yes        |
+| read ENI                          |              |              | yes*       |
+| compare against eni               | shall        | shall        | yes        |
+| explicit device id                | should       | should       | no?        |
+| alias addressing                  | may          | may          | no         |
+| eeprom read                       | shall        | shall        | yes        |
+| eeprom write                      | may          | may          | no         |
+| mailbox transfer                  | shall        | shall        | yes        |
+| reslient mailbox                  | shall        | shall        | no         |
+| multiple mailboxes                | may          | may          | no         |
+| mailbox polling                   | shall        | shall        | no         |
+| sdo upload download               | shall        | should       | no         |
+| complete access                   | shall        | should       | yes        |
+| sdo info                          | shall        | should       | yes        |
+| emergency messages                | shall        | shall        | yes        |
+| pdo in coe                        | may          | may          | no         |
+| eoe                               | shall        | may          | no         |
+| virtual switch                    | shall        | may          | no         |
+| eoe endpoint to operation systems | should       | should       | no         |
+| foe                               | shall        | may          | no         |
+| firmware upload and download      | shall        | should       | no         |
+| boot state                        | shall        | should       | no         |
+| soe                               | shall        | should       | no         |
+| aoe                               | should       | should       | no         |
+| voe                               | may          | may          | no         |
+| dc                                | shall        | may          | no         |
+| continous prop delay measurement  | should       | should       | no         |
+| sync window monitoring            | should       | should       | no         |
+| sub to sub comms                  | shall        | shall        | no         |
+| maindevice object dictionary      | should       | may          | no         |

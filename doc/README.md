@@ -11,7 +11,7 @@ GatorCAT provides the following:
 
 ## Zig Version
 
-GatorCAT targets zig master for now. We plan to stop targetting master once 0.14.0 is released.
+Please review the `minimum_zig_version` field of the [`build.zig.zon`](/build.zig.zon).
 
 ## GatorCAT CLI
 

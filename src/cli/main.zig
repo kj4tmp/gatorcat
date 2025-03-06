@@ -42,10 +42,10 @@ pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
 
-    var args = try std.process.argsWithAllocator(gpa.allocator());
-    defer args.deinit();
+    const args = try std.process.argsAlloc(gpa.allocator());
+    defer std.process.argsFree(gpa.allocator(), args);
 
-    const parsed_args = flags.parse(&args, "gatorcat", Flags, .{}) catch |err| switch (err) {
+    const parsed_args = flags.parse(args, "gatorcat", Flags, .{}) catch |err| switch (err) {
         error.PrintedHelp => std.process.exit(0),
         else => |scoped_err| return scoped_err,
     };

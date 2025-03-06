@@ -2,7 +2,7 @@
     .name = .gatorcat,
     .version = "0.1.2",
     .fingerprint = 0xb9356c7c4de9ca59, // Changing this has security and trust implications.
-    .minimum_zig_version = "0.14.0-dev.3445+6c3cbb0c8",
+    .minimum_zig_version = "0.14.0",
     .dependencies = .{
         .flags = .{
             .url = "git+https://github.com/n0s4/flags.git#372501d1576b5723829bcba98e41361132c7b618",

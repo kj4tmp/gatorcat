@@ -6,6 +6,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 
 const gcat = @import("gatorcat");
+const zenoh = @import("zenoh");
 
 pub const Args = struct {
     ifname: [:0]const u8,
@@ -18,6 +19,7 @@ pub const Args = struct {
     mbx_timeout_us: u32 = 50_000,
     cycle_time_us: u32 = 0,
     max_recv_timeouts_before_rescan: u32 = 3,
+    zenoh_config_file: ?[:0]const u8 = null,
     pub const descriptions = .{
         .ifname = "Network interface to use for the bus scan.",
         .recv_timeout_us = "Frame receive timeout in microseconds.",
@@ -32,6 +34,10 @@ pub const RunError = error{
 };
 
 pub fn run(allocator: std.mem.Allocator, args: Args) error{NonRecoverable}!void {
+    if (args.zenoh_config_file) |zenoh_config_file| {
+        _ = zenoh_config_file;
+    }
+
     var raw_socket = gcat.nic.LinuxRawSocket.init(args.ifname) catch return error.NonRecoverable;
     defer raw_socket.deinit();
     var port = gcat.Port.init(raw_socket.linkLayer(), .{});

@@ -64,6 +64,11 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     cli.root_module.addImport("flags", flags.module("flags"));
+    const zenoh = b.dependency("zenoh", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    cli.root_module.addImport("zenoh", zenoh.module("zenoh"));
     // depend on the npcap sdk if we are building for windows
     switch (target.result.os.tag) {
         .windows => {

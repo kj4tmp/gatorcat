@@ -12,6 +12,10 @@
             .url = "https://npcap.com/dist/npcap-sdk-1.13.zip",
             .hash = "12206001b370bb70f9dc47c846df6ad82725e4491650472dc7037c5e027792ba207e",
         },
+        .zenoh = .{
+            .url = "git+https://github.com/kj4tmp/zenoh-zig.git#f843a69a42ea9a29023edde78f3e9998367088ad",
+            .hash = "zenoh-1.2.1-QDbMY0CuAAAeNj3WBShqETnbMZikfZ6WvFDDfjVi6ROZ",
+        },
     },
     .paths = .{
         "build.zig",

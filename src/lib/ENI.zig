@@ -441,6 +441,38 @@ pub fn initSubdevicesFromENI(eni: ENI, subdevices: []Subdevice, process_image: [
     }
 }
 
+/// Returns the number of input process image variables.
+/// Only variables with names are counted.
+pub fn nInputs(self: ENI) u32 {
+    var result: u32 = 0;
+    for (self.subdevices) |subdevice| {
+        for (subdevice.inputs) |input| {
+            for (input.entries) |entry| {
+                if (entry.pv_name) {
+                    result += 1;
+                }
+            }
+        }
+    }
+    return result;
+}
+
+/// Returns the number of output process image variables.
+/// Only variables with names are counted.
+pub fn nOutputs(self: ENI) u32 {
+    var result: u32 = 0;
+    for (self.subdevices) |subdevice| {
+        for (subdevice.outputs) |output| {
+            for (output.entries) |entry| {
+                if (entry.pv_name) {
+                    result += 1;
+                }
+            }
+        }
+    }
+    return result;
+}
+
 // /// Representation of a single process variable.
 // ///
 // /// Ref: IEC 61158-5-12:2019 5

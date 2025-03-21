@@ -3,6 +3,7 @@
 //! Intended to exemplify a reasonable default way of doing things with as little configuratiuon as possible.
 
 const std = @import("std");
+const assert = std.debug.assert;
 const builtin = @import("builtin");
 
 const gcat = @import("gatorcat");
@@ -281,3 +282,81 @@ pub fn run(allocator: std.mem.Allocator, args: Args) error{NonRecoverable}!void 
         }
     }
 }
+
+pub const ZenohHandler = struct {
+    arena: *std.heap.ArenaAllocator,
+    config: *zenoh.c.z_owned_config_t,
+    session: *zenoh.c.z_owned_session_t,
+    pubs: std.AutoArrayHashMap([:0]const u8, zenoh.c.z_owned_publisher_t),
+
+    pub fn init(parent_allocator: std.mem.Allocator, eni: gcat.ENI) !ZenohHandler {
+        var arena = try parent_allocator.create(std.heap.ArenaAllocator);
+        errdefer parent_allocator.destroy(arena);
+        errdefer arena.deinit();
+        const allocator = arena.allocator();
+
+        var config = try allocator.create(zenoh.c.z_owned_config_t);
+        zenoh.c.z_config_default(config);
+        errdefer zenoh.drop(zenoh.move(config));
+
+        var open_options: zenoh.c.z_open_options_t = undefined;
+        zenoh.c.z_open_options_default(&open_options);
+
+        var session = try allocator.create(zenoh.c.z_owned_session_t);
+        const open_result = zenoh.c.z_open(&session, zenoh.move(&config), &open_options);
+        try zenoh.err(open_result);
+        errdefer zenoh.drop(zenoh.move(session));
+
+        var pubs = std.AutoArrayHashMap([:0]const u8, zenoh.c.z_owned_publisher_t).init(allocator);
+        errdefer pubs.deinit();
+        errdefer {
+            for (&pubs.values()) |*publisher| {
+                zenoh.drop(zenoh.move(publisher));
+            }
+        }
+
+        for (eni.subdevices) |subdevice| {
+            for (subdevice.outputs) |output| {
+                for (output.entries) |entry| {
+                    var publisher: zenoh.c.z_owned_publisher_t = undefined;
+                    var view_keyexpr: zenoh.c.z_view_keyexpr_t = undefined;
+                    const result = zenoh.c.z_view_keyexpr_from_str(&view_keyexpr, entry.pv_name.?.ptr);
+                    try zenoh.err(result);
+                    var publisher_options: zenoh.c.z_publisher_options_t = undefined;
+                    zenoh.c.z_publisher_options_default(&publisher_options);
+                    const result2 = zenoh.c.z_declare_publisher(zenoh.loan(session), &publisher, zenoh.loan(&view_keyexpr), &publisher_options);
+                    try zenoh.err(result2);
+                    const put_result = try pubs.getOrPutValue(entry.pv_name.?, publisher);
+                    if (put_result.found_existing) return error.PVNameConflict; // TODO: assert this?
+                }
+            }
+        }
+        return ZenohHandler{
+            .arena = arena,
+            .config = config,
+            .session = session,
+            .pubs = pubs,
+        };
+    }
+
+    /// Asserts the given key exists.
+    pub fn publishAssumeKey(self: *ZenohHandler, key: [:0]const u8, payload: []const u8, options: *zenoh.c.z_publisher_options_t) !void {
+        var bytes: zenoh.c.z_owned_bytes_t = undefined;
+        const result_copy = zenoh.c.z_bytes_copy_from_buf(&bytes, payload.ptr, payload.len);
+        try zenoh.err(result_copy);
+        errdefer zenoh.drop(zenoh.move(&bytes));
+        var publisher = self.pubs.get(key).?;
+        const result = zenoh.c.z_publisher_put(zenoh.loan(&publisher), zenoh.move(payload), &options);
+        try zenoh.err(result);
+        errdefer comptime unreachable;
+    }
+
+    pub fn deinit(self: *ZenohHandler) void {
+        for (&self.pubs.items) |*publisher| {
+            zenoh.drop(zenoh.move(publisher));
+        }
+        zenoh.drop(zenoh.move(self.config));
+        zenoh.drop(zenoh.move(self.session));
+        self.arena.deinit();
+    }
+};

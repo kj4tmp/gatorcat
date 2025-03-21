@@ -13,8 +13,8 @@
             .hash = "12206001b370bb70f9dc47c846df6ad82725e4491650472dc7037c5e027792ba207e",
         },
         .zenoh = .{
-            .url = "git+https://github.com/kj4tmp/zenoh-zig.git#f843a69a42ea9a29023edde78f3e9998367088ad",
-            .hash = "zenoh-1.2.1-QDbMY0CuAAAeNj3WBShqETnbMZikfZ6WvFDDfjVi6ROZ",
+            .url = "git+https://github.com/kj4tmp/zenoh-zig.git#7316bd5676f890b071c11cfd61af6177728cbaef",
+            .hash = "zenoh-1.2.1-QDbMY6a0AAAnD9puKb35ZET4eXFaeDSU57WuHn8uOwo7",
         },
     },
     .paths = .{

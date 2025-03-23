@@ -336,7 +336,7 @@ pub const ZenohHandler = struct {
                     if (entry.pv_name == null) continue;
                     var publisher: zenoh.c.z_owned_publisher_t = undefined;
                     var view_keyexpr: zenoh.c.z_view_keyexpr_t = undefined;
-                    std.log.err("attempt {s}", .{entry.pv_name.?});
+                    std.log.info("declaring publisher {s}", .{entry.pv_name.?});
                     const result = zenoh.c.z_view_keyexpr_from_str(&view_keyexpr, entry.pv_name.?.ptr);
                     try zenoh.err(result);
                     var publisher_options: zenoh.c.z_publisher_options_t = undefined;
@@ -390,7 +390,8 @@ pub const ZenohHandler = struct {
             for (sub_config.inputs) |input| {
                 for (input.entries) |entry| {
                     const key = entry.pv_name orelse {
-                        _ = bit_reader.readBitsNoEof(u0, entry.bits) catch unreachable;
+                        // TODO: this panics on larger than 256
+                        _ = bit_reader.readBitsNoEof(u256, entry.bits) catch unreachable;
                         continue;
                     };
                     switch (entry.type) {
@@ -402,7 +403,8 @@ pub const ZenohHandler = struct {
                             }
                         },
                         // TODO: handle more types
-                        else => _ = bit_reader.readBitsNoEof(u0, entry.bits) catch unreachable,
+                        // TODO: this panics on larger than 256
+                        else => _ = bit_reader.readBitsNoEof(u256, entry.bits) catch unreachable,
                     }
                 }
             }

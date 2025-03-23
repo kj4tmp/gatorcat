@@ -1,0 +1,5 @@
+services:
+  gui:
+    build:
+      context: .
+      dockerfile: Dockerfile.gui

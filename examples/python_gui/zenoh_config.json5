@@ -1,0 +1,11 @@
+{
+  downsampling: [
+    {
+      flow: "ingress",
+      rules: [
+        { key_expr: "**", freq: 100
+        },
+      ],
+    },
+  ],
+}

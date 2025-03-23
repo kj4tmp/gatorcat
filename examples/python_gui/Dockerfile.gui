@@ -1,0 +1,9 @@
+FROM python:3.12
+
+COPY requirements.txt requirements.txt
+RUN pip install -r requirements.txt
+
+COPY zenoh_config.json5 zenoh_config.json5
+COPY main.py main.py
+
+CMD python main.py

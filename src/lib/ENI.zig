@@ -53,6 +53,10 @@ pub const SubdeviceConfiguration = struct {
             description: ?[:0]const u8 = null,
             /// Full name of the process variable in the process image.
             pv_name: ?[:0]const u8 = null,
+
+            pub fn isGap(self: Entry) bool {
+                return self.index == 0;
+            }
         };
     };
 

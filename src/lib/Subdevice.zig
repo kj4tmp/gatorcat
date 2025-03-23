@@ -580,7 +580,7 @@ pub fn stationAddressFromRingPos(position: u16) u16 {
     return 0x1000 +% position;
 }
 
-pub fn getInputProcessData(self: *const Subdevice) []u8 {
+pub fn getInputProcessData(self: *const Subdevice) []const u8 {
     return self.runtime_info.pi.inputs;
 }
 

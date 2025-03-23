@@ -20,12 +20,13 @@ pub const Args = struct {
     mbx_timeout_us: u32 = 50_000,
     cycle_time_us: u32 = 0,
     max_recv_timeouts_before_rescan: u32 = 3,
-    zenoh_config_file: ?[:0]const u8 = null,
+    zenoh: bool = false,
     pub const descriptions = .{
         .ifname = "Network interface to use for the bus scan.",
         .recv_timeout_us = "Frame receive timeout in microseconds.",
         .eeprom_timeout_us = "SII EEPROM timeout in microseconds.",
         .INIT_timeout_us = "state transition to INIT timeout in microseconds.",
+        .zenoh = "enable zenoh",
     };
 };
 
@@ -34,11 +35,7 @@ pub const RunError = error{
     NonRecoverable,
 };
 
-pub fn run(allocator: std.mem.Allocator, args: Args) error{NonRecoverable}!void {
-    if (args.zenoh_config_file) |zenoh_config_file| {
-        _ = zenoh_config_file;
-    }
-
+pub fn run(allocator: std.mem.Allocator, args: Args) RunError!void {
     var raw_socket = gcat.nic.LinuxRawSocket.init(args.ifname) catch return error.NonRecoverable;
     defer raw_socket.deinit();
     var port = gcat.Port.init(raw_socket.linkLayer(), .{});
@@ -124,6 +121,16 @@ pub fn run(allocator: std.mem.Allocator, args: Args) error{NonRecoverable}!void 
             => continue :bus_scan,
         };
         defer eni.deinit();
+
+        var maybe_zh = if (args.zenoh) ZenohHandler.init(
+            allocator,
+            eni.value,
+        ) catch return error.NonRecoverable else null;
+        defer {
+            if (maybe_zh) |_| {
+                maybe_zh.?.deinit();
+            }
+        }
 
         var md = gcat.MainDevice.init(
             allocator,
@@ -295,22 +302,22 @@ pub const ZenohHandler = struct {
         errdefer arena.deinit();
         const allocator = arena.allocator();
 
-        var config = try allocator.create(zenoh.c.z_owned_config_t);
-        zenoh.c.z_config_default(config);
+        const config = try allocator.create(zenoh.c.z_owned_config_t);
+        try zenoh.err(zenoh.c.z_config_default(config));
         errdefer zenoh.drop(zenoh.move(config));
 
         var open_options: zenoh.c.z_open_options_t = undefined;
         zenoh.c.z_open_options_default(&open_options);
 
-        var session = try allocator.create(zenoh.c.z_owned_session_t);
-        const open_result = zenoh.c.z_open(&session, zenoh.move(&config), &open_options);
+        const session = try allocator.create(zenoh.c.z_owned_session_t);
+        const open_result = zenoh.c.z_open(session, zenoh.move(config), &open_options);
         try zenoh.err(open_result);
         errdefer zenoh.drop(zenoh.move(session));
 
         var pubs = std.AutoArrayHashMap([:0]const u8, zenoh.c.z_owned_publisher_t).init(allocator);
         errdefer pubs.deinit();
         errdefer {
-            for (&pubs.values()) |*publisher| {
+            for (pubs.values()) |*publisher| {
                 zenoh.drop(zenoh.move(publisher));
             }
         }
@@ -340,7 +347,9 @@ pub const ZenohHandler = struct {
     }
 
     /// Asserts the given key exists.
-    pub fn publishAssumeKey(self: *ZenohHandler, key: [:0]const u8, payload: []const u8, options: *zenoh.c.z_publisher_options_t) !void {
+    pub fn publishAssumeKey(self: *ZenohHandler, key: [:0]const u8, payload: []const u8) !void {
+        var options: zenoh.c.z_publisher_options_t = undefined;
+        zenoh.c.z_publisher_options_default(&options);
         var bytes: zenoh.c.z_owned_bytes_t = undefined;
         const result_copy = zenoh.c.z_bytes_copy_from_buf(&bytes, payload.ptr, payload.len);
         try zenoh.err(result_copy);
@@ -352,11 +361,40 @@ pub const ZenohHandler = struct {
     }
 
     pub fn deinit(self: *ZenohHandler) void {
-        for (&self.pubs.items) |*publisher| {
+        for (self.pubs.values()) |*publisher| {
             zenoh.drop(zenoh.move(publisher));
         }
         zenoh.drop(zenoh.move(self.config));
         zenoh.drop(zenoh.move(self.session));
         self.arena.deinit();
+    }
+
+    pub fn publishInputs(self: *ZenohHandler, md: *const gcat.MainDevice, eni: gcat.ENI) !void {
+        for (md.subdevices, eni.subdevices) |sub, sub_config| {
+            const data = sub.getInputProcessData();
+            var fbs = std.io.fixedBufferStream(data);
+            const reader = fbs.reader();
+            var bit_reader = std.io.bitReader(.little, reader);
+
+            for (sub_config.inputs) |input| {
+                for (input.entries) |entry| {
+                    const key = entry.pv_name orelse {
+                        bit_reader.readBitsNoEof(void, entry.bits) catch unreachable;
+                        continue;
+                    };
+                    switch (entry.type) {
+                        .BOOLEAN => {
+                            const value = bit_reader.readBitsNoEof(u1, entry.bits) catch unreachable;
+                            switch (value) {
+                                0 => try self.publishAssumeKey(key, "false"),
+                                1 => try self.publishAssumeKey(key, "true"),
+                            }
+                        },
+                        // TODO: handle more types
+                        else => bit_reader.readBitsNoEof(void, entry.bits) catch unreachable,
+                    }
+                }
+            }
+        }
     }
 };

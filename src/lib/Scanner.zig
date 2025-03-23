@@ -600,8 +600,8 @@ pub fn processVariableNameZ(
     pdo_name: []const u8,
     entry_description: []const u8,
 ) error{OutOfMemory}![:0]u8 {
-    const direction_str: []const u8 = if (direction == .input) "i" else "o";
-    const name = try std.fmt.allocPrintZ(allocator, "s{}_{s}_p{}_e{}_{s}_{s}_{s}", .{
+    const direction_str: []const u8 = if (direction == .input) "inputs" else "outputs";
+    const name = try std.fmt.allocPrintZ(allocator, "subdevices/{}/{s}/pdo/{}/entry/{}/{s}_{s}_{s}", .{
         ring_position,
         direction_str,
         pdo_cnt,
@@ -610,8 +610,20 @@ pub fn processVariableNameZ(
         pdo_name,
         entry_description,
     });
+    // the encoding of strings in ethercat is IEC 8859-1,
+    // lets just normalize to 7-bit ascii.
+    for (name) |*char| {
+        if (!std.ascii.isAscii(char.*)) {
+            char.* = '_';
+        }
+    }
+    // *, $, ?, # prohibited by zenoh
+    _ = std.mem.replace(u8, name, "*", "_", name);
+    _ = std.mem.replace(u8, name, "$", "_", name);
+    _ = std.mem.replace(u8, name, "?", "_", name);
+    _ = std.mem.replace(u8, name, "#", "_", name);
+    // no whitespace (personal preference)
     _ = std.mem.replace(u8, name, " ", "_", name);
-    _ = std.mem.replace(u8, name, "-", "_", name);
     return name;
 }
 

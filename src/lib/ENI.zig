@@ -452,7 +452,7 @@ pub fn nInputs(self: ENI) u32 {
     for (self.subdevices) |subdevice| {
         for (subdevice.inputs) |input| {
             for (input.entries) |entry| {
-                if (entry.pv_name) {
+                if (entry.pv_name) |_| {
                     result += 1;
                 }
             }
@@ -468,7 +468,7 @@ pub fn nOutputs(self: ENI) u32 {
     for (self.subdevices) |subdevice| {
         for (subdevice.outputs) |output| {
             for (output.entries) |entry| {
-                if (entry.pv_name) {
+                if (entry.pv_name) |_| {
                     result += 1;
                 }
             }

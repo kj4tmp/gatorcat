@@ -277,6 +277,10 @@ pub fn run(allocator: std.mem.Allocator, args: Args) RunError!void {
                 => continue :bus_scan,
             }
 
+            if (maybe_zh) |*zh| {
+                zh.publishInputs(&md, eni.value) catch break :bus_scan; // TODO: correct action here?
+            }
+
             // do application
             cycle_count += 1;
 
@@ -294,15 +298,19 @@ pub const ZenohHandler = struct {
     arena: *std.heap.ArenaAllocator,
     config: *zenoh.c.z_owned_config_t,
     session: *zenoh.c.z_owned_session_t,
-    pubs: std.AutoArrayHashMap([:0]const u8, zenoh.c.z_owned_publisher_t),
+    // TODO: store string keys as [:0] const u8 by calling hash map ourselves with StringContext
+    pubs: std.StringArrayHashMap(zenoh.c.z_owned_publisher_t),
 
     pub fn init(parent_allocator: std.mem.Allocator, eni: gcat.ENI) !ZenohHandler {
         var arena = try parent_allocator.create(std.heap.ArenaAllocator);
+        arena.* = .init(parent_allocator);
         errdefer parent_allocator.destroy(arena);
         errdefer arena.deinit();
         const allocator = arena.allocator();
 
+        std.log.err("here", .{});
         const config = try allocator.create(zenoh.c.z_owned_config_t);
+        std.log.err("ptr: {x}", .{@intFromPtr(config)});
         try zenoh.err(zenoh.c.z_config_default(config));
         errdefer zenoh.drop(zenoh.move(config));
 
@@ -314,7 +322,7 @@ pub const ZenohHandler = struct {
         try zenoh.err(open_result);
         errdefer zenoh.drop(zenoh.move(session));
 
-        var pubs = std.AutoArrayHashMap([:0]const u8, zenoh.c.z_owned_publisher_t).init(allocator);
+        var pubs = std.StringArrayHashMap(zenoh.c.z_owned_publisher_t).init(allocator);
         errdefer pubs.deinit();
         errdefer {
             for (pubs.values()) |*publisher| {
@@ -323,14 +331,17 @@ pub const ZenohHandler = struct {
         }
 
         for (eni.subdevices) |subdevice| {
-            for (subdevice.outputs) |output| {
-                for (output.entries) |entry| {
+            for (subdevice.inputs) |input| {
+                for (input.entries) |entry| {
+                    if (entry.pv_name == null) continue;
                     var publisher: zenoh.c.z_owned_publisher_t = undefined;
                     var view_keyexpr: zenoh.c.z_view_keyexpr_t = undefined;
+                    std.log.err("attempt {s}", .{entry.pv_name.?});
                     const result = zenoh.c.z_view_keyexpr_from_str(&view_keyexpr, entry.pv_name.?.ptr);
                     try zenoh.err(result);
                     var publisher_options: zenoh.c.z_publisher_options_t = undefined;
                     zenoh.c.z_publisher_options_default(&publisher_options);
+                    publisher_options.congestion_control = zenoh.c.Z_CONGESTION_CONTROL_DROP;
                     const result2 = zenoh.c.z_declare_publisher(zenoh.loan(session), &publisher, zenoh.loan(&view_keyexpr), &publisher_options);
                     try zenoh.err(result2);
                     const put_result = try pubs.getOrPutValue(entry.pv_name.?, publisher);
@@ -348,14 +359,14 @@ pub const ZenohHandler = struct {
 
     /// Asserts the given key exists.
     pub fn publishAssumeKey(self: *ZenohHandler, key: [:0]const u8, payload: []const u8) !void {
-        var options: zenoh.c.z_publisher_options_t = undefined;
-        zenoh.c.z_publisher_options_default(&options);
+        var options: zenoh.c.z_publisher_put_options_t = undefined;
+        zenoh.c.z_publisher_put_options_default(&options);
         var bytes: zenoh.c.z_owned_bytes_t = undefined;
         const result_copy = zenoh.c.z_bytes_copy_from_buf(&bytes, payload.ptr, payload.len);
         try zenoh.err(result_copy);
         errdefer zenoh.drop(zenoh.move(&bytes));
         var publisher = self.pubs.get(key).?;
-        const result = zenoh.c.z_publisher_put(zenoh.loan(&publisher), zenoh.move(payload), &options);
+        const result = zenoh.c.z_publisher_put(zenoh.loan(&publisher), zenoh.move(&bytes), &options);
         try zenoh.err(result);
         errdefer comptime unreachable;
     }
@@ -379,7 +390,7 @@ pub const ZenohHandler = struct {
             for (sub_config.inputs) |input| {
                 for (input.entries) |entry| {
                     const key = entry.pv_name orelse {
-                        bit_reader.readBitsNoEof(void, entry.bits) catch unreachable;
+                        _ = bit_reader.readBitsNoEof(u0, entry.bits) catch unreachable;
                         continue;
                     };
                     switch (entry.type) {
@@ -391,7 +402,7 @@ pub const ZenohHandler = struct {
                             }
                         },
                         // TODO: handle more types
-                        else => bit_reader.readBitsNoEof(void, entry.bits) catch unreachable,
+                        else => _ = bit_reader.readBitsNoEof(u0, entry.bits) catch unreachable,
                     }
                 }
             }

@@ -49,6 +49,7 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_root_unit_tests.step);
 
     // CLI tool step
+
     const cli_step = b.step("cli", "Build the GatorCAT CLI tool");
     const cli = b.addExecutable(.{
         .name = "gatorcat",
@@ -64,6 +65,11 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     cli.root_module.addImport("flags", flags.module("flags"));
+    const zbor = b.dependency("zbor", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    cli.root_module.addImport("zbor", zbor.module("zbor"));
     const zenoh = b.dependency("zenoh", .{
         .target = target,
         .optimize = optimize,

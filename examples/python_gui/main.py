@@ -3,6 +3,7 @@ import time
 from typing import Any
 
 import zenoh
+import cbor2
 from nicegui import Client, run, ui, app
 
 
@@ -19,7 +20,7 @@ def subscribe_in_background():
             if sample.kind == zenoh.SampleKind.DELETE:
                 channels.pop(str(sample.key_expr), None)
             elif sample.kind == zenoh.SampleKind.PUT:
-                channels[str(sample.key_expr)] = sample.payload.to_string()
+                channels[str(sample.key_expr)] = cbor2.loads(sample.payload.to_bytes())
 
         session.declare_subscriber("**", listener)
         while True:

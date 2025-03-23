@@ -7,6 +7,7 @@ const assert = std.debug.assert;
 const builtin = @import("builtin");
 
 const gcat = @import("gatorcat");
+const zbor = @import("zbor");
 const zenoh = @import("zenoh");
 
 pub const Args = struct {
@@ -398,8 +399,8 @@ pub const ZenohHandler = struct {
                         .BOOLEAN => {
                             const value = bit_reader.readBitsNoEof(u1, entry.bits) catch unreachable;
                             switch (value) {
-                                0 => try self.publishAssumeKey(key, "false"),
-                                1 => try self.publishAssumeKey(key, "true"),
+                                0 => try self.publishAssumeKey(key, &.{0xf4}), // false
+                                1 => try self.publishAssumeKey(key, &.{0xf5}), // true
                             }
                         },
                         // TODO: handle more types

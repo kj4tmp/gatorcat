@@ -58,3 +58,11 @@ pub fn main() !void {
         .info => |info_args| try info.info(gpa.allocator(), info_args),
     }
 }
+
+test {
+    _ = @import("benchmark.zig");
+    _ = @import("info.zig");
+    _ = @import("read_eeprom.zig");
+    _ = @import("run.zig");
+    _ = @import("scan.zig");
+}

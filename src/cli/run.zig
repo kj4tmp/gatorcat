@@ -386,7 +386,7 @@ pub const ZenohHandler = struct {
             const data = sub.getInputProcessData();
             var fbs = std.io.fixedBufferStream(data);
             const reader = fbs.reader();
-            var bit_reader = std.io.bitReader(.little, reader);
+            var bit_reader = gcat.wire.lossyBitReader(reader);
 
             for (sub_config.inputs) |input| {
                 for (input.entries) |entry| {
@@ -402,6 +402,14 @@ pub const ZenohHandler = struct {
                                 0 => try self.publishAssumeKey(key, &.{0xf4}), // false
                                 1 => try self.publishAssumeKey(key, &.{0xf5}), // true
                             }
+                        },
+                        .INTEGER16 => {
+                            const value = bit_reader.readBitsNoEof(i16, entry.bits) catch unreachable;
+                            var bytes: [16]u8 = undefined;
+                            var fbs2 = std.io.fixedBufferStream(&bytes);
+                            const writer = fbs2.writer();
+                            zbor.stringify(value, .{}, writer) catch unreachable;
+                            try self.publishAssumeKey(key, fbs2.getWritten());
                         },
                         // TODO: handle more types
                         // TODO: this panics on larger than 256

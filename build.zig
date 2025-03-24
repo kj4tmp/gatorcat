@@ -172,11 +172,25 @@ pub fn build(b: *std.Build) void {
     sim_test_step.dependOn(&run_sim_test.step);
     sim_test.root_module.addImport("gatorcat", lib);
 
+    // cli tests
+
+    const cli_test = b.addTest(.{
+        .root_source_file = cli.root_module.root_source_file,
+        .target = target,
+        .optimize = optimize,
+    });
+    const run_cli_test = b.addRunArtifact(cli_test);
+    const cli_test_step = b.step("cli_test", "Run cli tests");
+    cli_test_step.dependOn(&run_cli_test.step);
+    cli_test.root_module.addImport("gatorcat", lib);
+    cli_test.root_module.addImport("zbor", zbor.module("zbor"));
+
     const all_step = b.step("all", "Do everything");
     all_step.dependOn(cli_step);
     all_step.dependOn(test_step);
     all_step.dependOn(examples_step);
     all_step.dependOn(sim_test_step);
+    all_step.dependOn(cli_test_step);
 
     b.default_step.dependOn(cli_step);
 }

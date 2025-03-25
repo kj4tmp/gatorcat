@@ -248,12 +248,13 @@ test "packFromECat" {
 ///
 /// - only supports little endian
 /// - skip bits by using read with type void.
-/// - read(u16, 16) -> u16
-/// - read(u16, 32) -> u16 (ignores higher bits from bitstream)
-/// - read(u16, 8) -> u16 (higher bits are zero filled)
-/// - read(boo1, 1) -> bool
-/// - read(bool, 0) -> bool (false)
-/// - read(bool, 2) -> bool (ignores higher bits from bitsream)
+/// - readBitsNoEof(u16, 16) -> u16
+/// - readBitsNoEof(u16, 32) -> u16 (ignores higher bits from bitstream)
+/// - readBitsNoEof(u16, 8) -> u16 (higher bits are zero filled)
+/// - readBitsNoEof(boo1, 1) -> bool
+/// - readBitsNoEof(bool, 0) -> bool (false)
+/// - readBitsNoEof(bool, 2) -> bool (ignores higher bits from bitsream)
+/// - readBitsNoEof(void, 2) -> void (skips 2 bits in bitstream)
 pub fn LossyBitReader(comptime Reader: type) type {
     return struct {
         reader: Reader,
@@ -280,8 +281,10 @@ pub fn LossyBitReader(comptime Reader: type) type {
                     used_bits += 1;
                 }
             }
-
-            return @bitCast(rval);
+            return switch (T) {
+                void => void{},
+                else => return @bitCast(rval),
+            };
         }
 
         pub fn reset(self: *@This()) void {
@@ -303,7 +306,7 @@ test lossyBitReader {
     try std.testing.expectEqual(true, try bit_reader.readBitsNoEof(bool, 1));
 }
 
-test "lossyBitReader correctness 0 bytes" {
+test "lossyBitReader 0 bytes" {
     const t: []const u8 = &.{};
     var fbs = std.io.fixedBufferStream(t);
     const reader = fbs.reader();
@@ -398,7 +401,7 @@ test "lossyBitReader 1 byte" {
     bit_reader.reset();
 }
 
-test "lossyBitReader correctness 2 bytes" {
+test "lossyBitReader 2 bytes" {
     const t: []const u8 = &.{ 0b00001101, 0b00100110 };
     var fbs = std.io.fixedBufferStream(t);
     const reader = fbs.reader();
@@ -420,6 +423,10 @@ test "lossyBitReader correctness 2 bytes" {
     try std.testing.expectEqual(false, try bit_reader.readBitsNoEof(bool, 1));
     try std.testing.expectEqual(false, try bit_reader.readBitsNoEof(bool, 1));
     try std.testing.expectError(error.EndOfStream, bit_reader.readBitsNoEof(bool, 1));
+    fbs.reset();
+    bit_reader.reset();
+
+    try std.testing.expectEqual(0b0100110_00001101, try bit_reader.readBitsNoEof(u15, 16));
     fbs.reset();
     bit_reader.reset();
 

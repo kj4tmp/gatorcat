@@ -287,7 +287,7 @@ pub fn run(allocator: std.mem.Allocator, args: Args) RunError!void {
 
             if (print_timer.read() > std.time.ns_per_s * 1) {
                 print_timer.reset();
-                std.log.info("frames/s: {}", .{cycle_count});
+                std.log.info("cycles/s: {}", .{cycle_count});
                 cycle_count = 0;
             }
             gcat.sleepUntilNextCycle(md.first_cycle_time.?, args.cycle_time_us);
@@ -337,7 +337,7 @@ pub const ZenohHandler = struct {
                     if (entry.pv_name == null) continue;
                     var publisher: zenoh.c.z_owned_publisher_t = undefined;
                     var view_keyexpr: zenoh.c.z_view_keyexpr_t = undefined;
-                    std.log.info("declaring publisher {s}", .{entry.pv_name.?});
+                    std.log.info("declaring publisher: {s}, type: {}", .{ entry.pv_name.?, entry.type });
                     const result = zenoh.c.z_view_keyexpr_from_str(&view_keyexpr, entry.pv_name.?.ptr);
                     try zenoh.err(result);
                     var publisher_options: zenoh.c.z_publisher_options_t = undefined;
@@ -381,6 +381,7 @@ pub const ZenohHandler = struct {
         self.arena.deinit();
     }
 
+    // returns number of put calls
     pub fn publishInputs(self: *ZenohHandler, md: *const gcat.MainDevice, eni: gcat.ENI) !void {
         for (md.subdevices, eni.subdevices) |sub, sub_config| {
             const data = sub.getInputProcessData();
@@ -391,30 +392,131 @@ pub const ZenohHandler = struct {
             for (sub_config.inputs) |input| {
                 for (input.entries) |entry| {
                     const key = entry.pv_name orelse {
-                        // TODO: this panics on larger than 256
-                        _ = bit_reader.readBitsNoEof(u256, entry.bits) catch unreachable;
+                        bit_reader.readBitsNoEof(void, entry.bits) catch unreachable;
                         continue;
                     };
+                    var out_buffer: [32]u8 = undefined; // TODO: this is arbitrary
+                    var fbs_out = std.io.fixedBufferStream(&out_buffer);
+                    const writer = fbs_out.writer();
                     switch (entry.type) {
                         .BOOLEAN => {
-                            const value = bit_reader.readBitsNoEof(u1, entry.bits) catch unreachable;
+                            const value = bit_reader.readBitsNoEof(bool, entry.bits) catch unreachable;
                             switch (value) {
-                                0 => try self.publishAssumeKey(key, &.{0xf4}), // false
-                                1 => try self.publishAssumeKey(key, &.{0xf5}), // true
+                                false => {
+                                    try self.publishAssumeKey(key, &.{0xf4});
+                                    continue;
+                                },
+                                true => {
+                                    try self.publishAssumeKey(key, &.{0xf5});
+                                    continue;
+                                },
                             }
+                        },
+                        .BIT1 => {
+                            const value = bit_reader.readBitsNoEof(u1, entry.bits) catch unreachable;
+                            zbor.stringify(value, .{}, writer) catch unreachable;
+                        },
+                        .BIT2 => {
+                            const value = bit_reader.readBitsNoEof(u2, entry.bits) catch unreachable;
+                            zbor.stringify(value, .{}, writer) catch unreachable;
+                        },
+                        .BIT3 => {
+                            const value = bit_reader.readBitsNoEof(u3, entry.bits) catch unreachable;
+                            zbor.stringify(value, .{}, writer) catch unreachable;
+                        },
+                        .BIT4 => {
+                            const value = bit_reader.readBitsNoEof(u4, entry.bits) catch unreachable;
+                            zbor.stringify(value, .{}, writer) catch unreachable;
+                        },
+                        .BIT5 => {
+                            const value = bit_reader.readBitsNoEof(u5, entry.bits) catch unreachable;
+                            zbor.stringify(value, .{}, writer) catch unreachable;
+                        },
+                        .BIT6 => {
+                            const value = bit_reader.readBitsNoEof(u6, entry.bits) catch unreachable;
+                            zbor.stringify(value, .{}, writer) catch unreachable;
+                        },
+                        .BIT7 => {
+                            const value = bit_reader.readBitsNoEof(u7, entry.bits) catch unreachable;
+                            zbor.stringify(value, .{}, writer) catch unreachable;
+                        },
+                        // TODO: encode as bit array?
+                        .BIT8, .UNSIGNED8, .BYTE, .BITARR8 => {
+                            const value = bit_reader.readBitsNoEof(u8, entry.bits) catch unreachable;
+                            zbor.stringify(value, .{}, writer) catch unreachable;
+                        },
+                        .INTEGER8 => {
+                            const value = bit_reader.readBitsNoEof(i8, entry.bits) catch unreachable;
+                            zbor.stringify(value, .{}, writer) catch unreachable;
                         },
                         .INTEGER16 => {
                             const value = bit_reader.readBitsNoEof(i16, entry.bits) catch unreachable;
-                            var bytes: [16]u8 = undefined;
-                            var fbs2 = std.io.fixedBufferStream(&bytes);
-                            const writer = fbs2.writer();
                             zbor.stringify(value, .{}, writer) catch unreachable;
-                            try self.publishAssumeKey(key, fbs2.getWritten());
                         },
-                        // TODO: handle more types
-                        // TODO: this panics on larger than 256
-                        else => _ = bit_reader.readBitsNoEof(u256, entry.bits) catch unreachable,
+                        .INTEGER32 => {
+                            const value = bit_reader.readBitsNoEof(i32, entry.bits) catch unreachable;
+                            zbor.stringify(value, .{}, writer) catch unreachable;
+                        },
+                        // TODO: encode as bit array?
+                        .UNSIGNED16, .BITARR16 => {
+                            const value = bit_reader.readBitsNoEof(u16, entry.bits) catch unreachable;
+                            zbor.stringify(value, .{}, writer) catch unreachable;
+                        },
+                        .UNSIGNED24 => {
+                            const value = bit_reader.readBitsNoEof(u24, entry.bits) catch unreachable;
+                            zbor.stringify(value, .{}, writer) catch unreachable;
+                        },
+                        // TODO: encode as bit array?
+                        .UNSIGNED32, .BITARR32 => {
+                            const value = bit_reader.readBitsNoEof(u32, entry.bits) catch unreachable;
+                            zbor.stringify(value, .{}, writer) catch unreachable;
+                        },
+                        .UNSIGNED40 => {
+                            const value = bit_reader.readBitsNoEof(u40, entry.bits) catch unreachable;
+                            zbor.stringify(value, .{}, writer) catch unreachable;
+                        },
+                        .UNSIGNED48 => {
+                            const value = bit_reader.readBitsNoEof(u48, entry.bits) catch unreachable;
+                            zbor.stringify(value, .{}, writer) catch unreachable;
+                        },
+                        .UNSIGNED56 => {
+                            const value = bit_reader.readBitsNoEof(u56, entry.bits) catch unreachable;
+                            zbor.stringify(value, .{}, writer) catch unreachable;
+                        },
+                        .UNSIGNED64 => {
+                            const value = bit_reader.readBitsNoEof(u64, entry.bits) catch unreachable;
+                            zbor.stringify(value, .{}, writer) catch unreachable;
+                        },
+                        .REAL32 => {
+                            const value = bit_reader.readBitsNoEof(f32, entry.bits) catch unreachable;
+                            zbor.stringify(value, .{}, writer) catch unreachable;
+                        },
+                        .INTEGER24 => {
+                            const value = bit_reader.readBitsNoEof(i24, entry.bits) catch unreachable;
+                            zbor.stringify(value, .{}, writer) catch unreachable;
+                        },
+                        .INTEGER40 => {
+                            const value = bit_reader.readBitsNoEof(i40, entry.bits) catch unreachable;
+                            zbor.stringify(value, .{}, writer) catch unreachable;
+                        },
+                        .INTEGER48 => {
+                            const value = bit_reader.readBitsNoEof(i48, entry.bits) catch unreachable;
+                            zbor.stringify(value, .{}, writer) catch unreachable;
+                        },
+                        .INTEGER56 => {
+                            const value = bit_reader.readBitsNoEof(i56, entry.bits) catch unreachable;
+                            zbor.stringify(value, .{}, writer) catch unreachable;
+                        },
+                        .INTEGER64 => {
+                            const value = bit_reader.readBitsNoEof(i64, entry.bits) catch unreachable;
+                            zbor.stringify(value, .{}, writer) catch unreachable;
+                        },
+                        else => {
+                            bit_reader.readBitsNoEof(void, entry.bits) catch unreachable;
+                            continue;
+                        },
                     }
+                    try self.publishAssumeKey(key, fbs_out.getWritten());
                 }
             }
         }

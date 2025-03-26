@@ -17,7 +17,7 @@ Please review the `minimum_zig_version` field of the [`build.zig.zon`](/build.zi
 
 ### Installation
 
-The CLI can be build from source:
+The CLI can be built from source:
 
 1. Clone this repo
 1. Run `zig build` in the repo

@@ -10,9 +10,9 @@ const read_eeprom = @import("read_eeprom.zig");
 const run = @import("run.zig");
 const scan = @import("scan.zig");
 
-// pub const std_options: std.Options = .{
-//     .log_level = .warn,
-// };
+pub const std_options: std.Options = .{
+    .log_level = .warn,
+};
 
 // CLI options
 const Flags = struct {
@@ -39,16 +39,21 @@ const Flags = struct {
 };
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    // TODO: put version here
+    std.log.warn("gatorcat version UNKNOWN", .{});
 
-    const args = try std.process.argsAlloc(gpa.allocator());
-    defer std.process.argsFree(gpa.allocator(), args);
+    var args_mem: [4096]u8 = undefined;
+    var args_allocator = std.heap.FixedBufferAllocator.init(&args_mem);
+    const args = try std.process.argsAlloc(args_allocator.allocator());
+    defer std.process.argsFree(args_allocator.allocator(), args);
 
     const parsed_args = flags.parse(args, "gatorcat", Flags, .{}) catch |err| switch (err) {
         error.PrintedHelp => std.process.exit(0),
         else => |scoped_err| return scoped_err,
     };
+
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
 
     switch (parsed_args.command) {
         .scan => |scan_args| try scan.scan(gpa.allocator(), scan_args),

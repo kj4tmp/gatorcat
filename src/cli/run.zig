@@ -14,20 +14,22 @@ pub const Args = struct {
     ifname: [:0]const u8,
     recv_timeout_us: u32 = 10_000,
     eeprom_timeout_us: u32 = 10_000,
-    INIT_timeout_us: u32 = 5_000_000,
-    PREOP_timeout_us: u32 = 3_000_000,
-    SAFEOP_timeout_us: u32 = 10_000_000,
-    OP_timeout_us: u32 = 10_000_000,
+    init_timeout_us: u32 = 5_000_000,
+    preop_timeout_us: u32 = 3_000_000,
+    safeop_timeout_us: u32 = 10_000_000,
+    op_timeout_us: u32 = 10_000_000,
     mbx_timeout_us: u32 = 50_000,
     cycle_time_us: u32 = 0,
     max_recv_timeouts_before_rescan: u32 = 3,
-    zenoh: bool = false,
+    zenoh_config_default: bool = false,
+    zenoh_config_file: ?[:0]const u8 = null,
     pub const descriptions = .{
-        .ifname = "Network interface to use for the bus scan.",
-        .recv_timeout_us = "Frame receive timeout in microseconds.",
-        .eeprom_timeout_us = "SII EEPROM timeout in microseconds.",
-        .INIT_timeout_us = "state transition to INIT timeout in microseconds.",
-        .zenoh = "enable zenoh",
+        .ifname = "Network interface to use for the bus scan. Example: eth0",
+        .recv_timeout_us = "Frame receive timeout in microseconds. Example: 10000",
+        .eeprom_timeout_us = "SII EEPROM timeout in microseconds. Example: 10000",
+        .init_timeout_us = "state transition to init timeout in microseconds. Example: 100000",
+        .zenoh_config_default = "Enable zenoh and use the default zenoh configuration.",
+        .zenoh_config_file = "Enable zenoh and use this file path for the zenoh configuration. Example: path/to/comfig.json5",
     };
 };
 
@@ -57,7 +59,7 @@ pub fn run(allocator: std.mem.Allocator, args: Args) RunError!void {
         };
         std.log.info("Ping returned in {} us.", .{ping_timer.read() / std.time.ns_per_us});
 
-        std.log.info("Scanning bus...", .{});
+        std.log.warn("Scanning bus...", .{});
         var scanner = gcat.Scanner.init(&port, .{
             .eeprom_timeout_us = args.eeprom_timeout_us,
             .mbx_timeout_us = args.mbx_timeout_us,
@@ -69,20 +71,19 @@ pub fn run(allocator: std.mem.Allocator, args: Args) RunError!void {
             error.RecvTimeout => continue :bus_scan,
             error.CurruptedFrame => return error.NonRecoverable,
         };
-
-        scanner.busInit(args.INIT_timeout_us, num_subdevices) catch |err| switch (err) {
+        std.log.warn("Detected {} subdevices.", .{num_subdevices});
+        scanner.busInit(args.init_timeout_us, num_subdevices) catch |err| switch (err) {
             error.LinkError, error.CurruptedFrame => return error.NonRecoverable,
             error.TransactionContention => unreachable,
             error.RecvTimeout, error.Wkc, error.StateChangeRefused, error.StateChangeTimeout => continue :bus_scan,
         };
-
         scanner.assignStationAddresses(num_subdevices) catch |err| switch (err) {
             error.LinkError, error.CurruptedFrame => return error.NonRecoverable,
             error.TransactionContention => unreachable,
             error.RecvTimeout, error.Wkc => continue :bus_scan,
         };
 
-        const eni = scanner.readEni(allocator, args.PREOP_timeout_us) catch |err| switch (err) {
+        const eni = scanner.readEni(allocator, args.preop_timeout_us) catch |err| switch (err) {
             error.LinkError,
             error.Overflow,
             error.NoSpaceLeft,
@@ -123,13 +124,19 @@ pub fn run(allocator: std.mem.Allocator, args: Args) RunError!void {
         };
         defer eni.deinit();
 
-        var maybe_zh = if (args.zenoh) ZenohHandler.init(
-            allocator,
-            eni.value,
-        ) catch return error.NonRecoverable else null;
+        var maybe_zh: ?ZenohHandler = blk: {
+            if (args.zenoh_config_file) |config_file| {
+                const zh = ZenohHandler.init(allocator, eni.value, config_file) catch return error.NonRecoverable;
+                break :blk zh;
+            } else if (args.zenoh_config_default) {
+                const zh = ZenohHandler.init(allocator, eni.value, null) catch return error.NonRecoverable;
+                break :blk zh;
+            } else break :blk null;
+        };
+
         defer {
-            if (maybe_zh) |_| {
-                maybe_zh.?.deinit();
+            if (maybe_zh) |*zh| {
+                zh.deinit();
             }
         }
 
@@ -143,7 +150,7 @@ pub fn run(allocator: std.mem.Allocator, args: Args) RunError!void {
         };
         defer md.deinit(allocator);
 
-        md.busInit(args.INIT_timeout_us) catch |err| switch (err) {
+        md.busInit(args.init_timeout_us) catch |err| switch (err) {
             error.LinkError, error.CurruptedFrame => return error.NonRecoverable,
             error.TransactionContention => unreachable,
             error.RecvTimeout,
@@ -154,7 +161,7 @@ pub fn run(allocator: std.mem.Allocator, args: Args) RunError!void {
             => continue :bus_scan,
         };
 
-        md.busPreop(args.PREOP_timeout_us) catch |err| switch (err) {
+        md.busPreop(args.preop_timeout_us) catch |err| switch (err) {
             error.LinkError,
             error.CurruptedFrame,
             error.EndOfStream,
@@ -184,7 +191,7 @@ pub fn run(allocator: std.mem.Allocator, args: Args) RunError!void {
         };
 
         // TODO: wtf jeff reduce the number of errors!
-        md.busSafeop(args.SAFEOP_timeout_us) catch |err| switch (err) {
+        md.busSafeop(args.safeop_timeout_us) catch |err| switch (err) {
             error.LinkError,
             error.Overflow,
             error.NoSpaceLeft,
@@ -228,7 +235,7 @@ pub fn run(allocator: std.mem.Allocator, args: Args) RunError!void {
             => unreachable,
         };
 
-        md.busOp(args.OP_timeout_us) catch |err| switch (err) {
+        md.busOp(args.op_timeout_us) catch |err| switch (err) {
             error.LinkError,
             error.CurruptedFrame,
             error.CoENotSupported,
@@ -302,17 +309,19 @@ pub const ZenohHandler = struct {
     // TODO: store string keys as [:0] const u8 by calling hash map ourselves with StringContext
     pubs: std.StringArrayHashMap(zenoh.c.z_owned_publisher_t),
 
-    pub fn init(parent_allocator: std.mem.Allocator, eni: gcat.ENI) !ZenohHandler {
+    pub fn init(parent_allocator: std.mem.Allocator, eni: gcat.ENI, maybe_config_file: ?[:0]const u8) !ZenohHandler {
         var arena = try parent_allocator.create(std.heap.ArenaAllocator);
         arena.* = .init(parent_allocator);
         errdefer parent_allocator.destroy(arena);
         errdefer arena.deinit();
         const allocator = arena.allocator();
 
-        std.log.err("here", .{});
         const config = try allocator.create(zenoh.c.z_owned_config_t);
-        std.log.err("ptr: {x}", .{@intFromPtr(config)});
-        try zenoh.err(zenoh.c.z_config_default(config));
+        if (maybe_config_file) |config_file| {
+            try zenoh.err(zenoh.c.zc_config_from_file(config, config_file.ptr));
+        } else {
+            try zenoh.err(zenoh.c.z_config_default(config));
+        }
         errdefer zenoh.drop(zenoh.move(config));
 
         var open_options: zenoh.c.z_open_options_t = undefined;

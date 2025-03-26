@@ -27,7 +27,12 @@ pub const Args = struct {
         .ifname = "Network interface to use for the bus scan. Example: eth0",
         .recv_timeout_us = "Frame receive timeout in microseconds. Example: 10000",
         .eeprom_timeout_us = "SII EEPROM timeout in microseconds. Example: 10000",
-        .init_timeout_us = "state transition to init timeout in microseconds. Example: 100000",
+        .init_timeout_us = "State transition to init timeout in microseconds. Example: 100000",
+        .preop_timeout_us = "State transition to preop timeout in microseconds. Example: 100000",
+        .safeop_timeout_us = "State transition to safeop timeout in microseconds. Example: 100000",
+        .op_timeout_us = "State transition to op timeout in microseconds. Example: 100000",
+        .mbx_timeout_us = "Mailbox timeout in microseconds. Example: 100000",
+        .cycle_time_us = "Cycle time in microseconds. Example: 10000",
         .zenoh_config_default = "Enable zenoh and use the default zenoh configuration.",
         .zenoh_config_file = "Enable zenoh and use this file path for the zenoh configuration. Example: path/to/comfig.json5",
     };
@@ -57,7 +62,7 @@ pub fn run(allocator: std.mem.Allocator, args: Args) RunError!void {
                 return error.NonRecoverable;
             },
         };
-        std.log.info("Ping returned in {} us.", .{ping_timer.read() / std.time.ns_per_us});
+        std.log.warn("Ping returned in {} us.", .{ping_timer.read() / std.time.ns_per_us});
 
         std.log.warn("Scanning bus...", .{});
         var scanner = gcat.Scanner.init(&port, .{

@@ -491,6 +491,10 @@ pub const ZenohHandler = struct {
                             const value = bit_reader.readBitsNoEof(f32, entry.bits) catch unreachable;
                             zbor.stringify(value, .{}, writer) catch unreachable;
                         },
+                        .REAL64 => {
+                            const value = bit_reader.readBitsNoEof(f64, entry.bits) catch unreachable;
+                            zbor.stringify(value, .{}, writer) catch unreachable;
+                        },
                         .INTEGER24 => {
                             const value = bit_reader.readBitsNoEof(i24, entry.bits) catch unreachable;
                             zbor.stringify(value, .{}, writer) catch unreachable;
@@ -511,7 +515,19 @@ pub const ZenohHandler = struct {
                             const value = bit_reader.readBitsNoEof(i64, entry.bits) catch unreachable;
                             zbor.stringify(value, .{}, writer) catch unreachable;
                         },
-                        else => {
+                        .OCTET_STRING,
+                        .UNICODE_STRING,
+                        .TIME_OF_DAY,
+                        .TIME_DIFFERENCE,
+                        .DOMAIN,
+                        .GUID,
+                        .PDO_MAPPING,
+                        .IDENTITY,
+                        .COMMAND_PAR,
+                        .SYNC_PAR,
+                        .UNKNOWN,
+                        .VISIBLE_STRING,
+                        => {
                             bit_reader.readBitsNoEof(void, entry.bits) catch unreachable;
                             continue;
                         },

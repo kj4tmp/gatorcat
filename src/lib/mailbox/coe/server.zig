@@ -466,8 +466,8 @@ pub const Segment = struct {
         try writer.writeByteNTimes(0, padding_length);
         assert(fbs.getWritten().len >=
             wire.packedSize(mailbox.Header) +
-            wire.packedSize(coe.Header) +
-            wire.packedSize(SegmentHeader) + 7);
+                wire.packedSize(coe.Header) +
+                wire.packedSize(SegmentHeader) + 7);
         return fbs.getWritten().len;
     }
 
@@ -694,9 +694,9 @@ pub const SDOInfoResponse = struct {
     comptime {
         assert(service_data_max_length ==
             mailbox.max_size -
-            @divExact(@bitSizeOf(mailbox.Header), 8) -
-            @divExact(@bitSizeOf(coe.Header), 8) -
-            @divExact(@bitSizeOf(coe.SDOInfoHeader), 8));
+                @divExact(@bitSizeOf(mailbox.Header), 8) -
+                @divExact(@bitSizeOf(coe.Header), 8) -
+                @divExact(@bitSizeOf(coe.SDOInfoHeader), 8));
     }
 };
 
@@ -706,7 +706,10 @@ test "serialize and deserialize sdo info response" {
     const byte_size = try expected.serialize(&bytes);
     try std.testing.expectEqual(@as(usize, 6 + 2 + 4 + 4), byte_size);
     const actual = try SDOInfoResponse.deserialize(&bytes);
-    try std.testing.expectEqualDeep(expected, actual);
+    try std.testing.expectEqual(expected.coe_header, actual.coe_header);
+    try std.testing.expectEqual(expected.mbx_header, actual.mbx_header);
+    try std.testing.expectEqual(expected.sdo_info_header, actual.sdo_info_header);
+    try std.testing.expectEqualSlices(u8, expected.service_data.slice(), actual.service_data.slice());
 }
 
 /// Get OD List Response

@@ -50,6 +50,9 @@ pub fn benchmark(args: Args) !void {
                 },
             }
         }
+
+        const scheduler: std.os.linux.SCHED.Mode = @enumFromInt(std.os.linux.sched_getscheduler(0));
+        try writer.print("Scheduler: {s}\n", .{@tagName(scheduler)});
     }
 
     try writer.print("benchmarking for {d:.2}s...\n", .{args.duration_s});

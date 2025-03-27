@@ -46,7 +46,7 @@ pub const RunError = error{
 };
 
 pub fn run(allocator: std.mem.Allocator, args: Args) RunError!void {
-    var raw_socket = gcat.nic.LinuxRawSocket.init(args.ifname) catch return error.NonRecoverable;
+    var raw_socket = gcat.nic.RawSocket.init(args.ifname) catch return error.NonRecoverable;
     defer raw_socket.deinit();
     var port = gcat.Port.init(raw_socket.linkLayer(), .{});
 

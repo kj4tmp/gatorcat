@@ -17,13 +17,15 @@ Documentation can be found in [doc](doc/README.md).
 
 ### Notably Working Features
 
-- [x] automatic configuration to reach OP for most subdevices, via SII and CoE
+- [x] no config, "just works" executable
+    - [x] automatic configuration to reach OP for most subdevices, via SII and CoE
+    - [x] process data published on zenoh
 - [x] verifcation of the network contents against an ethercat network information struct (ENI)
+- [x] cli for scanning a network to generate ENI
 - [x] can manipulate process data
 - [x] CoE startup parameters
 - [x] CLI for scanning networks and getting information about subdevices
 - [x] multi-OS support (Linux and Windows)
-- [x] generate starting point for the network configuration (ENI) using the CLI (scan)
 
 ### Notably Missing Features
 
@@ -43,17 +45,13 @@ Documentation can be found in [doc](doc/README.md).
 - [ ] Embedded friendly API / timers
 - [ ] Network diagnosis in the CLI (CRC counters etc.)
 
-## Road to v0.2
+## Farther out
 
-- [ ] runtime process image info
-- [x] comptime process image
-- [ ] no config executable with valkey integration
-- [ ] validate pdos at runtime
+- [ ] validate individual pdo types at runtime (not just size of pdos)
 - [ ] revise error handling
 - [x] python package: hello world
 - [ ] python package: message pack models
 - [ ] python package: valkey driver
-- [ ] zig message pack models
 
 ## Sponsors
 

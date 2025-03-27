@@ -6,7 +6,7 @@
 
 GatorCAT provides the following:
 
-1. [GatorCAT CLI](#gatorcat-cli): a command-line interface executable for common tasks when working with EtherCAT networks (scanning etc.).
+1. [GatorCAT CLI](#gatorcat-cli): a command-line interface executable for common tasks when working with EtherCAT networks, incuding running, scanning, and debugging.
 1. [GatorCAT Module](#gatorcat-module): a zig module for writing applications that interact with EtherCAT networks.
 
 ## Zig Version
@@ -19,9 +19,10 @@ Please review the `minimum_zig_version` field of the [`build.zig.zon`](/build.zi
 
 The CLI can be built from source:
 
-1. Clone this repo
-1. Run `zig build` in the repo
-1. The executable will be named `gatorcat` and placed in `./zig-out/bin/`
+1. Install the zig compiler. See [Zig Version](#zig-version).
+1. Clone this repo.
+1. Run `zig build` in the repo.
+1. The executable will be named `gatorcat` and placed in `./zig-out/bin/`.
 
 ### Windows
 
@@ -35,27 +36,16 @@ The CLI requires `CAP_NET_RAW` permissions to open raw sockets. The easiest way 
 
 ### Usage
 
-The CLI has the following help text:
+Please review the help text printed with `gatorcat -h`.
+There is also sub-help for each sub-command: `gatorcat scan -h`.
 
-```plaintext
-Usage: gatorcat scan --ifname <ifname> [--ring-position <ring-position>]
-                     [--recv-timeout-us <recv-timeout-us>]
-                     [--eeprom-timeout-us <eeprom-timeout-us>]
-                     [--INIT-timeout-us <INIT-timeout-us>]
-                     [--PREOP-timeout-us <PREOP-timeout-us>]
-                     [--mbx-timeout-us <mbx-timeout-us>] [-h | --help]
+### Suggested Workflow
 
-Options:
-
-  --ifname            Network interface to use for the bus scan.
-  --ring-position     Optionally specify only a single subdevice at this ring position to be scanned.
-  --recv-timeout-us   Frame receive timeout in microseconds.
-  --eeprom-timeout-us SII EEPROM timeout in microseconds.
-  --INIT-timeout-us   state transition to INIT timeout in microseconds.
-  --PREOP-timeout-us
-  --mbx-timeout-us
-  -h, --help          Show this help and exit
-```
+1. Run `gatorcat info --ifname eth0 > info.md` to create a human readable markdown file with information about the subdevices on your network.
+1. Run `gatorcat scan --ifname eth0 > eni.zon` to create an ENI file for the network.
+1. Run the network with `gatorcat run --ifname eth0 --cycle-time-us 10000 --zenoh-config-default --eni-file eni.zon`.
+1. Observe data published on zenoh from ethercat.
+    > The keys are defined in the `eni.zon`.
 
 ## GatorCAT Module
 

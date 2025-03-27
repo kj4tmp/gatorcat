@@ -165,7 +165,7 @@ pub fn run(allocator: std.mem.Allocator, args: Args) RunError!void {
 
         defer eni.deinit();
 
-        var maybe_zh: ?gcat.Arena(ZenohHandler) = blk: {
+        var maybe_zh: ?ZenohHandler = blk: {
             if (args.zenoh_config_file) |config_file| {
                 const zh = ZenohHandler.init(allocator, eni.value, config_file) catch return error.NonRecoverable;
                 break :blk zh;
@@ -177,7 +177,7 @@ pub fn run(allocator: std.mem.Allocator, args: Args) RunError!void {
 
         defer {
             if (maybe_zh) |*zh| {
-                zh.deinit();
+                zh.deinit(allocator);
             }
         }
 
@@ -327,7 +327,7 @@ pub fn run(allocator: std.mem.Allocator, args: Args) RunError!void {
             }
 
             if (maybe_zh) |*zh| {
-                zh.value.publishInputs(&md, eni.value) catch break :bus_scan; // TODO: correct action here?
+                zh.publishInputs(&md, eni.value) catch break :bus_scan; // TODO: correct action here?
             }
 
             // do application
@@ -344,12 +344,13 @@ pub fn run(allocator: std.mem.Allocator, args: Args) RunError!void {
 }
 
 pub const ZenohHandler = struct {
+    arena: *std.heap.ArenaAllocator,
     config: *zenoh.c.z_owned_config_t,
     session: *zenoh.c.z_owned_session_t,
     // TODO: store string keys as [:0] const u8 by calling hash map ourselves with StringContext
     pubs: std.StringArrayHashMap(zenoh.c.z_owned_publisher_t),
 
-    pub fn init(p_allocator: std.mem.Allocator, eni: gcat.ENI, maybe_config_file: ?[:0]const u8) !gcat.Arena(ZenohHandler) {
+    pub fn init(p_allocator: std.mem.Allocator, eni: gcat.ENI, maybe_config_file: ?[:0]const u8) !ZenohHandler {
         var arena = try p_allocator.create(std.heap.ArenaAllocator);
         arena.* = .init(p_allocator);
         errdefer p_allocator.destroy(arena);
@@ -399,11 +400,12 @@ pub const ZenohHandler = struct {
                 }
             }
         }
-        return gcat.Arena(ZenohHandler){ .arena = arena, .value = .{
+        return ZenohHandler{
+            .arena = arena,
             .config = config,
             .session = session,
             .pubs = pubs,
-        } };
+        };
     }
 
     /// Asserts the given key exists.
@@ -420,12 +422,14 @@ pub const ZenohHandler = struct {
         errdefer comptime unreachable;
     }
 
-    pub fn deinit(self: ZenohHandler) void {
+    pub fn deinit(self: ZenohHandler, p_allocator: std.mem.Allocator) void {
         for (self.pubs.values()) |*publisher| {
             zenoh.drop(zenoh.move(publisher));
         }
         zenoh.drop(zenoh.move(self.config));
         zenoh.drop(zenoh.move(self.session));
+        self.arena.deinit();
+        p_allocator.destroy(self.arena);
     }
 
     // returns number of put calls

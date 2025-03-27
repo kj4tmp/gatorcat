@@ -23,6 +23,7 @@ pub const Args = struct {
     max_recv_timeouts_before_rescan: u32 = 3,
     zenoh_config_default: bool = false,
     zenoh_config_file: ?[:0]const u8 = null,
+    eni_file: ?[:0]const u8 = null,
     pub const descriptions = .{
         .ifname = "Network interface to use for the bus scan. Example: eth0",
         .recv_timeout_us = "Frame receive timeout in microseconds. Example: 10000",
@@ -35,6 +36,7 @@ pub const Args = struct {
         .cycle_time_us = "Cycle time in microseconds. Example: 10000",
         .zenoh_config_default = "Enable zenoh and use the default zenoh configuration.",
         .zenoh_config_file = "Enable zenoh and use this file path for the zenoh configuration. Example: path/to/comfig.json5",
+        .eni_file = "Path to ethercat nework information file (as ZON). See output of `gatorcat scan` for an example.",
     };
 };
 
@@ -64,69 +66,77 @@ pub fn run(allocator: std.mem.Allocator, args: Args) RunError!void {
         };
         std.log.warn("Ping returned in {} us.", .{ping_timer.read() / std.time.ns_per_us});
 
-        std.log.warn("Scanning bus...", .{});
-        var scanner = gcat.Scanner.init(&port, .{
-            .eeprom_timeout_us = args.eeprom_timeout_us,
-            .mbx_timeout_us = args.mbx_timeout_us,
-            .recv_timeout_us = args.recv_timeout_us,
-        });
-        const num_subdevices = scanner.countSubdevices() catch |err| switch (err) {
-            error.LinkError => return error.NonRecoverable,
-            error.TransactionContention => unreachable,
-            error.RecvTimeout => continue :bus_scan,
-            error.CurruptedFrame => return error.NonRecoverable,
-        };
-        std.log.warn("Detected {} subdevices.", .{num_subdevices});
-        scanner.busInit(args.init_timeout_us, num_subdevices) catch |err| switch (err) {
-            error.LinkError, error.CurruptedFrame => return error.NonRecoverable,
-            error.TransactionContention => unreachable,
-            error.RecvTimeout, error.Wkc, error.StateChangeRefused, error.StateChangeTimeout => continue :bus_scan,
-        };
-        scanner.assignStationAddresses(num_subdevices) catch |err| switch (err) {
-            error.LinkError, error.CurruptedFrame => return error.NonRecoverable,
-            error.TransactionContention => unreachable,
-            error.RecvTimeout, error.Wkc => continue :bus_scan,
+        const eni = blk: {
+            if (args.eni_file) |eni_file_path| {
+                const eni = gcat.ENI.fromFile(allocator, eni_file_path, 1e9) catch return error.NonRecoverable;
+                std.log.warn("Loaded ENI: {s}", .{eni_file_path});
+                break :blk eni;
+            }
+            std.log.warn("Scanning bus...", .{});
+            var scanner = gcat.Scanner.init(&port, .{
+                .eeprom_timeout_us = args.eeprom_timeout_us,
+                .mbx_timeout_us = args.mbx_timeout_us,
+                .recv_timeout_us = args.recv_timeout_us,
+            });
+            const num_subdevices = scanner.countSubdevices() catch |err| switch (err) {
+                error.LinkError => return error.NonRecoverable,
+                error.TransactionContention => unreachable,
+                error.RecvTimeout => continue :bus_scan,
+                error.CurruptedFrame => return error.NonRecoverable,
+            };
+            std.log.warn("Detected {} subdevices.", .{num_subdevices});
+            scanner.busInit(args.init_timeout_us, num_subdevices) catch |err| switch (err) {
+                error.LinkError, error.CurruptedFrame => return error.NonRecoverable,
+                error.TransactionContention => unreachable,
+                error.RecvTimeout, error.Wkc, error.StateChangeRefused, error.StateChangeTimeout => continue :bus_scan,
+            };
+            scanner.assignStationAddresses(num_subdevices) catch |err| switch (err) {
+                error.LinkError, error.CurruptedFrame => return error.NonRecoverable,
+                error.TransactionContention => unreachable,
+                error.RecvTimeout, error.Wkc => continue :bus_scan,
+            };
+
+            break :blk scanner.readEni(allocator, args.preop_timeout_us) catch |err| switch (err) {
+                error.LinkError,
+                error.Overflow,
+                error.NoSpaceLeft,
+                error.OutOfMemory,
+                error.RecvTimeout,
+                error.CurruptedFrame,
+                error.TransactionContention,
+                error.Wkc,
+                error.StateChangeRefused,
+                error.StateChangeTimeout,
+                error.EndOfStream,
+                error.Timeout,
+                error.InvalidSubdeviceEEPROM,
+                error.UnexpectedSubdevice,
+                error.InvalidSII,
+                error.InvalidMbxConfiguration,
+                error.CoENotSupported,
+                error.CoECompleteAccessNotSupported,
+                error.Emergency,
+                error.NotImplemented,
+                error.MbxOutFull,
+                error.InvalidMbxContent,
+                error.MbxTimeout,
+                error.Aborted,
+                error.UnexpectedSegment,
+                error.UnexpectedNormal,
+                error.WrongProtocol,
+                error.WrongPackSize,
+                error.InvalidSMComms,
+                error.InvalidSMChannel,
+                error.InvalidSMChannelPDOIndex,
+                error.InvalidCoEEntries,
+                error.MissedFragment,
+                error.InvalidMailboxContent,
+                error.InvalidEEPROM,
+                error.ObjectDoesNotExist,
+                => continue :bus_scan,
+            };
         };
 
-        const eni = scanner.readEni(allocator, args.preop_timeout_us) catch |err| switch (err) {
-            error.LinkError,
-            error.Overflow,
-            error.NoSpaceLeft,
-            error.OutOfMemory,
-            error.RecvTimeout,
-            error.CurruptedFrame,
-            error.TransactionContention,
-            error.Wkc,
-            error.StateChangeRefused,
-            error.StateChangeTimeout,
-            error.EndOfStream,
-            error.Timeout,
-            error.InvalidSubdeviceEEPROM,
-            error.UnexpectedSubdevice,
-            error.InvalidSII,
-            error.InvalidMbxConfiguration,
-            error.CoENotSupported,
-            error.CoECompleteAccessNotSupported,
-            error.Emergency,
-            error.NotImplemented,
-            error.MbxOutFull,
-            error.InvalidMbxContent,
-            error.MbxTimeout,
-            error.Aborted,
-            error.UnexpectedSegment,
-            error.UnexpectedNormal,
-            error.WrongProtocol,
-            error.WrongPackSize,
-            error.InvalidSMComms,
-            error.InvalidSMChannel,
-            error.InvalidSMChannelPDOIndex,
-            error.InvalidCoEEntries,
-            error.MissedFragment,
-            error.InvalidMailboxContent,
-            error.InvalidEEPROM,
-            error.ObjectDoesNotExist,
-            => continue :bus_scan,
-        };
         defer eni.deinit();
 
         var maybe_zh: ?ZenohHandler = blk: {
@@ -351,7 +361,7 @@ pub const ZenohHandler = struct {
                     if (entry.pv_name == null) continue;
                     var publisher: zenoh.c.z_owned_publisher_t = undefined;
                     var view_keyexpr: zenoh.c.z_view_keyexpr_t = undefined;
-                    std.log.info("declaring publisher: {s}, type: {}", .{ entry.pv_name.?, entry.type });
+                    std.log.warn("zenoh: declaring publisher: {s}, ethercat type: {s}", .{ entry.pv_name.?, @tagName(entry.type) });
                     const result = zenoh.c.z_view_keyexpr_from_str(&view_keyexpr, entry.pv_name.?.ptr);
                     try zenoh.err(result);
                     var publisher_options: zenoh.c.z_publisher_options_t = undefined;

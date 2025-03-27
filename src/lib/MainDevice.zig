@@ -402,6 +402,7 @@ pub fn sendCyclicFrames(self: *MainDevice) !void {
     // TODO: reduce this spaghetti!
     assert(frameCount(@intCast(self.process_image.len)) <= self.frames.len);
     assert(self.transactions.len == 0); // did you try to send more than once before recv?
+    errdefer assert(self.transactions.len == 0);
 
     // TODO: re-do frame identification to allow extremely large process data
     var process_image_bytes_remaining = self.process_image.len;
@@ -447,7 +448,7 @@ pub fn sendCyclicFrames(self: *MainDevice) !void {
     // send muliple frames in flight
     var transactions = std.BoundedArray(u8, max_frames_in_flight){};
     errdefer {
-        for (transactions.slice()) |transaction| {
+        while (self.transactions.pop()) |transaction| {
             self.port.releaseTransaction(transaction);
         }
     }
@@ -476,10 +477,9 @@ pub fn recvCyclicFrames(self: *MainDevice) SendRecvCycleFramesDiagError!SendRecv
     assert(self.transactions.len > 0); // forget to send?
     defer assert(self.transactions.len == 0);
     errdefer {
-        for (self.transactions.slice()) |transaction| {
+        while (self.transactions.pop()) |transaction| {
             self.port.releaseTransaction(transaction);
         }
-        self.transactions = .{};
     }
     const n_transactions = self.transactions.len;
     recv: for (0..(n_transactions * 2) + 1) |_| {
@@ -605,6 +605,8 @@ pub fn continueAllTransactionsRecvCyclicFrames(self: *MainDevice) SendRecvCycleF
 }
 
 pub fn sendRecvCyclicFramesDiag(self: *MainDevice) SendRecvCycleFramesDiagError!SendRecvCyclicFramesDiagResult {
+    defer assert(self.transactions.len == 0);
+    errdefer while (self.transactions.pop()) |transaction| self.port.releaseTransaction(transaction);
     try self.sendCyclicFrames();
     var timer = std.time.Timer.start() catch @panic("timer not supported");
     while (timer.read() < @as(u64, self.settings.recv_timeout_us) * std.time.ns_per_us) {

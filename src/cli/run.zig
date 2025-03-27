@@ -19,7 +19,7 @@ pub const Args = struct {
     safeop_timeout_us: u32 = 10_000_000,
     op_timeout_us: u32 = 10_000_000,
     mbx_timeout_us: u32 = 50_000,
-    cycle_time_us: u32 = 0,
+    cycle_time_us: ?u32 = null,
     max_recv_timeouts_before_rescan: u32 = 3,
     zenoh_config_default: bool = false,
     zenoh_config_file: ?[:0]const u8 = null,
@@ -65,6 +65,32 @@ pub fn run(allocator: std.mem.Allocator, args: Args) RunError!void {
             },
         };
         std.log.warn("Ping returned in {} us.", .{ping_timer.read() / std.time.ns_per_us});
+
+        const cycle_time_us = blk: {
+            if (args.cycle_time_us) |cycle_time_us| break :blk cycle_time_us;
+
+            const default_cycle_times = [_]u32{ 100, 200, 500, 1000, 2000, 4000, 10000 };
+            std.log.warn("Cycle time not specified. Estimating appropriate cycle time...", .{});
+
+            var highest_ping: u64 = 0;
+            const ping_count = 1000;
+            for (0..ping_count) |_| {
+                const start = ping_timer.read();
+                port.ping(10000) catch return error.NonRecoverable;
+                const end = ping_timer.read();
+                if ((end - start) / 1000 > highest_ping) {
+                    highest_ping = (end - start) / 1000;
+                }
+            }
+
+            const selected_cycle_time = for (default_cycle_times) |cycle_time| {
+                if (highest_ping *| 2 < cycle_time) break cycle_time;
+            } else 10000;
+
+            std.log.warn("Max ping after {} tries is {} us. Selected {} us as cycle time.", .{ ping_count, highest_ping, selected_cycle_time });
+
+            break :blk selected_cycle_time;
+        };
 
         const eni = blk: {
             if (args.eni_file) |eni_file_path| {
@@ -139,7 +165,7 @@ pub fn run(allocator: std.mem.Allocator, args: Args) RunError!void {
 
         defer eni.deinit();
 
-        var maybe_zh: ?ZenohHandler = blk: {
+        var maybe_zh: ?gcat.Arena(ZenohHandler) = blk: {
             if (args.zenoh_config_file) |config_file| {
                 const zh = ZenohHandler.init(allocator, eni.value, config_file) catch return error.NonRecoverable;
                 break :blk zh;
@@ -301,7 +327,7 @@ pub fn run(allocator: std.mem.Allocator, args: Args) RunError!void {
             }
 
             if (maybe_zh) |*zh| {
-                zh.publishInputs(&md, eni.value) catch break :bus_scan; // TODO: correct action here?
+                zh.value.publishInputs(&md, eni.value) catch break :bus_scan; // TODO: correct action here?
             }
 
             // do application
@@ -312,22 +338,21 @@ pub fn run(allocator: std.mem.Allocator, args: Args) RunError!void {
                 std.log.info("cycles/s: {}", .{cycle_count});
                 cycle_count = 0;
             }
-            gcat.sleepUntilNextCycle(md.first_cycle_time.?, args.cycle_time_us);
+            gcat.sleepUntilNextCycle(md.first_cycle_time.?, cycle_time_us);
         }
     }
 }
 
 pub const ZenohHandler = struct {
-    arena: *std.heap.ArenaAllocator,
     config: *zenoh.c.z_owned_config_t,
     session: *zenoh.c.z_owned_session_t,
     // TODO: store string keys as [:0] const u8 by calling hash map ourselves with StringContext
     pubs: std.StringArrayHashMap(zenoh.c.z_owned_publisher_t),
 
-    pub fn init(parent_allocator: std.mem.Allocator, eni: gcat.ENI, maybe_config_file: ?[:0]const u8) !ZenohHandler {
-        var arena = try parent_allocator.create(std.heap.ArenaAllocator);
-        arena.* = .init(parent_allocator);
-        errdefer parent_allocator.destroy(arena);
+    pub fn init(p_allocator: std.mem.Allocator, eni: gcat.ENI, maybe_config_file: ?[:0]const u8) !gcat.Arena(ZenohHandler) {
+        var arena = try p_allocator.create(std.heap.ArenaAllocator);
+        arena.* = .init(p_allocator);
+        errdefer p_allocator.destroy(arena);
         errdefer arena.deinit();
         const allocator = arena.allocator();
 
@@ -374,12 +399,11 @@ pub const ZenohHandler = struct {
                 }
             }
         }
-        return ZenohHandler{
-            .arena = arena,
+        return gcat.Arena(ZenohHandler){ .arena = arena, .value = .{
             .config = config,
             .session = session,
             .pubs = pubs,
-        };
+        } };
     }
 
     /// Asserts the given key exists.
@@ -396,13 +420,12 @@ pub const ZenohHandler = struct {
         errdefer comptime unreachable;
     }
 
-    pub fn deinit(self: *ZenohHandler) void {
+    pub fn deinit(self: ZenohHandler) void {
         for (self.pubs.values()) |*publisher| {
             zenoh.drop(zenoh.move(publisher));
         }
         zenoh.drop(zenoh.move(self.config));
         zenoh.drop(zenoh.move(self.session));
-        self.arena.deinit();
     }
 
     // returns number of put calls

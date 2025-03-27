@@ -60,6 +60,9 @@ pub fn Arena(comptime T: type) type {
         arena: *std.heap.ArenaAllocator,
         value: T,
         pub fn deinit(self: @This()) void {
+            if (@hasDecl(T, "deinit")) {
+                self.value.deinit();
+            }
             const allocator = self.arena.child_allocator;
             self.arena.deinit();
             allocator.destroy(self.arena);

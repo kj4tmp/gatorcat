@@ -24,6 +24,7 @@ pub const Args = struct {
     zenoh_config_default: bool = false,
     zenoh_config_file: ?[:0]const u8 = null,
     eni_file: ?[:0]const u8 = null,
+    rt_prio: ?i32 = null,
     pub const descriptions = .{
         .ifname = "Network interface to use for the bus scan. Example: eth0",
         .recv_timeout_us = "Frame receive timeout in microseconds. Example: 10000",
@@ -37,6 +38,7 @@ pub const Args = struct {
         .zenoh_config_default = "Enable zenoh and use the default zenoh configuration.",
         .zenoh_config_file = "Enable zenoh and use this file path for the zenoh configuration. Example: path/to/comfig.json5",
         .eni_file = "Path to ethercat nework information file (as ZON). See output of `gatorcat scan` for an example.",
+        .rt_prio = "Set a real-time priority for this process.",
     };
 };
 
@@ -46,6 +48,24 @@ pub const RunError = error{
 };
 
 pub fn run(allocator: std.mem.Allocator, args: Args) RunError!void {
+    if (args.rt_prio) |rt_prio| {
+        // using pid = 0 means this process will have the scheduler set.
+        const rval = std.os.linux.sched_setscheduler(0, .{ .mode = .FIFO }, &.{
+            .priority = rt_prio,
+        });
+        switch (std.posix.errno(rval)) {
+            .SUCCESS => {
+                std.log.warn("Set real-time priority to {}.", .{rt_prio});
+            },
+            else => |err| {
+                std.log.warn("Error when setting real-time priority: Error {}", .{err});
+                return error.NonRecoverable;
+            },
+        }
+    }
+    const scheduler: std.os.linux.SCHED.Mode = @enumFromInt(std.os.linux.sched_getscheduler(0));
+    std.log.warn("Scheduler: {s}", .{@tagName(scheduler)});
+
     var raw_socket = gcat.nic.RawSocket.init(args.ifname) catch return error.NonRecoverable;
     defer raw_socket.deinit();
     var port = gcat.Port.init(raw_socket.linkLayer(), .{});

@@ -6,7 +6,12 @@
 
 GatorCAT provides the following:
 
-1. [GatorCAT CLI](#gatorcat-cli): a command-line interface executable for common tasks when working with EtherCAT networks, incuding running, scanning, and debugging.
+1. [GatorCAT CLI](#gatorcat-cli): a command-line interface executable for common tasks when working with EtherCAT networks, incuding running and scanning.
+    > Run: automatically operate an EtherCAT network with zero configuration.
+
+    > Scan: obtain information about the contents of the network.
+
+    > Debug: (Work in progress) debug issues with your network.
 1. [GatorCAT Module](#gatorcat-module): a zig module for writing applications that interact with EtherCAT networks.
 
 ## Zig Version

@@ -525,7 +525,24 @@ fn printSubdeviceCoePDOs(
                 if (entry.isGap()) {
                     try writer.print("|        |     |           | {d:>3} | PADDING | |\n", .{entry.bit_length});
                 } else {
-                    try writer.print("|        |     | 0x{x:04}:{x:02} | {d:>3} |         | |\n", .{ entry.index, entry.subindex, entry.bit_length });
+                    const entry_description = gcat.mailbox.coe.readEntryDescription(
+                        port,
+                        station_address,
+                        recv_timeout_us,
+                        mbx_timeout_us,
+                        cnt,
+                        mailbox_config,
+                        entry.index,
+                        @intCast(entry.subindex),
+                        .description_only,
+                    ) catch |err| switch (err) {
+                        error.ObjectDoesNotExist => {
+                            std.log.err("station addr: 0x{x:04}, index: 0x{x:04}:{x:02} does not exist.", .{ station_address, entry.index, entry.subindex });
+                            continue;
+                        },
+                        else => |err2| return err2,
+                    };
+                    try writer.print("|        |     | 0x{x:04}:{x:02} | {d:>3} |         |{s}|\n", .{ entry.index, entry.subindex, entry.bit_length, entry_description.data.slice() });
                 }
             }
         }

@@ -520,10 +520,10 @@ fn printSubdeviceCoePDOs(
 
         for (sm_pdo_assignment.slice()) |pdo_index| {
             const pdo_mapping = try gcat.mailbox.coe.readPDOMapping(port, station_address, recv_timeout_us, mbx_timeout_us, cnt, mailbox_config, pdo_index);
-            try writer.print("| 0x{x:04} | {d:>3} |           | {d:>3} |         | |\n", .{ pdo_index, sm_idx, pdo_mapping.bitLength() });
+            try writer.print("| 0x{x:04} | {d:>3} |           | {d:>3} |         | {s:<64}|\n", .{ pdo_index, sm_idx, pdo_mapping.bitLength(), @as([]const u8, &.{}) });
             for (pdo_mapping.entries.slice()) |entry| {
                 if (entry.isGap()) {
-                    try writer.print("|        |     |           | {d:>3} | PADDING | |\n", .{entry.bit_length});
+                    try writer.print("|        |     |           | {d:>3} | PADDING | {s:<64}|\n", .{ entry.bit_length, @as([]const u8, &.{}) });
                 } else {
                     const entry_description = gcat.mailbox.coe.readEntryDescription(
                         port,
@@ -542,7 +542,7 @@ fn printSubdeviceCoePDOs(
                         },
                         else => |err2| return err2,
                     };
-                    try writer.print("|        |     | 0x{x:04}:{x:02} | {d:>3} |         |{s}|\n", .{ entry.index, entry.subindex, entry.bit_length, entry_description.data.slice() });
+                    try writer.print("|        |     | 0x{x:04}:{x:02} | {d:>3} |         | {s:<64}|\n", .{ entry.index, entry.subindex, entry.bit_length, entry_description.data.slice() });
                 }
             }
         }

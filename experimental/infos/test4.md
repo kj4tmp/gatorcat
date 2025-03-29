@@ -241,105 +241,105 @@ No RxPDOs catagory.
 
 | PDO Index| SM| Mapped Index| Bits| Type| Name |
 |---|---|---|---|---|---|
-| 0x1a00 |   3 |           |  32 |         | |
-|        |     | 0x6000:01 |   8 |         |No of Samples|
-|        |     | 0x6000:09 |   1 |         |Error|
-|        |     | 0x6000:0a |   1 |         |Underrange|
-|        |     | 0x6000:0b |   1 |         |Overrange|
-|        |     |           |   1 | PADDING | |
-|        |     | 0x6000:0d |   1 |         |Diag|
-|        |     | 0x6000:0e |   1 |         |TxPDO State|
-|        |     | 0x6000:0f |   2 |         |Input cycle counter|
-|        |     |           |  16 | PADDING | |
-| 0x1a0b |   3 |           |  32 |         | |
-|        |     | 0x6003:01 |  32 |         |SubIndex 001|
-| 0x1a09 |   3 |           |  64 |         | |
-|        |     | 0x6005:01 |  32 |         |Low|
-|        |     | 0x6005:02 |  32 |         |Hi|
-| 0x1a13 |   3 |           |  32 |         | |
-|        |     | 0x6010:01 |   8 |         |No of Samples|
-|        |     | 0x6010:09 |   1 |         |Error|
-|        |     | 0x6010:0a |   1 |         |Underrange|
-|        |     | 0x6010:0b |   1 |         |Overrange|
-|        |     |           |   1 | PADDING | |
-|        |     | 0x6010:0d |   1 |         |Diag|
-|        |     | 0x6010:0e |   1 |         |TxPDO State|
-|        |     | 0x6010:0f |   2 |         |Input cycle counter|
-|        |     |           |  16 | PADDING | |
-| 0x1a1e |   3 |           |  32 |         | |
-|        |     | 0x6013:01 |  32 |         |SubIndex 001|
-| 0x1a26 |   3 |           |  32 |         | |
-|        |     | 0x6020:01 |   8 |         |No of Samples|
-|        |     | 0x6020:09 |   1 |         |Error|
-|        |     | 0x6020:0a |   1 |         |Underrange|
-|        |     | 0x6020:0b |   1 |         |Overrange|
-|        |     |           |   1 | PADDING | |
-|        |     | 0x6020:0d |   1 |         |Diag|
-|        |     | 0x6020:0e |   1 |         |TxPDO State|
-|        |     | 0x6020:0f |   2 |         |Input cycle counter|
-|        |     |           |  16 | PADDING | |
-| 0x1a31 |   3 |           |  32 |         | |
-|        |     | 0x6023:01 |  32 |         |SubIndex 001|
-| 0x1a39 |   3 |           |  32 |         | |
-|        |     | 0x6030:01 |   8 |         |No of Samples|
-|        |     | 0x6030:09 |   1 |         |Error|
-|        |     | 0x6030:0a |   1 |         |Underrange|
-|        |     | 0x6030:0b |   1 |         |Overrange|
-|        |     |           |   1 | PADDING | |
-|        |     | 0x6030:0d |   1 |         |Diag|
-|        |     | 0x6030:0e |   1 |         |TxPDO State|
-|        |     | 0x6030:0f |   2 |         |Input cycle counter|
-|        |     |           |  16 | PADDING | |
-| 0x1a44 |   3 |           |  32 |         | |
-|        |     | 0x6033:01 |  32 |         |SubIndex 001|
-| 0x1a4c |   3 |           |  32 |         | |
-|        |     | 0x6040:01 |   8 |         |No of Samples|
-|        |     | 0x6040:09 |   1 |         |Error|
-|        |     | 0x6040:0a |   1 |         |Underrange|
-|        |     | 0x6040:0b |   1 |         |Overrange|
-|        |     |           |   1 | PADDING | |
-|        |     | 0x6040:0d |   1 |         |Diag|
-|        |     | 0x6040:0e |   1 |         |TxPDO State|
-|        |     | 0x6040:0f |   2 |         |Input cycle counter|
-|        |     |           |  16 | PADDING | |
-| 0x1a57 |   3 |           |  32 |         | |
-|        |     | 0x6043:01 |  32 |         |SubIndex 001|
-| 0x1a5f |   3 |           |  32 |         | |
-|        |     | 0x6050:01 |   8 |         |No of Samples|
-|        |     | 0x6050:09 |   1 |         |Error|
-|        |     | 0x6050:0a |   1 |         |Underrange|
-|        |     | 0x6050:0b |   1 |         |Overrange|
-|        |     |           |   1 | PADDING | |
-|        |     | 0x6050:0d |   1 |         |Diag|
-|        |     | 0x6050:0e |   1 |         |TxPDO State|
-|        |     | 0x6050:0f |   2 |         |Input cycle counter|
-|        |     |           |  16 | PADDING | |
-| 0x1a6a |   3 |           |  32 |         | |
-|        |     | 0x6053:01 |  32 |         |SubIndex 001|
-| 0x1a72 |   3 |           |  32 |         | |
-|        |     | 0x6060:01 |   8 |         |No of Samples|
-|        |     | 0x6060:09 |   1 |         |Error|
-|        |     | 0x6060:0a |   1 |         |Underrange|
-|        |     | 0x6060:0b |   1 |         |Overrange|
-|        |     |           |   1 | PADDING | |
-|        |     | 0x6060:0d |   1 |         |Diag|
-|        |     | 0x6060:0e |   1 |         |TxPDO State|
-|        |     | 0x6060:0f |   2 |         |Input cycle counter|
-|        |     |           |  16 | PADDING | |
-| 0x1a7d |   3 |           |  32 |         | |
-|        |     | 0x6063:01 |  32 |         |SubIndex 001|
-| 0x1a85 |   3 |           |  32 |         | |
-|        |     | 0x6070:01 |   8 |         |No of Samples|
-|        |     | 0x6070:09 |   1 |         |Error|
-|        |     | 0x6070:0a |   1 |         |Underrange|
-|        |     | 0x6070:0b |   1 |         |Overrange|
-|        |     |           |   1 | PADDING | |
-|        |     | 0x6070:0d |   1 |         |Diag|
-|        |     | 0x6070:0e |   1 |         |TxPDO State|
-|        |     | 0x6070:0f |   2 |         |Input cycle counter|
-|        |     |           |  16 | PADDING | |
-| 0x1a90 |   3 |           |  32 |         | |
-|        |     | 0x6073:01 |  32 |         |SubIndex 001|
+| 0x1a00 |   3 |           |  32 |         |                                                                 |
+|        |     | 0x6000:01 |   8 |         | No of Samples                                                   |
+|        |     | 0x6000:09 |   1 |         | Error                                                           |
+|        |     | 0x6000:0a |   1 |         | Underrange                                                      |
+|        |     | 0x6000:0b |   1 |         | Overrange                                                       |
+|        |     |           |   1 | PADDING |                                                                 |
+|        |     | 0x6000:0d |   1 |         | Diag                                                            |
+|        |     | 0x6000:0e |   1 |         | TxPDO State                                                     |
+|        |     | 0x6000:0f |   2 |         | Input cycle counter                                             |
+|        |     |           |  16 | PADDING |                                                                 |
+| 0x1a0b |   3 |           |  32 |         |                                                                 |
+|        |     | 0x6003:01 |  32 |         | SubIndex 001                                                    |
+| 0x1a09 |   3 |           |  64 |         |                                                                 |
+|        |     | 0x6005:01 |  32 |         | Low                                                             |
+|        |     | 0x6005:02 |  32 |         | Hi                                                              |
+| 0x1a13 |   3 |           |  32 |         |                                                                 |
+|        |     | 0x6010:01 |   8 |         | No of Samples                                                   |
+|        |     | 0x6010:09 |   1 |         | Error                                                           |
+|        |     | 0x6010:0a |   1 |         | Underrange                                                      |
+|        |     | 0x6010:0b |   1 |         | Overrange                                                       |
+|        |     |           |   1 | PADDING |                                                                 |
+|        |     | 0x6010:0d |   1 |         | Diag                                                            |
+|        |     | 0x6010:0e |   1 |         | TxPDO State                                                     |
+|        |     | 0x6010:0f |   2 |         | Input cycle counter                                             |
+|        |     |           |  16 | PADDING |                                                                 |
+| 0x1a1e |   3 |           |  32 |         |                                                                 |
+|        |     | 0x6013:01 |  32 |         | SubIndex 001                                                    |
+| 0x1a26 |   3 |           |  32 |         |                                                                 |
+|        |     | 0x6020:01 |   8 |         | No of Samples                                                   |
+|        |     | 0x6020:09 |   1 |         | Error                                                           |
+|        |     | 0x6020:0a |   1 |         | Underrange                                                      |
+|        |     | 0x6020:0b |   1 |         | Overrange                                                       |
+|        |     |           |   1 | PADDING |                                                                 |
+|        |     | 0x6020:0d |   1 |         | Diag                                                            |
+|        |     | 0x6020:0e |   1 |         | TxPDO State                                                     |
+|        |     | 0x6020:0f |   2 |         | Input cycle counter                                             |
+|        |     |           |  16 | PADDING |                                                                 |
+| 0x1a31 |   3 |           |  32 |         |                                                                 |
+|        |     | 0x6023:01 |  32 |         | SubIndex 001                                                    |
+| 0x1a39 |   3 |           |  32 |         |                                                                 |
+|        |     | 0x6030:01 |   8 |         | No of Samples                                                   |
+|        |     | 0x6030:09 |   1 |         | Error                                                           |
+|        |     | 0x6030:0a |   1 |         | Underrange                                                      |
+|        |     | 0x6030:0b |   1 |         | Overrange                                                       |
+|        |     |           |   1 | PADDING |                                                                 |
+|        |     | 0x6030:0d |   1 |         | Diag                                                            |
+|        |     | 0x6030:0e |   1 |         | TxPDO State                                                     |
+|        |     | 0x6030:0f |   2 |         | Input cycle counter                                             |
+|        |     |           |  16 | PADDING |                                                                 |
+| 0x1a44 |   3 |           |  32 |         |                                                                 |
+|        |     | 0x6033:01 |  32 |         | SubIndex 001                                                    |
+| 0x1a4c |   3 |           |  32 |         |                                                                 |
+|        |     | 0x6040:01 |   8 |         | No of Samples                                                   |
+|        |     | 0x6040:09 |   1 |         | Error                                                           |
+|        |     | 0x6040:0a |   1 |         | Underrange                                                      |
+|        |     | 0x6040:0b |   1 |         | Overrange                                                       |
+|        |     |           |   1 | PADDING |                                                                 |
+|        |     | 0x6040:0d |   1 |         | Diag                                                            |
+|        |     | 0x6040:0e |   1 |         | TxPDO State                                                     |
+|        |     | 0x6040:0f |   2 |         | Input cycle counter                                             |
+|        |     |           |  16 | PADDING |                                                                 |
+| 0x1a57 |   3 |           |  32 |         |                                                                 |
+|        |     | 0x6043:01 |  32 |         | SubIndex 001                                                    |
+| 0x1a5f |   3 |           |  32 |         |                                                                 |
+|        |     | 0x6050:01 |   8 |         | No of Samples                                                   |
+|        |     | 0x6050:09 |   1 |         | Error                                                           |
+|        |     | 0x6050:0a |   1 |         | Underrange                                                      |
+|        |     | 0x6050:0b |   1 |         | Overrange                                                       |
+|        |     |           |   1 | PADDING |                                                                 |
+|        |     | 0x6050:0d |   1 |         | Diag                                                            |
+|        |     | 0x6050:0e |   1 |         | TxPDO State                                                     |
+|        |     | 0x6050:0f |   2 |         | Input cycle counter                                             |
+|        |     |           |  16 | PADDING |                                                                 |
+| 0x1a6a |   3 |           |  32 |         |                                                                 |
+|        |     | 0x6053:01 |  32 |         | SubIndex 001                                                    |
+| 0x1a72 |   3 |           |  32 |         |                                                                 |
+|        |     | 0x6060:01 |   8 |         | No of Samples                                                   |
+|        |     | 0x6060:09 |   1 |         | Error                                                           |
+|        |     | 0x6060:0a |   1 |         | Underrange                                                      |
+|        |     | 0x6060:0b |   1 |         | Overrange                                                       |
+|        |     |           |   1 | PADDING |                                                                 |
+|        |     | 0x6060:0d |   1 |         | Diag                                                            |
+|        |     | 0x6060:0e |   1 |         | TxPDO State                                                     |
+|        |     | 0x6060:0f |   2 |         | Input cycle counter                                             |
+|        |     |           |  16 | PADDING |                                                                 |
+| 0x1a7d |   3 |           |  32 |         |                                                                 |
+|        |     | 0x6063:01 |  32 |         | SubIndex 001                                                    |
+| 0x1a85 |   3 |           |  32 |         |                                                                 |
+|        |     | 0x6070:01 |   8 |         | No of Samples                                                   |
+|        |     | 0x6070:09 |   1 |         | Error                                                           |
+|        |     | 0x6070:0a |   1 |         | Underrange                                                      |
+|        |     | 0x6070:0b |   1 |         | Overrange                                                       |
+|        |     |           |   1 | PADDING |                                                                 |
+|        |     | 0x6070:0d |   1 |         | Diag                                                            |
+|        |     | 0x6070:0e |   1 |         | TxPDO State                                                     |
+|        |     | 0x6070:0f |   2 |         | Input cycle counter                                             |
+|        |     |           |  16 | PADDING |                                                                 |
+| 0x1a90 |   3 |           |  32 |         |                                                                 |
+|        |     | 0x6073:01 |  32 |         | SubIndex 001                                                    |
 
 
 #### CoE: Object Description Lists

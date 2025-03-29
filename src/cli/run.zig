@@ -415,11 +415,13 @@ pub const ZenohHandler = struct {
                     publisher_options.congestion_control = zenoh.c.Z_CONGESTION_CONTROL_DROP;
                     const result2 = zenoh.c.z_declare_publisher(zenoh.loan(session), &publisher, zenoh.loan(&view_keyexpr), &publisher_options);
                     try zenoh.err(result2);
+                    errdefer zenoh.drop(zenoh.move(&publisher));
                     const put_result = try pubs.getOrPutValue(entry.pv_name.?, publisher);
                     if (put_result.found_existing) return error.PVNameConflict; // TODO: assert this?
                 }
             }
         }
+
         return ZenohHandler{
             .arena = arena,
             .config = config,
@@ -452,7 +454,6 @@ pub const ZenohHandler = struct {
         p_allocator.destroy(self.arena);
     }
 
-    // returns number of put calls
     pub fn publishInputs(self: *ZenohHandler, md: *const gcat.MainDevice, eni: gcat.ENI) !void {
         for (md.subdevices, eni.subdevices) |sub, sub_config| {
             const data = sub.getInputProcessData();

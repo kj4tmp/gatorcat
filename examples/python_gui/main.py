@@ -24,6 +24,9 @@ def subscribe_in_background():
 
         session.declare_subscriber("**", listener)
         while True:
+            session.put("subdevices/6/outputs/pdo/0/entry/0/EL2008_Channel_1_Output", cbor2.dumps(False))
+            time.sleep(1)
+            session.put("subdevices/6/outputs/pdo/0/entry/0/EL2008_Channel_1_Output", cbor2.dumps(False))
             time.sleep(1)
 
 @ui.page("/")
@@ -38,6 +41,7 @@ async def main_page(client: Client):
     async def update_table():
         channels_table.rows = [{"channel": channel, "value": value[0], "timestamp": value[1]} for channel,value in channels.items()]
     ui.timer(0.1, update_table)
+
 
 async def on_start():
     subscribe_thread = threading.Thread(target=subscribe_in_background)

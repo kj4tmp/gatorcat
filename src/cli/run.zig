@@ -369,6 +369,8 @@ pub const ZenohHandler = struct {
     session: *zenoh.c.z_owned_session_t,
     // TODO: store string keys as [:0] const u8 by calling hash map ourselves with StringContext
     pubs: std.StringArrayHashMap(zenoh.c.z_owned_publisher_t),
+    // TODO: use multi array list?
+    subs: *std.StringArrayHashMap(SubscriberClosure),
 
     pub fn init(p_allocator: std.mem.Allocator, eni: gcat.ENI, maybe_config_file: ?[:0]const u8) !ZenohHandler {
         var arena = try p_allocator.create(std.heap.ArenaAllocator);
@@ -422,16 +424,96 @@ pub const ZenohHandler = struct {
             }
         }
 
+        const subs = try allocator.create(std.StringArrayHashMap(SubscriberClosure));
+        subs.* = .init(allocator);
+        errdefer subs.deinit();
+        errdefer {
+            for (subs.values()) |*subscriber_closure| {
+                subscriber_closure.deinit();
+            }
+        }
+
+        for (eni.subdevices) |subdevice| {
+            var bit_pos: u32 = 0;
+            for (subdevice.outputs) |output| {
+                for (output.entries) |entry| {
+                    defer bit_pos += entry.bits;
+                    if (entry.pv_name == null) continue;
+                    std.log.warn("zenoh: declaring subscriber: {s}, ethercat type: {s}, bit_pos: {}", .{
+                        entry.pv_name.?,
+                        @tagName(entry.type),
+                        bit_pos,
+                    });
+
+                    var key_expr: zenoh.c.z_view_keyexpr_t = undefined;
+                    try zenoh.err(zenoh.c.z_view_keyexpr_from_str(&key_expr, entry.pv_name.?.ptr));
+
+                    const closure = try allocator.create(zenoh.c.z_owned_closure_sample_t);
+                    zenoh.c.z_closure_sample(closure, &data_handler, null, subs);
+                    errdefer zenoh.drop(zenoh.move(closure));
+
+                    var subscriber_options: zenoh.c.z_subscriber_options_t = undefined;
+                    zenoh.c.z_subscriber_options_default(&subscriber_options);
+
+                    const subscriber = try allocator.create(zenoh.c.z_owned_subscriber_t);
+                    try zenoh.err(zenoh.c.z_declare_subscriber(zenoh.loan(session), subscriber, zenoh.loan(&key_expr), zenoh.move(closure), &subscriber_options));
+                    errdefer zenoh.drop(zenoh.move(subscriber));
+
+                    const subscriber_closure = SubscriberClosure{
+                        .closure = closure,
+                        .subscriber = subscriber,
+                        .type = entry.type,
+                        .bit_pos_in_subdevice_outputs = bit_pos,
+                    };
+
+                    const put_result = try subs.getOrPutValue(entry.pv_name.?, subscriber_closure);
+                    if (put_result.found_existing) return error.PVNameConflict; // TODO: assert this?
+                }
+            }
+        }
+
         return ZenohHandler{
             .arena = arena,
             .config = config,
             .session = session,
             .pubs = pubs,
+            .subs = subs,
         };
     }
 
+    const SubscriberClosure = struct {
+        closure: *zenoh.c.z_owned_closure_sample_t,
+        subscriber: *zenoh.c.z_owned_subscriber_t,
+        type: gcat.Exhaustive(gcat.mailbox.coe.DataTypeArea),
+        bit_pos_in_subdevice_outputs: u32,
+        pub fn deinit(self: SubscriberClosure) void {
+            zenoh.drop(zenoh.move(self.subscriber));
+            zenoh.drop(zenoh.move(self.closure));
+        }
+    };
+
+    fn data_handler(sample: [*c]zenoh.c.z_loaned_sample_t, subs_ctx: ?*anyopaque) callconv(.c) void {
+        if (subs_ctx == null) return; // TODO: assert?
+        assert(subs_ctx != null);
+
+        const subs: *std.StringArrayHashMap(SubscriberClosure) = @ptrCast(@alignCast(subs_ctx));
+        // const payload = zenoh.c.z_sample_payload(sample);
+        // var string: zenoh.c.z_owned_string_t = undefined;
+        // _ = zenoh.c.z_bytes_to_string(payload, &string);
+        // var slice: []const u8 = undefined;
+        // slice.ptr = zenoh.c.z_string_data(zenoh.loan(&string));
+        // slice.len = zenoh.c.z_string_len(zenoh.loan(&string));
+
+        const key = zenoh.c.z_sample_keyexpr(sample);
+        var view_str: zenoh.c.z_view_string_t = undefined;
+        zenoh.c.z_keyexpr_as_view_string(key, &view_str);
+        const key_slice = std.mem.span(zenoh.c.z_string_data(zenoh.loan(&view_str)));
+        const sub_closure = subs.get(key_slice) orelse return;
+        std.log.info("zenoh: received sample from key: {s}, type: {s}, bit_pos: {}", .{ key_slice, @tagName(sub_closure.type), sub_closure.bit_pos_in_subdevice_outputs });
+    }
+
     /// Asserts the given key exists.
-    pub fn publishAssumeKey(self: *ZenohHandler, key: [:0]const u8, payload: []const u8) !void {
+    fn publishAssumeKey(self: *ZenohHandler, key: [:0]const u8, payload: []const u8) !void {
         var options: zenoh.c.z_publisher_put_options_t = undefined;
         zenoh.c.z_publisher_put_options_default(&options);
         var bytes: zenoh.c.z_owned_bytes_t = undefined;

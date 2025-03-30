@@ -45,13 +45,14 @@ Documentation can be found in [doc](doc/README.md).
 - [ ] Embedded friendly API / timers
 - [ ] Network diagnosis in the CLI (CRC counters etc.)
 
-## Farther out
+## TODO
 
 - [ ] validate individual pdo types at runtime (not just size of pdos)
 - [ ] revise error handling
 - [x] python package: hello world
 - [ ] python package: message pack models
 - [ ] python package: valkey driver
+- [ ] make a custom `@tagName` that requires the parameter to be exhaustive
 
 ## Sponsors
 

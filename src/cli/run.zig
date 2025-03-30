@@ -185,22 +185,6 @@ pub fn run(allocator: std.mem.Allocator, args: Args) RunError!void {
 
         defer eni.deinit();
 
-        var maybe_zh: ?ZenohHandler = blk: {
-            if (args.zenoh_config_file) |config_file| {
-                const zh = ZenohHandler.init(allocator, eni.value, config_file) catch return error.NonRecoverable;
-                break :blk zh;
-            } else if (args.zenoh_config_default) {
-                const zh = ZenohHandler.init(allocator, eni.value, null) catch return error.NonRecoverable;
-                break :blk zh;
-            } else break :blk null;
-        };
-
-        defer {
-            if (maybe_zh) |*zh| {
-                zh.deinit(allocator);
-            }
-        }
-
         var md = gcat.MainDevice.init(
             allocator,
             &port,
@@ -221,6 +205,22 @@ pub fn run(allocator: std.mem.Allocator, args: Args) RunError!void {
             error.WrongNumberOfSubdevices,
             => continue :bus_scan,
         };
+        // we should not initiate zenoh until the bus contents are verified.
+        var maybe_zh: ?ZenohHandler = blk: {
+            if (args.zenoh_config_file) |config_file| {
+                const zh = ZenohHandler.init(allocator, eni.value, config_file, &md) catch return error.NonRecoverable;
+                break :blk zh;
+            } else if (args.zenoh_config_default) {
+                const zh = ZenohHandler.init(allocator, eni.value, null, &md) catch return error.NonRecoverable;
+                break :blk zh;
+            } else break :blk null;
+        };
+
+        defer {
+            if (maybe_zh) |*zh| {
+                zh.deinit(allocator);
+            }
+        }
 
         md.busPreop(args.preop_timeout_us) catch |err| switch (err) {
             error.LinkError,
@@ -327,23 +327,27 @@ pub fn run(allocator: std.mem.Allocator, args: Args) RunError!void {
         while (true) {
 
             // exchange process data
-            if (md.sendRecvCyclicFrames()) {
-                recv_timeouts = 0;
-            } else |err| switch (err) {
-                error.RecvTimeout => {
-                    std.log.info("recv timeout!", .{});
-                    recv_timeouts += 1;
-                    if (recv_timeouts > args.max_recv_timeouts_before_rescan) continue :bus_scan;
-                },
-                error.LinkError,
-                error.CurruptedFrame,
-                => return error.NonRecoverable,
-                error.NoTransactionAvailable,
-                => unreachable,
-                error.NotAllSubdevicesInOP,
-                error.TopologyChanged,
-                error.Wkc,
-                => continue :bus_scan,
+            {
+                write_mutex.lock();
+                defer write_mutex.unlock();
+                if (md.sendRecvCyclicFrames()) {
+                    recv_timeouts = 0;
+                } else |err| switch (err) {
+                    error.RecvTimeout => {
+                        std.log.info("recv timeout!", .{});
+                        recv_timeouts += 1;
+                        if (recv_timeouts > args.max_recv_timeouts_before_rescan) continue :bus_scan;
+                    },
+                    error.LinkError,
+                    error.CurruptedFrame,
+                    => return error.NonRecoverable,
+                    error.NoTransactionAvailable,
+                    => unreachable,
+                    error.NotAllSubdevicesInOP,
+                    error.TopologyChanged,
+                    error.Wkc,
+                    => continue :bus_scan,
+                }
             }
 
             if (maybe_zh) |*zh| {
@@ -363,16 +367,25 @@ pub fn run(allocator: std.mem.Allocator, args: Args) RunError!void {
     }
 }
 
+var write_mutex = std.Thread.Mutex{};
+
 pub const ZenohHandler = struct {
     arena: *std.heap.ArenaAllocator,
     config: *zenoh.c.z_owned_config_t,
     session: *zenoh.c.z_owned_session_t,
     // TODO: store string keys as [:0] const u8 by calling hash map ourselves with StringContext
     pubs: std.StringArrayHashMap(zenoh.c.z_owned_publisher_t),
-    // TODO: use multi array list?
-    subs: *std.StringArrayHashMap(SubscriberClosure),
+    sub_context: *const SubscriberContext,
 
-    pub fn init(p_allocator: std.mem.Allocator, eni: gcat.ENI, maybe_config_file: ?[:0]const u8) !ZenohHandler {
+    // TODO: can this suck less?
+    const SubscriberContext = struct {
+        // TODO: use multi array list?
+        subs: std.StringArrayHashMap(SubscriberClosure),
+        md: *const gcat.MainDevice,
+    };
+
+    /// Lifetime of md must be past deinit.
+    pub fn init(p_allocator: std.mem.Allocator, eni: gcat.ENI, maybe_config_file: ?[:0]const u8, md: *const gcat.MainDevice) !ZenohHandler {
         var arena = try p_allocator.create(std.heap.ArenaAllocator);
         arena.* = .init(p_allocator);
         errdefer p_allocator.destroy(arena);
@@ -424,32 +437,35 @@ pub const ZenohHandler = struct {
             }
         }
 
-        const subs = try allocator.create(std.StringArrayHashMap(SubscriberClosure));
-        subs.* = .init(allocator);
-        errdefer subs.deinit();
+        const subs_context = try allocator.create(SubscriberContext);
+        subs_context.* = SubscriberContext{
+            .subs = std.StringArrayHashMap(SubscriberClosure).init(allocator),
+            .md = md,
+        };
+        errdefer subs_context.subs.deinit();
         errdefer {
-            for (subs.values()) |*subscriber_closure| {
+            for (subs_context.subs.values()) |*subscriber_closure| {
                 subscriber_closure.deinit();
             }
         }
 
-        for (eni.subdevices) |subdevice| {
-            var bit_pos: u32 = 0;
+        for (eni.subdevices, 0..) |subdevice, subdevice_index| {
+            var bit_offset: u32 = 0;
             for (subdevice.outputs) |output| {
                 for (output.entries) |entry| {
-                    defer bit_pos += entry.bits;
+                    defer bit_offset += entry.bits;
                     if (entry.pv_name == null) continue;
                     std.log.warn("zenoh: declaring subscriber: {s}, ethercat type: {s}, bit_pos: {}", .{
                         entry.pv_name.?,
                         @tagName(entry.type),
-                        bit_pos,
+                        bit_offset,
                     });
 
                     var key_expr: zenoh.c.z_view_keyexpr_t = undefined;
                     try zenoh.err(zenoh.c.z_view_keyexpr_from_str(&key_expr, entry.pv_name.?.ptr));
 
                     const closure = try allocator.create(zenoh.c.z_owned_closure_sample_t);
-                    zenoh.c.z_closure_sample(closure, &data_handler, null, subs);
+                    zenoh.c.z_closure_sample(closure, &data_handler, null, subs_context);
                     errdefer zenoh.drop(zenoh.move(closure));
 
                     var subscriber_options: zenoh.c.z_subscriber_options_t = undefined;
@@ -463,10 +479,12 @@ pub const ZenohHandler = struct {
                         .closure = closure,
                         .subscriber = subscriber,
                         .type = entry.type,
-                        .bit_pos_in_subdevice_outputs = bit_pos,
+                        .bit_count = entry.bits,
+                        .bit_offset_in_subdevice_outputs = bit_offset,
+                        .subdevice_index = @intCast(subdevice_index),
                     };
 
-                    const put_result = try subs.getOrPutValue(entry.pv_name.?, subscriber_closure);
+                    const put_result = try subs_context.subs.getOrPutValue(entry.pv_name.?, subscriber_closure);
                     if (put_result.found_existing) return error.PVNameConflict; // TODO: assert this?
                 }
             }
@@ -477,7 +495,7 @@ pub const ZenohHandler = struct {
             .config = config,
             .session = session,
             .pubs = pubs,
-            .subs = subs,
+            .sub_context = subs_context,
         };
     }
 
@@ -485,19 +503,33 @@ pub const ZenohHandler = struct {
         closure: *zenoh.c.z_owned_closure_sample_t,
         subscriber: *zenoh.c.z_owned_subscriber_t,
         type: gcat.Exhaustive(gcat.mailbox.coe.DataTypeArea),
-        bit_pos_in_subdevice_outputs: u32,
+        bit_count: u16,
+        bit_offset_in_subdevice_outputs: u32,
+        subdevice_index: u16,
         pub fn deinit(self: SubscriberClosure) void {
             zenoh.drop(zenoh.move(self.subscriber));
             zenoh.drop(zenoh.move(self.closure));
         }
     };
 
+    // TODO: get more type safety here for subs_ctx?
+    // TODO: refactor naming of subs_context?
     fn data_handler(sample: [*c]zenoh.c.z_loaned_sample_t, subs_ctx: ?*anyopaque) callconv(.c) void {
+        // TODO: get rid of this mutex!
+        write_mutex.lock();
+        defer write_mutex.unlock();
+
         if (subs_ctx == null) return; // TODO: assert?
         assert(subs_ctx != null);
 
-        const subs: *std.StringArrayHashMap(SubscriberClosure) = @ptrCast(@alignCast(subs_ctx));
-        // const payload = zenoh.c.z_sample_payload(sample);
+        const ctx: *SubscriberContext = @ptrCast(@alignCast(subs_ctx));
+        const payload = zenoh.c.z_sample_payload(sample);
+        var slice: zenoh.c.z_owned_slice_t = undefined;
+        zenoh.err(zenoh.c.z_bytes_to_slice(payload, &slice)) catch return;
+        defer zenoh.drop(zenoh.move(&slice));
+        var raw_data: []const u8 = undefined;
+        raw_data.ptr = zenoh.c.z_slice_data(zenoh.loan(&slice));
+        raw_data.len = zenoh.c.z_slice_len(zenoh.loan(&slice));
         // var string: zenoh.c.z_owned_string_t = undefined;
         // _ = zenoh.c.z_bytes_to_string(payload, &string);
         // var slice: []const u8 = undefined;
@@ -508,8 +540,70 @@ pub const ZenohHandler = struct {
         var view_str: zenoh.c.z_view_string_t = undefined;
         zenoh.c.z_keyexpr_as_view_string(key, &view_str);
         const key_slice = std.mem.span(zenoh.c.z_string_data(zenoh.loan(&view_str)));
-        const sub_closure = subs.get(key_slice) orelse return;
-        std.log.info("zenoh: received sample from key: {s}, type: {s}, bit_pos: {}", .{ key_slice, @tagName(sub_closure.type), sub_closure.bit_pos_in_subdevice_outputs });
+        const sub_closure = ctx.subs.get(key_slice) orelse return;
+        std.log.info("zenoh: received sample from key: {s}, type: {s}, bit_count: {}, bit_offset: {}, subdevice_index: {}", .{
+            key_slice,
+            @tagName(sub_closure.type),
+            sub_closure.bit_count,
+            sub_closure.bit_offset_in_subdevice_outputs,
+            sub_closure.subdevice_index,
+        });
+        const outputs = ctx.md.subdevices[sub_closure.subdevice_index].getOutputProcessData();
+
+        const data_item = zbor.DataItem.new(raw_data) catch {
+            std.log.err("Invalid data for key: {s}, {x}", .{ key_slice, raw_data });
+            return;
+        };
+        switch (sub_closure.type) {
+            .BOOLEAN => {
+                const value = zbor.parse(bool, data_item, .{}) catch return; // TODO: print error
+                gcat.wire.writeBitsAtPos(outputs, sub_closure.bit_offset_in_subdevice_outputs, sub_closure.bit_count, value);
+                std.log.warn("wrote data", .{});
+            },
+            .BIT1,
+            .BIT2,
+            .BIT3,
+            .BIT4,
+            .BIT5,
+            .BIT6,
+            .BIT7,
+            .BIT8,
+            .UNSIGNED8,
+            .BYTE,
+            .BITARR8,
+            .INTEGER8,
+            .INTEGER16,
+            .INTEGER32,
+            .UNSIGNED16,
+            .BITARR16,
+            .UNSIGNED24,
+            .UNSIGNED32,
+            .BITARR32,
+            .UNSIGNED40,
+            .UNSIGNED48,
+            .UNSIGNED56,
+            .UNSIGNED64,
+            .REAL32,
+            .REAL64,
+            .INTEGER24,
+            .INTEGER40,
+            .INTEGER48,
+            .INTEGER56,
+            .INTEGER64,
+            .OCTET_STRING,
+            .UNICODE_STRING,
+            .TIME_OF_DAY,
+            .TIME_DIFFERENCE,
+            .DOMAIN,
+            .GUID,
+            .PDO_MAPPING,
+            .IDENTITY,
+            .COMMAND_PAR,
+            .SYNC_PAR,
+            .UNKNOWN,
+            .VISIBLE_STRING,
+            => std.log.err("zenoh: keyexpr {s}, Unsupported type: {s}", .{ key_slice, @tagName(sub_closure.type) }),
+        }
     }
 
     /// Asserts the given key exists.

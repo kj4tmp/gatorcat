@@ -439,6 +439,45 @@ test "lossyBitReader 2 bytes" {
     bit_reader.reset();
 }
 
+/// Write bits of length at bit position in the buffer.
+/// Write value as little-endian.
+/// Bit position is lowest to highest memory address, least to most significant within a byte.
+///
+/// writeBitsAtPos(bool, 0, N) does nothing
+/// writeBitsAtPos(bool, 1, N) writes 1 bit at position N
+/// writeBitsAtPos(bool, 2, N) writes 2 bits, bool at position N, 0 at position N + 1
+/// writeBitsAtPos(void, 3, N) writes 3 zero bits at position N
+/// writeBitsAtPos(u8, 5, N) writes the 5 least significant bits of u8 at position N
+pub fn writeBitsAtPos(bytes: []u8, bit_offset: usize, bit_count: usize, value: anytype) void {
+    // TODO: implement
+    return switch (@TypeOf(value)) {
+        void => {}, // do nothing
+        bool => std.mem.writeVarPackedInt(bytes, bit_offset, bit_count, @as(u1, @intFromBool(value)), .little),
+        f32 => std.mem.writeVarPackedInt(bytes, bit_offset, bit_count, @as(u32, @bitCast(value)), .little),
+        f64 => std.mem.writeVarPackedInt(bytes, bit_offset, bit_count, @as(u64, @bitCast(value)), .little),
+        else => std.mem.writeVarPackedInt(bytes, bit_offset, bit_count, value, .little),
+    };
+}
+
+// tests for writeVarPackedInt
+test {
+    var buf = [_]u8{ 0b0000_0000, 0, 0, 0 };
+    writeBitsAtPos(&buf, 3, 2, @as(u1, 1));
+    try std.testing.expectEqual(buf[0], 0b0000_1000);
+}
+
+test {
+    var buf = [_]u8{ 0b1111_1111, 0, 0, 0 };
+    writeBitsAtPos(&buf, 3, 2, @as(u1, 0));
+    try std.testing.expectEqual(buf[0], 0b1110_0111);
+}
+
+test {
+    var buf = [_]u8{ 0, 0, 0, 0 };
+    writeBitsAtPos(&buf, 3, 2, @as(u12, 0b111));
+    try std.testing.expectEqualSlices(u8, &buf, &.{ 0b0001_1000, 0, 0, 0 });
+}
+
 test {
     std.testing.refAllDecls(@This());
 }

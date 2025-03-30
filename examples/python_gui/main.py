@@ -24,10 +24,14 @@ def subscribe_in_background():
 
         session.declare_subscriber("**", listener)
         while True:
-            session.put("subdevices/6/outputs/pdo/0/entry/0/EL2008_Channel_1_Output", cbor2.dumps(False))
-            time.sleep(1)
-            session.put("subdevices/6/outputs/pdo/0/entry/0/EL2008_Channel_1_Output", cbor2.dumps(False))
-            time.sleep(1)
+            session.put("subdevices/1/outputs/pdo/0/entry/0/EL2008_Channel_1_Output", cbor2.dumps(False))
+            time.sleep(0.5)
+            session.put("subdevices/1/outputs/pdo/0/entry/0/EL2008_Channel_1_Output", cbor2.dumps(True))
+            time.sleep(0.5)
+            session.put("subdevices/1/outputs/pdo/1/entry/0/EL2008_Channel_2_Output", cbor2.dumps(False))
+            time.sleep(0.5)
+            session.put("subdevices/1/outputs/pdo/1/entry/0/EL2008_Channel_2_Output", cbor2.dumps(True))
+            time.sleep(0.5)
 
 @ui.page("/")
 async def main_page(client: Client):

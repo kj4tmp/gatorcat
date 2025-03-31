@@ -5,3 +5,5 @@ services:
       dockerfile: Dockerfile.gui
     volumes:
       - /dev/shm
+    ports:
+      - "8080:8080"

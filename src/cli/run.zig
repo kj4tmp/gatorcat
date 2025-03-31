@@ -382,14 +382,7 @@ pub const ZenohHandler = struct {
     session: *zenoh.c.z_owned_session_t,
     // TODO: store string keys as [:0] const u8 by calling hash map ourselves with StringContext
     pubs: std.StringArrayHashMap(zenoh.c.z_owned_publisher_t),
-    sub_context: *const SubscriberContext,
-
-    // TODO: can this suck less?
-    const SubscriberContext = struct {
-        // TODO: use multi array list?
-        subs: std.StringArrayHashMap(SubscriberClosure),
-        md: *const gcat.MainDevice,
-    };
+    subs: *const std.StringArrayHashMap(SubscriberClosure),
 
     /// Lifetime of md must be past deinit.
     /// Lifetime of eni must be past deinit.
@@ -448,14 +441,11 @@ pub const ZenohHandler = struct {
             }
         }
 
-        const subs_context = try allocator.create(SubscriberContext);
-        subs_context.* = SubscriberContext{
-            .subs = std.StringArrayHashMap(SubscriberClosure).init(allocator),
-            .md = md,
-        };
-        errdefer subs_context.subs.deinit();
+        const subs = try allocator.create(std.StringArrayHashMap(SubscriberClosure));
+        subs.* = .init(allocator);
+        errdefer subs.deinit();
         errdefer {
-            for (subs_context.subs.values()) |*subscriber_closure| {
+            for (subs.values()) |*subscriber_closure| {
                 subscriber_closure.deinit();
             }
         }
@@ -499,7 +489,7 @@ pub const ZenohHandler = struct {
                         .subscriber = subscriber,
                     };
 
-                    const put_result = try subs_context.subs.getOrPutValue(entry.pv_name.?, subscriber_closure);
+                    const put_result = try subs.getOrPutValue(entry.pv_name.?, subscriber_closure);
                     if (put_result.found_existing) return error.PVNameConflict; // TODO: assert this?
                 }
             }
@@ -510,7 +500,7 @@ pub const ZenohHandler = struct {
             .config = config,
             .session = session,
             .pubs = pubs,
-            .sub_context = subs_context,
+            .subs = subs,
         };
     }
 

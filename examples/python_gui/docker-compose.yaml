@@ -3,3 +3,5 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.gui
+    volumes:
+      - /dev/shm

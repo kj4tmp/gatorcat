@@ -5,7 +5,6 @@ from typing import Any
 import zenoh
 import cbor2
 from nicegui import Client, run, ui, app
-import datetime
 
 channels: dict[str, tuple[Any, Any]] = {}
 
@@ -20,18 +19,31 @@ def subscribe_in_background():
             if sample.kind == zenoh.SampleKind.DELETE:
                 channels.pop(str(sample.key_expr), None)
             elif sample.kind == zenoh.SampleKind.PUT:
-                channels[str(sample.key_expr)] = (cbor2.loads(sample.payload.to_bytes()), sample.timestamp.get_time() if sample.timestamp else datetime.datetime.now())
+                channels[str(sample.key_expr)] = (cbor2.loads(sample.payload.to_bytes()), sample.timestamp.get_time() if sample.timestamp else None)
 
-        session.declare_subscriber("**", listener)
+        session.declare_subscriber("**/EL7031$*", listener)
+        i = 0
         while True:
-            session.put("subdevices/1/outputs/pdo/0/entry/0/EL2008_Channel_1_Output", cbor2.dumps(False))
-            time.sleep(0.5)
-            session.put("subdevices/1/outputs/pdo/0/entry/0/EL2008_Channel_1_Output", cbor2.dumps(True))
-            time.sleep(0.5)
-            session.put("subdevices/1/outputs/pdo/1/entry/0/EL2008_Channel_2_Output", cbor2.dumps(False))
-            time.sleep(0.5)
-            session.put("subdevices/1/outputs/pdo/1/entry/0/EL2008_Channel_2_Output", cbor2.dumps(True))
-            time.sleep(0.5)
+            session.put("s/1/outputs/pdo/0/entry/0/EL2008_Channel_1_Output", cbor2.dumps(False), congestion_control=zenoh.CongestionControl.BLOCK)
+            time.sleep(0.05)
+            session.put("s/1/outputs/pdo/0/entry/0/EL2008_Channel_1_Output", cbor2.dumps(True), congestion_control=zenoh.CongestionControl.BLOCK)
+            time.sleep(0.05)
+            session.put("s/1/outputs/pdo/0/entry/0/EL2008_Channel_1_Output", cbor2.dumps(False), congestion_control=zenoh.CongestionControl.BLOCK)
+            session.put("s/1/outputs/pdo/1/entry/0/EL2008_Channel_2_Output", cbor2.dumps(False), congestion_control=zenoh.CongestionControl.BLOCK)
+            time.sleep(0.05)
+            session.put("s/1/outputs/pdo/1/entry/0/EL2008_Channel_2_Output", cbor2.dumps(True), congestion_control=zenoh.CongestionControl.BLOCK)
+            time.sleep(0.05)
+            session.put("s/1/outputs/pdo/1/entry/0/EL2008_Channel_2_Output", cbor2.dumps(False), congestion_control=zenoh.CongestionControl.BLOCK)
+
+            time.sleep(0.05)
+            session.put("s/3/outputs/pdo/1/entry/0/EL7031-0030_STM_RxPDO-Map_Control_Enable", cbor2.dumps(True))
+            session.put("s/3/outputs/pdo/0/entry/2/EL7031-0030_ENC_RxPDO-Map_Control_compact_Set_counter", cbor2.dumps(False), congestion_control=zenoh.CongestionControl.BLOCK)
+            session.put("s/3/outputs/pdo/0/entry/6/EL7031-0030_ENC_RxPDO-Map_Control_compact_Set_counter_value", cbor2.dumps(i), congestion_control=zenoh.CongestionControl.BLOCK)
+            i += 1
+            session.put("s/3/outputs/pdo/0/entry/2/EL7031-0030_ENC_RxPDO-Map_Control_compact_Set_counter", cbor2.dumps(True), congestion_control=zenoh.CongestionControl.BLOCK)
+            # subdevices/3/outputs/pdo/0/entry/2/EL7031-0030_ENC_RxPDO-Map_Control_compact_Set_counter
+            # subdevices/3/outputs/pdo/0/entry/6/EL7031-0030_ENC_RxPDO-Map_Control_compact_Set_counter_value
+
 
 @ui.page("/")
 async def main_page(client: Client):

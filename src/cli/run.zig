@@ -23,8 +23,12 @@ pub const Args = struct {
     max_recv_timeouts_before_rescan: u32 = 3,
     zenoh_config_default: bool = false,
     zenoh_config_file: ?[:0]const u8 = null,
+    zenoh_log_level: ZenohLogLevel = .@"error",
     eni_file: ?[:0]const u8 = null,
     rt_prio: ?i32 = null,
+
+    pub const ZenohLogLevel = enum { trace, debug, info, warn, @"error" };
+
     pub const descriptions = .{
         .ifname = "Network interface to use for the bus scan. Example: eth0",
         .recv_timeout_us = "Frame receive timeout in microseconds. Example: 10000",
@@ -206,15 +210,18 @@ pub fn run(allocator: std.mem.Allocator, args: Args) RunError!void {
             => continue :bus_scan,
         };
         // we should not initiate zenoh until the bus contents are verified.
+
+        write_mutex.lock();
         var maybe_zh: ?ZenohHandler = blk: {
             if (args.zenoh_config_file) |config_file| {
-                const zh = ZenohHandler.init(allocator, eni.value, config_file, &md) catch return error.NonRecoverable;
+                const zh = ZenohHandler.init(allocator, eni.value, config_file, &md, args.zenoh_log_level) catch return error.NonRecoverable;
                 break :blk zh;
             } else if (args.zenoh_config_default) {
-                const zh = ZenohHandler.init(allocator, eni.value, null, &md) catch return error.NonRecoverable;
+                const zh = ZenohHandler.init(allocator, eni.value, null, &md, args.zenoh_log_level) catch return error.NonRecoverable;
                 break :blk zh;
             } else break :blk null;
         };
+        write_mutex.unlock();
 
         defer {
             if (maybe_zh) |*zh| {
@@ -385,12 +392,16 @@ pub const ZenohHandler = struct {
     };
 
     /// Lifetime of md must be past deinit.
-    pub fn init(p_allocator: std.mem.Allocator, eni: gcat.ENI, maybe_config_file: ?[:0]const u8, md: *const gcat.MainDevice) !ZenohHandler {
+    /// Lifetime of eni must be past deinit.
+    pub fn init(p_allocator: std.mem.Allocator, eni: gcat.ENI, maybe_config_file: ?[:0]const u8, md: *const gcat.MainDevice, log_level: Args.ZenohLogLevel) !ZenohHandler {
         var arena = try p_allocator.create(std.heap.ArenaAllocator);
         arena.* = .init(p_allocator);
         errdefer p_allocator.destroy(arena);
         errdefer arena.deinit();
         const allocator = arena.allocator();
+
+        // TODO: set log level from cli
+        try zenoh.err(zenoh.c.zc_init_log_from_env_or(@tagName(log_level)));
 
         const config = try allocator.create(zenoh.c.z_owned_config_t);
         if (maybe_config_file) |config_file| {
@@ -421,14 +432,14 @@ pub const ZenohHandler = struct {
                 for (input.entries) |entry| {
                     if (entry.pv_name == null) continue;
                     var publisher: zenoh.c.z_owned_publisher_t = undefined;
-                    var view_keyexpr: zenoh.c.z_view_keyexpr_t = undefined;
+                    const view_keyexpr = try allocator.create(zenoh.c.z_view_keyexpr_t);
                     std.log.warn("zenoh: declaring publisher: {s}, ethercat type: {s}", .{ entry.pv_name.?, @tagName(entry.type) });
-                    const result = zenoh.c.z_view_keyexpr_from_str(&view_keyexpr, entry.pv_name.?.ptr);
+                    const result = zenoh.c.z_view_keyexpr_from_str(view_keyexpr, entry.pv_name.?.ptr);
                     try zenoh.err(result);
                     var publisher_options: zenoh.c.z_publisher_options_t = undefined;
                     zenoh.c.z_publisher_options_default(&publisher_options);
                     publisher_options.congestion_control = zenoh.c.Z_CONGESTION_CONTROL_DROP;
-                    const result2 = zenoh.c.z_declare_publisher(zenoh.loan(session), &publisher, zenoh.loan(&view_keyexpr), &publisher_options);
+                    const result2 = zenoh.c.z_declare_publisher(zenoh.loan(session), &publisher, zenoh.loan(view_keyexpr), &publisher_options);
                     try zenoh.err(result2);
                     errdefer zenoh.drop(zenoh.move(&publisher));
                     const put_result = try pubs.getOrPutValue(entry.pv_name.?, publisher);
@@ -455,33 +466,37 @@ pub const ZenohHandler = struct {
                 for (output.entries) |entry| {
                     defer bit_offset += entry.bits;
                     if (entry.pv_name == null) continue;
-                    std.log.warn("zenoh: declaring subscriber: {s}, ethercat type: {s}, bit_pos: {}", .{
-                        entry.pv_name.?,
-                        @tagName(entry.type),
-                        bit_offset,
-                    });
 
-                    var key_expr: zenoh.c.z_view_keyexpr_t = undefined;
-                    try zenoh.err(zenoh.c.z_view_keyexpr_from_str(&key_expr, entry.pv_name.?.ptr));
+                    const key_expr = try allocator.create(zenoh.c.z_view_keyexpr_t);
+                    try zenoh.err(zenoh.c.z_view_keyexpr_from_str(key_expr, entry.pv_name.?.ptr));
+
+                    const subscriber_sample_context = try allocator.create(SubscriberSampleContext);
+                    subscriber_sample_context.* = SubscriberSampleContext{
+                        .subdevice_output_process_data = md.subdevices[subdevice_index].getOutputProcessData(),
+                        .type = entry.type,
+                        .bit_count = entry.bits,
+                        .bit_offset_in_process_data = bit_offset,
+                    };
 
                     const closure = try allocator.create(zenoh.c.z_owned_closure_sample_t);
-                    zenoh.c.z_closure_sample(closure, &data_handler, null, subs_context);
+                    zenoh.c.z_closure_sample(closure, &data_handler, null, subscriber_sample_context);
                     errdefer zenoh.drop(zenoh.move(closure));
 
                     var subscriber_options: zenoh.c.z_subscriber_options_t = undefined;
                     zenoh.c.z_subscriber_options_default(&subscriber_options);
 
                     const subscriber = try allocator.create(zenoh.c.z_owned_subscriber_t);
-                    try zenoh.err(zenoh.c.z_declare_subscriber(zenoh.loan(session), subscriber, zenoh.loan(&key_expr), zenoh.move(closure), &subscriber_options));
+                    try zenoh.err(zenoh.c.z_declare_subscriber(zenoh.loan(session), subscriber, zenoh.loan(key_expr), zenoh.move(closure), &subscriber_options));
                     errdefer zenoh.drop(zenoh.move(subscriber));
+                    std.log.warn("zenoh: declared subscriber: {s}, ethercat type: {s}, bit_pos: {}", .{
+                        entry.pv_name.?,
+                        @tagName(entry.type),
+                        bit_offset,
+                    });
 
                     const subscriber_closure = SubscriberClosure{
                         .closure = closure,
                         .subscriber = subscriber,
-                        .type = entry.type,
-                        .bit_count = entry.bits,
-                        .bit_offset_in_subdevice_outputs = bit_offset,
-                        .subdevice_index = @intCast(subdevice_index),
                     };
 
                     const put_result = try subs_context.subs.getOrPutValue(entry.pv_name.?, subscriber_closure);
@@ -502,14 +517,17 @@ pub const ZenohHandler = struct {
     const SubscriberClosure = struct {
         closure: *zenoh.c.z_owned_closure_sample_t,
         subscriber: *zenoh.c.z_owned_subscriber_t,
-        type: gcat.Exhaustive(gcat.mailbox.coe.DataTypeArea),
-        bit_count: u16,
-        bit_offset_in_subdevice_outputs: u32,
-        subdevice_index: u16,
         pub fn deinit(self: SubscriberClosure) void {
             zenoh.drop(zenoh.move(self.subscriber));
             zenoh.drop(zenoh.move(self.closure));
         }
+    };
+
+    const SubscriberSampleContext = struct {
+        subdevice_output_process_data: []u8,
+        type: gcat.Exhaustive(gcat.mailbox.coe.DataTypeArea),
+        bit_count: u16,
+        bit_offset_in_process_data: u32,
     };
 
     // TODO: get more type safety here for subs_ctx?
@@ -519,77 +537,352 @@ pub const ZenohHandler = struct {
         write_mutex.lock();
         defer write_mutex.unlock();
 
-        if (subs_ctx == null) return; // TODO: assert?
+        // if (subs_ctx == null) return; // TODO: assert?
         assert(subs_ctx != null);
 
-        const ctx: *SubscriberContext = @ptrCast(@alignCast(subs_ctx));
+        const ctx: *SubscriberSampleContext = @ptrCast(@alignCast(subs_ctx.?));
         const payload = zenoh.c.z_sample_payload(sample);
         var slice: zenoh.c.z_owned_slice_t = undefined;
-        zenoh.err(zenoh.c.z_bytes_to_slice(payload, &slice)) catch return;
+        zenoh.err(zenoh.c.z_bytes_to_slice(payload, &slice)) catch {
+            std.log.err("zenoh: failed to convert bytes to slice", .{});
+            return;
+        };
         defer zenoh.drop(zenoh.move(&slice));
         var raw_data: []const u8 = undefined;
         raw_data.ptr = zenoh.c.z_slice_data(zenoh.loan(&slice));
         raw_data.len = zenoh.c.z_slice_len(zenoh.loan(&slice));
-        // var string: zenoh.c.z_owned_string_t = undefined;
-        // _ = zenoh.c.z_bytes_to_string(payload, &string);
-        // var slice: []const u8 = undefined;
-        // slice.ptr = zenoh.c.z_string_data(zenoh.loan(&string));
-        // slice.len = zenoh.c.z_string_len(zenoh.loan(&string));
 
         const key = zenoh.c.z_sample_keyexpr(sample);
         var view_str: zenoh.c.z_view_string_t = undefined;
         zenoh.c.z_keyexpr_as_view_string(key, &view_str);
-        const key_slice = std.mem.span(zenoh.c.z_string_data(zenoh.loan(&view_str)));
-        const sub_closure = ctx.subs.get(key_slice) orelse return;
-        std.log.info("zenoh: received sample from key: {s}, type: {s}, bit_count: {}, bit_offset: {}, subdevice_index: {}", .{
+        var key_slice: []const u8 = undefined;
+        key_slice.ptr = zenoh.c.z_string_data(zenoh.loan(&view_str));
+        key_slice.len = zenoh.c.z_string_len(zenoh.loan(&view_str));
+
+        std.log.info("zenoh: received sample from key: {s}, type: {s}, bit_count: {}, bit_offset: {}", .{
             key_slice,
-            @tagName(sub_closure.type),
-            sub_closure.bit_count,
-            sub_closure.bit_offset_in_subdevice_outputs,
-            sub_closure.subdevice_index,
+            @tagName(ctx.type),
+            ctx.bit_count,
+            ctx.bit_offset_in_process_data,
         });
-        const outputs = ctx.md.subdevices[sub_closure.subdevice_index].getOutputProcessData();
 
         const data_item = zbor.DataItem.new(raw_data) catch {
             std.log.err("Invalid data for key: {s}, {x}", .{ key_slice, raw_data });
             return;
         };
-        switch (sub_closure.type) {
+        switch (ctx.type) {
             .BOOLEAN => {
-                const value = zbor.parse(bool, data_item, .{}) catch return; // TODO: print error
-                gcat.wire.writeBitsAtPos(outputs, sub_closure.bit_offset_in_subdevice_outputs, sub_closure.bit_count, value);
-                std.log.warn("wrote data", .{});
+                const value = zbor.parse(bool, data_item, .{}) catch {
+                    std.log.err("Failed to decode cbor data for key: {s}, data: {x}", .{ key_slice, raw_data });
+                    return;
+                };
+                gcat.wire.writeBitsAtPos(
+                    ctx.subdevice_output_process_data,
+                    ctx.bit_offset_in_process_data,
+                    ctx.bit_count,
+                    value,
+                );
             },
-            .BIT1,
-            .BIT2,
-            .BIT3,
-            .BIT4,
-            .BIT5,
-            .BIT6,
-            .BIT7,
-            .BIT8,
-            .UNSIGNED8,
-            .BYTE,
-            .BITARR8,
-            .INTEGER8,
-            .INTEGER16,
-            .INTEGER32,
-            .UNSIGNED16,
-            .BITARR16,
-            .UNSIGNED24,
-            .UNSIGNED32,
-            .BITARR32,
-            .UNSIGNED40,
-            .UNSIGNED48,
-            .UNSIGNED56,
-            .UNSIGNED64,
-            .REAL32,
-            .REAL64,
-            .INTEGER24,
-            .INTEGER40,
-            .INTEGER48,
-            .INTEGER56,
-            .INTEGER64,
+            .BIT1 => {
+                const value = zbor.parse(u1, data_item, .{}) catch {
+                    std.log.err("Failed to decode cbor data for key: {s}, data: {x}", .{ key_slice, raw_data });
+                    return;
+                };
+                gcat.wire.writeBitsAtPos(
+                    ctx.subdevice_output_process_data,
+                    ctx.bit_offset_in_process_data,
+                    ctx.bit_count,
+                    value,
+                );
+            },
+            .BIT2 => {
+                const value = zbor.parse(u2, data_item, .{}) catch {
+                    std.log.err("Failed to decode cbor data for key: {s}, data: {x}", .{ key_slice, raw_data });
+                    return;
+                };
+                gcat.wire.writeBitsAtPos(
+                    ctx.subdevice_output_process_data,
+                    ctx.bit_offset_in_process_data,
+                    ctx.bit_count,
+                    value,
+                );
+            },
+            .BIT3 => {
+                const value = zbor.parse(u3, data_item, .{}) catch {
+                    std.log.err("Failed to decode cbor data for key: {s}, data: {x}", .{ key_slice, raw_data });
+                    return;
+                };
+                gcat.wire.writeBitsAtPos(
+                    ctx.subdevice_output_process_data,
+                    ctx.bit_offset_in_process_data,
+                    ctx.bit_count,
+                    value,
+                );
+            },
+            .BIT4 => {
+                const value = zbor.parse(u4, data_item, .{}) catch {
+                    std.log.err("Failed to decode cbor data for key: {s}, data: {x}", .{ key_slice, raw_data });
+                    return;
+                };
+                gcat.wire.writeBitsAtPos(
+                    ctx.subdevice_output_process_data,
+                    ctx.bit_offset_in_process_data,
+                    ctx.bit_count,
+                    value,
+                );
+            },
+            .BIT5 => {
+                const value = zbor.parse(u5, data_item, .{}) catch {
+                    std.log.err("Failed to decode cbor data for key: {s}, data: {x}", .{ key_slice, raw_data });
+                    return;
+                };
+                gcat.wire.writeBitsAtPos(
+                    ctx.subdevice_output_process_data,
+                    ctx.bit_offset_in_process_data,
+                    ctx.bit_count,
+                    value,
+                );
+            },
+            .BIT6 => {
+                const value = zbor.parse(u6, data_item, .{}) catch {
+                    std.log.err("Failed to decode cbor data for key: {s}, data: {x}", .{ key_slice, raw_data });
+                    return;
+                };
+                gcat.wire.writeBitsAtPos(
+                    ctx.subdevice_output_process_data,
+                    ctx.bit_offset_in_process_data,
+                    ctx.bit_count,
+                    value,
+                );
+            },
+            .BIT7 => {
+                const value = zbor.parse(u7, data_item, .{}) catch {
+                    std.log.err("Failed to decode cbor data for key: {s}, data: {x}", .{ key_slice, raw_data });
+                    return;
+                };
+                gcat.wire.writeBitsAtPos(
+                    ctx.subdevice_output_process_data,
+                    ctx.bit_offset_in_process_data,
+                    ctx.bit_count,
+                    value,
+                );
+            },
+            .BIT8, .UNSIGNED8, .BYTE, .BITARR8 => {
+                const value = zbor.parse(u8, data_item, .{}) catch {
+                    std.log.err("Failed to decode cbor data for key: {s}, data: {x}", .{ key_slice, raw_data });
+                    return;
+                };
+                gcat.wire.writeBitsAtPos(
+                    ctx.subdevice_output_process_data,
+                    ctx.bit_offset_in_process_data,
+                    ctx.bit_count,
+                    value,
+                );
+            },
+            .INTEGER8 => {
+                const value = zbor.parse(i8, data_item, .{}) catch {
+                    std.log.err("Failed to decode cbor data for key: {s}, data: {x}", .{ key_slice, raw_data });
+                    return;
+                };
+                gcat.wire.writeBitsAtPos(
+                    ctx.subdevice_output_process_data,
+                    ctx.bit_offset_in_process_data,
+                    ctx.bit_count,
+                    value,
+                );
+            },
+            .INTEGER16 => {
+                const value = zbor.parse(i16, data_item, .{}) catch {
+                    std.log.err("Failed to decode cbor data for key: {s}, data: {x}", .{ key_slice, raw_data });
+                    return;
+                };
+                gcat.wire.writeBitsAtPos(
+                    ctx.subdevice_output_process_data,
+                    ctx.bit_offset_in_process_data,
+                    ctx.bit_count,
+                    value,
+                );
+            },
+            .INTEGER32 => {
+                const value = zbor.parse(i32, data_item, .{}) catch {
+                    std.log.err("Failed to decode cbor data for key: {s}, data: {x}", .{ key_slice, raw_data });
+                    return;
+                };
+                gcat.wire.writeBitsAtPos(
+                    ctx.subdevice_output_process_data,
+                    ctx.bit_offset_in_process_data,
+                    ctx.bit_count,
+                    value,
+                );
+            },
+            .UNSIGNED16, .BITARR16 => {
+                const value = zbor.parse(u16, data_item, .{}) catch {
+                    std.log.err("Failed to decode cbor data for key: {s}, data: {x}", .{ key_slice, raw_data });
+                    return;
+                };
+                gcat.wire.writeBitsAtPos(
+                    ctx.subdevice_output_process_data,
+                    ctx.bit_offset_in_process_data,
+                    ctx.bit_count,
+                    value,
+                );
+            },
+            .UNSIGNED24 => {
+                const value = zbor.parse(u24, data_item, .{}) catch {
+                    std.log.err("Failed to decode cbor data for key: {s}, data: {x}", .{ key_slice, raw_data });
+                    return;
+                };
+                gcat.wire.writeBitsAtPos(
+                    ctx.subdevice_output_process_data,
+                    ctx.bit_offset_in_process_data,
+                    ctx.bit_count,
+                    value,
+                );
+            },
+            .UNSIGNED32, .BITARR32 => {
+                const value = zbor.parse(u32, data_item, .{}) catch {
+                    std.log.err("Failed to decode cbor data for key: {s}, data: {x}", .{ key_slice, raw_data });
+                    return;
+                };
+                gcat.wire.writeBitsAtPos(
+                    ctx.subdevice_output_process_data,
+                    ctx.bit_offset_in_process_data,
+                    ctx.bit_count,
+                    value,
+                );
+            },
+            .UNSIGNED40 => {
+                const value = zbor.parse(u40, data_item, .{}) catch {
+                    std.log.err("Failed to decode cbor data for key: {s}, data: {x}", .{ key_slice, raw_data });
+                    return;
+                };
+                gcat.wire.writeBitsAtPos(
+                    ctx.subdevice_output_process_data,
+                    ctx.bit_offset_in_process_data,
+                    ctx.bit_count,
+                    value,
+                );
+            },
+            .UNSIGNED48 => {
+                const value = zbor.parse(u48, data_item, .{}) catch {
+                    std.log.err("Failed to decode cbor data for key: {s}, data: {x}", .{ key_slice, raw_data });
+                    return;
+                };
+                gcat.wire.writeBitsAtPos(
+                    ctx.subdevice_output_process_data,
+                    ctx.bit_offset_in_process_data,
+                    ctx.bit_count,
+                    value,
+                );
+            },
+            .UNSIGNED56 => {
+                const value = zbor.parse(u56, data_item, .{}) catch {
+                    std.log.err("Failed to decode cbor data for key: {s}, data: {x}", .{ key_slice, raw_data });
+                    return;
+                };
+                gcat.wire.writeBitsAtPos(
+                    ctx.subdevice_output_process_data,
+                    ctx.bit_offset_in_process_data,
+                    ctx.bit_count,
+                    value,
+                );
+            },
+            .UNSIGNED64 => {
+                const value = zbor.parse(u64, data_item, .{}) catch {
+                    std.log.err("Failed to decode cbor data for key: {s}, data: {x}", .{ key_slice, raw_data });
+                    return;
+                };
+                gcat.wire.writeBitsAtPos(
+                    ctx.subdevice_output_process_data,
+                    ctx.bit_offset_in_process_data,
+                    ctx.bit_count,
+                    value,
+                );
+            },
+            .REAL32 => {
+                const value = zbor.parse(f32, data_item, .{}) catch {
+                    std.log.err("Failed to decode cbor data for key: {s}, data: {x}", .{ key_slice, raw_data });
+                    return;
+                };
+                gcat.wire.writeBitsAtPos(
+                    ctx.subdevice_output_process_data,
+                    ctx.bit_offset_in_process_data,
+                    ctx.bit_count,
+                    value,
+                );
+            },
+            .REAL64 => {
+                const value = zbor.parse(f64, data_item, .{}) catch {
+                    std.log.err("Failed to decode cbor data for key: {s}, data: {x}", .{ key_slice, raw_data });
+                    return;
+                };
+                gcat.wire.writeBitsAtPos(
+                    ctx.subdevice_output_process_data,
+                    ctx.bit_offset_in_process_data,
+                    ctx.bit_count,
+                    value,
+                );
+            },
+            .INTEGER24 => {
+                const value = zbor.parse(i24, data_item, .{}) catch {
+                    std.log.err("Failed to decode cbor data for key: {s}, data: {x}", .{ key_slice, raw_data });
+                    return;
+                };
+                gcat.wire.writeBitsAtPos(
+                    ctx.subdevice_output_process_data,
+                    ctx.bit_offset_in_process_data,
+                    ctx.bit_count,
+                    value,
+                );
+            },
+            .INTEGER40 => {
+                const value = zbor.parse(i40, data_item, .{}) catch {
+                    std.log.err("Failed to decode cbor data for key: {s}, data: {x}", .{ key_slice, raw_data });
+                    return;
+                };
+                gcat.wire.writeBitsAtPos(
+                    ctx.subdevice_output_process_data,
+                    ctx.bit_offset_in_process_data,
+                    ctx.bit_count,
+                    value,
+                );
+            },
+            .INTEGER48 => {
+                const value = zbor.parse(i48, data_item, .{}) catch {
+                    std.log.err("Failed to decode cbor data for key: {s}, data: {x}", .{ key_slice, raw_data });
+                    return;
+                };
+                gcat.wire.writeBitsAtPos(
+                    ctx.subdevice_output_process_data,
+                    ctx.bit_offset_in_process_data,
+                    ctx.bit_count,
+                    value,
+                );
+            },
+            .INTEGER56 => {
+                const value = zbor.parse(i56, data_item, .{}) catch {
+                    std.log.err("Failed to decode cbor data for key: {s}, data: {x}", .{ key_slice, raw_data });
+                    return;
+                };
+                gcat.wire.writeBitsAtPos(
+                    ctx.subdevice_output_process_data,
+                    ctx.bit_offset_in_process_data,
+                    ctx.bit_count,
+                    value,
+                );
+            },
+            .INTEGER64 => {
+                const value = zbor.parse(i64, data_item, .{}) catch {
+                    std.log.err("Failed to decode cbor data for key: {s}, data: {x}", .{ key_slice, raw_data });
+                    return;
+                };
+                gcat.wire.writeBitsAtPos(
+                    ctx.subdevice_output_process_data,
+                    ctx.bit_offset_in_process_data,
+                    ctx.bit_count,
+                    value,
+                );
+            },
             .OCTET_STRING,
             .UNICODE_STRING,
             .TIME_OF_DAY,
@@ -602,7 +895,7 @@ pub const ZenohHandler = struct {
             .SYNC_PAR,
             .UNKNOWN,
             .VISIBLE_STRING,
-            => std.log.err("zenoh: keyexpr {s}, Unsupported type: {s}", .{ key_slice, @tagName(sub_closure.type) }),
+            => std.log.err("zenoh: keyexpr {s}, Unsupported type: {s}", .{ key_slice, @tagName(ctx.type) }),
         }
     }
 

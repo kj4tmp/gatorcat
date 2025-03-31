@@ -601,7 +601,7 @@ pub fn processVariableNameZ(
     entry_description: []const u8,
 ) error{OutOfMemory}![:0]u8 {
     const direction_str: []const u8 = if (direction == .input) "inputs" else "outputs";
-    const name = try std.fmt.allocPrintZ(allocator, "subdevices/{}/{s}/pdo/{}/entry/{}/{s}_{s}_{s}", .{
+    const name = try std.fmt.allocPrintZ(allocator, "s/{}/{s}/pdo/{}/entry/{}/{s}_{s}_{s}", .{
         ring_position,
         direction_str,
         pdo_cnt,

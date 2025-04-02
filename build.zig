@@ -5,8 +5,8 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
 
     // gatorcat module
-    const lib = b.addModule("gatorcat", .{
-        .root_source_file = b.path("src/lib/root.zig"),
+    const module = b.addModule("gatorcat", .{
+        .root_source_file = b.path("src/module/root.zig"),
     });
     // depend on the npcap sdk if we are building for windows
     switch (target.result.os.tag) {
@@ -16,20 +16,20 @@ pub fn build(b: *std.Build) void {
                 .optimize = optimize,
             });
             if (maybe_npcap_sdk) |npcap_sdk| {
-                lib.addIncludePath(npcap_sdk.path("Include"));
+                module.addIncludePath(npcap_sdk.path("Include"));
 
                 switch (target.result.cpu.arch) {
                     .x86 => {
-                        lib.addObjectFile(npcap_sdk.path("Lib/wpcap.lib"));
-                        lib.addObjectFile(npcap_sdk.path("Lib/Packet.lib"));
+                        module.addObjectFile(npcap_sdk.path("Lib/wpcap.lib"));
+                        module.addObjectFile(npcap_sdk.path("Lib/Packet.lib"));
                     },
                     .x86_64 => {
-                        lib.addObjectFile(npcap_sdk.path("Lib/x64/wpcap.lib"));
-                        lib.addObjectFile(npcap_sdk.path("Lib/x64/Packet.lib"));
+                        module.addObjectFile(npcap_sdk.path("Lib/x64/wpcap.lib"));
+                        module.addObjectFile(npcap_sdk.path("Lib/x64/Packet.lib"));
                     },
                     .aarch64 => {
-                        lib.addObjectFile(npcap_sdk.path("Lib/ARM64/wpcap.lib"));
-                        lib.addObjectFile(npcap_sdk.path("Lib/ARM64/Packet.lib"));
+                        module.addObjectFile(npcap_sdk.path("Lib/ARM64/wpcap.lib"));
+                        module.addObjectFile(npcap_sdk.path("Lib/ARM64/Packet.lib"));
                     },
                     else => {},
                 }
@@ -40,7 +40,7 @@ pub fn build(b: *std.Build) void {
 
     // gatorcat module unit tests
     const root_unit_tests = b.addTest(.{
-        .root_source_file = b.path("src/lib/root.zig"),
+        .root_source_file = b.path("src/module/root.zig"),
         .target = target,
         .optimize = optimize,
     });
@@ -57,7 +57,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-    cli.root_module.addImport("gatorcat", lib);
+    cli.root_module.addImport("gatorcat", module);
 
     // CLI tool dependencies
     const flags = b.dependency("flags", .{
@@ -116,7 +116,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .root_source_file = b.path("examples/simple/main.zig"),
     });
-    simple_example.root_module.addImport("gatorcat", lib);
+    simple_example.root_module.addImport("gatorcat", module);
     // using addInstallArtifact here so it only installs for the example step
     const example_install = b.addInstallArtifact(simple_example, .{});
     examples_step.dependOn(&example_install.step);
@@ -129,7 +129,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .root_source_file = b.path("examples/simple2/main.zig"),
     });
-    simple2_example.root_module.addImport("gatorcat", lib);
+    simple2_example.root_module.addImport("gatorcat", module);
     // using addInstallArtifact here so it only installs for the example step
     const simple2_install = b.addInstallArtifact(simple2_example, .{});
     examples_step.dependOn(&simple2_install.step);
@@ -142,7 +142,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .root_source_file = b.path("examples/simple3/main.zig"),
     });
-    simple3_example.root_module.addImport("gatorcat", lib);
+    simple3_example.root_module.addImport("gatorcat", module);
     // using addInstallArtifact here so it only installs for the example step
     const simple3_install = b.addInstallArtifact(simple3_example, .{});
     examples_step.dependOn(&simple3_install.step);
@@ -155,7 +155,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .root_source_file = b.path("examples/simple4/main.zig"),
     });
-    simple4_example.root_module.addImport("gatorcat", lib);
+    simple4_example.root_module.addImport("gatorcat", module);
     // using addInstallArtifact here so it only installs for the example step
     const simple4_install = b.addInstallArtifact(simple4_example, .{});
     examples_step.dependOn(&simple4_install.step);
@@ -170,7 +170,7 @@ pub fn build(b: *std.Build) void {
     const run_sim_test = b.addRunArtifact(sim_test);
     const sim_test_step = b.step("sim_test", "Run sim tests");
     sim_test_step.dependOn(&run_sim_test.step);
-    sim_test.root_module.addImport("gatorcat", lib);
+    sim_test.root_module.addImport("gatorcat", module);
 
     // cli tests
 
@@ -182,7 +182,7 @@ pub fn build(b: *std.Build) void {
     const run_cli_test = b.addRunArtifact(cli_test);
     const cli_test_step = b.step("cli_test", "Run cli tests");
     cli_test_step.dependOn(&run_cli_test.step);
-    cli_test.root_module.addImport("gatorcat", lib);
+    cli_test.root_module.addImport("gatorcat", module);
     cli_test.root_module.addImport("zbor", zbor.module("zbor"));
 
     const all_step = b.step("all", "Do everything");

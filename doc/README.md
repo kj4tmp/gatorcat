@@ -93,8 +93,8 @@ To obtain the name of network interfaces on windows:
 
 1. Build your EtherCAT network.
 1. Use the [GatorCAT CLI](#gatorcat-cli) to scan the network.
-1. Write your network configuration (ENI). See [example](../examples/simple/network_config.zig).
-1. Write your application. See [example](../examples/simple/main.zig).
+1. Write your network configuration (ENI). See [example](./examples/simple/network_config.zig).
+1. Write your application. See [example](./examples/simple/main.zig).
 
 
 ## MainDevice Class

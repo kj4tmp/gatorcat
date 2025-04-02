@@ -9,7 +9,7 @@ GatorCAT is an EtherCAT maindevice written for the zig programming language.
 
 ## Documentation
 
-Examples can be found in [examples](examples/). The examples can be built using `zig build examples`.
+Examples can be found in [examples](doc/examples/). The examples can be built using `zig build examples`.
 
 Documentation can be found in [doc](doc/README.md).
 

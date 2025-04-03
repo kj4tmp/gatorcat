@@ -58,6 +58,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     cli.root_module.addImport("gatorcat", module);
+    cli.root_module.addAnonymousImport("build_zig_zon", .{ .root_source_file = b.path("build.zig.zon") });
 
     // CLI tool dependencies
     const flags = b.dependency("flags", .{

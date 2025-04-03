@@ -185,6 +185,17 @@ pub fn build(b: *std.Build) void {
     cli_test.root_module.addImport("gatorcat", module);
     cli_test.root_module.addImport("zbor", zbor.module("zbor"));
 
+    // docker image build
+    const docker_builder = b.addExecutable(.{
+        .name = "docker-builder",
+        .root_source_file = b.path("src/ci/release_docker.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    const docker_image_step = b.step("docker", "Build the gatorcat docker image");
+    docker_image_step.dependOn(&b.addRunArtifact(docker_builder).step);
+    docker_image_step.dependOn(&cli_install.step);
+
     const all_step = b.step("all", "Do everything");
     all_step.dependOn(cli_step);
     all_step.dependOn(test_step);

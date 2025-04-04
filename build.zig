@@ -5,6 +5,64 @@ pub const BuildOptions = struct {
     optimize: std.builtin.OptimizeMode,
 };
 
+pub fn buildRelease(
+    b: *std.Build,
+    step: *std.Build.Step,
+) void {
+    const targets: []const std.Target.Query = &.{
+        .{ .cpu_arch = .x86_64, .os_tag = .linux, .abi = .musl },
+        // TODO: re-enable windows
+        // .{ .cpu_arch = .x86_64, .os_tag = .windows, .abi = .gnu },
+        .{ .cpu_arch = .aarch64, .os_tag = .linux, .abi = .musl },
+    };
+
+    for (targets) |target| {
+        const options: BuildOptions = .{
+            .target = b.resolveTargetQuery(target),
+            .optimize = .ReleaseSafe,
+        };
+        const gatorcat_module = b.addModule("gatorcat", .{
+            .root_source_file = b.path("src/module/root.zig"),
+            .target = options.target,
+            .optimize = options.optimize,
+        });
+        // depend on the npcap sdk if we are building for windows
+        switch (options.target.result.os.tag) {
+            .windows => {
+                if (b.lazyDependency("npcap", .{
+                    .target = options.target,
+                    .optimize = options.optimize,
+                })) |npcap| {
+                    gatorcat_module.addImport("npcap", npcap.module("npcap"));
+                }
+            },
+            else => {},
+        }
+        const flags_module = b.dependency("flags", .{
+            .target = options.target,
+            .optimize = options.optimize,
+        }).module("flags");
+        const zbor_module = b.dependency("zbor", .{
+            .target = options.target,
+            .optimize = options.optimize,
+        }).module("zbor");
+        const zenoh_module = b.dependency("zenoh", .{
+            .target = options.target,
+            .optimize = options.optimize,
+        }).module("zenoh");
+        buildCli(
+            b,
+            step,
+            .{ .target = options.target, .optimize = options.optimize },
+            gatorcat_module,
+            flags_module,
+            zenoh_module,
+            zbor_module,
+            .{ .override = .{ .custom = target.zigTriple(b.allocator) catch @panic("oom") } },
+        );
+    }
+}
+
 pub fn build(b: *std.Build) void {
     const options: BuildOptions = .{
         .target = b.standardTargetOptions(.{}),
@@ -15,6 +73,7 @@ pub fn build(b: *std.Build) void {
     const step_test = b.step("test", "Run unit tests.");
     const step_examples = b.step("examples", "Build examples.");
     const step_sim_test = b.step("sim-test", "Run the sim tests.");
+    const step_release = b.step("release", "Build the release binaries.");
     // const step_docker = b.step("docker", "Build the docker container.");
 
     const step_ci = b.step("ci-test", "Run through full CI build and tests.");
@@ -22,6 +81,7 @@ pub fn build(b: *std.Build) void {
     step_ci.dependOn(step_test);
     step_ci.dependOn(step_examples);
     step_ci.dependOn(step_sim_test);
+    step_ci.dependOn(step_release);
 
     // gatorcat module
     const module = b.addModule("gatorcat", .{
@@ -55,11 +115,14 @@ pub fn build(b: *std.Build) void {
         .optimize = options.optimize,
     }).module("zenoh");
 
+    // zig build
+    buildCli(b, step_cli, options, module, flags_module, zenoh_module, zbor_module, .default);
+
+    // zig build release
+    buildRelease(b, step_release);
+
     // zig build test
     buildTest(b, step_test, options);
-
-    // zig build cli
-    buildCli(b, step_cli, module, flags_module, zenoh_module, zbor_module, options);
 
     // zig build examples
     buildExamples(b, step_examples, module, options);
@@ -79,14 +142,6 @@ pub fn build(b: *std.Build) void {
     // docker_image_step.dependOn(&cli_install.step);
 
     // release binaries
-
-    // const targets: []const std.Target.Query = &.{
-    //     .{ .cpu_arch = .aarch64, .os_tag = .macos },
-    //     .{ .cpu_arch = .aarch64, .os_tag = .linux },
-    //     .{ .cpu_arch = .x86_64, .os_tag = .linux, .abi = .gnu },
-    //     .{ .cpu_arch = .x86_64, .os_tag = .linux, .abi = .musl },
-    //     .{ .cpu_arch = .x86_64, .os_tag = .windows },
-    // };
 
     // const all_step = b.step("all", "Do everything");
     // all_step.dependOn(cli_step);
@@ -191,11 +246,12 @@ pub fn buildTest(
 pub fn buildCli(
     b: *std.Build,
     step: *std.Build.Step,
+    options: BuildOptions,
     gatorcat_module: *std.Build.Module,
     flags_module: *std.Build.Module,
     zenoh_module: *std.Build.Module,
     zbor_module: *std.Build.Module,
-    options: BuildOptions,
+    dest_dir: std.Build.Step.InstallArtifact.Options.Dir,
 ) void {
     const cli = b.addExecutable(.{
         .name = "gatorcat",
@@ -209,6 +265,7 @@ pub fn buildCli(
     cli.root_module.addImport("zbor", zbor_module);
     cli.root_module.addAnonymousImport("build_zig_zon", .{ .root_source_file = b.path("build.zig.zon") });
     if (options.target.result.os.tag == .windows) cli.linkLibC();
-    const cli_install = b.addInstallArtifact(cli, .{});
+
+    const cli_install = b.addInstallArtifact(cli, .{ .dest_dir = dest_dir });
     step.dependOn(&cli_install.step);
 }

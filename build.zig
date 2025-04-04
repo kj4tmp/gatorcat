@@ -140,17 +140,6 @@ pub fn build(b: *std.Build) void {
     // const docker_image_step = b.step("docker", "Build the gatorcat docker image");
     // docker_image_step.dependOn(&b.addRunArtifact(docker_builder).step);
     // docker_image_step.dependOn(&cli_install.step);
-
-    // release binaries
-
-    // const all_step = b.step("all", "Do everything");
-    // all_step.dependOn(cli_step);
-    // all_step.dependOn(test_step);
-    // all_step.dependOn(examples_step);
-    // all_step.dependOn(sim_test_step);
-    // all_step.dependOn(cli_test_step);
-
-    // b.default_step.dependOn(cli_step);
 }
 
 pub fn buildSimTest(

@@ -65,14 +65,6 @@ pub fn main() !void {
     }
 }
 
-test {
-    _ = @import("benchmark.zig");
-    _ = @import("info.zig");
-    _ = @import("read_eeprom.zig");
-    _ = @import("run.zig");
-    _ = @import("scan.zig");
-}
-
 fn getVersionFromZon() std.SemanticVersion {
     var buffer: [10 * build_zig_zon.len]u8 = undefined;
     var fba = std.heap.FixedBufferAllocator.init(&buffer);

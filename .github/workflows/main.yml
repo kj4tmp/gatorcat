@@ -21,4 +21,4 @@ jobs:
           version: 0.14.0
 
       - name: Build and test Zig Project
-        run: zig build all
+        run: zig build ci-test

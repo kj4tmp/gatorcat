@@ -2,6 +2,8 @@ const std = @import("std");
 const assert = std.debug.assert;
 const builtin = @import("builtin");
 
+const npcap = @import("npcap");
+
 const telegram = @import("telegram.zig");
 
 /// Interface for networking hardware
@@ -169,21 +171,17 @@ pub const LinuxRawSocket = struct {
     }
 };
 
-const npcap = @cImport({
-    @cInclude("pcap.h");
-});
-
-var pcap_errbuf: [npcap.PCAP_ERRBUF_SIZE]u8 = [_]u8{0} ** npcap.PCAP_ERRBUF_SIZE;
+var pcap_errbuf: [npcap.c.PCAP_ERRBUF_SIZE]u8 = [_]u8{0} ** npcap.c.PCAP_ERRBUF_SIZE;
 
 pub const WindowsRawSocket = struct {
     send_mutex: std.Thread.Mutex = .{},
     recv_mutex: std.Thread.Mutex = .{},
-    socket: *npcap.struct_pcap,
+    socket: *npcap.c.struct_pcap,
 
     pub fn init(ifname: [:0]const u8) !WindowsRawSocket {
-        const socket = npcap.pcap_open(ifname, 65536, npcap.PCAP_OPENFLAG_PROMISCUOUS |
-            npcap.PCAP_OPENFLAG_MAX_RESPONSIVENESS |
-            npcap.PCAP_OPENFLAG_NOCAPTURE_LOCAL, -1, null, &pcap_errbuf) orelse {
+        const socket = npcap.c.pcap_open(ifname, 65536, npcap.c.PCAP_OPENFLAG_PROMISCUOUS |
+            npcap.c.PCAP_OPENFLAG_MAX_RESPONSIVENESS |
+            npcap.c.PCAP_OPENFLAG_NOCAPTURE_LOCAL, -1, null, &pcap_errbuf) orelse {
             std.log.err("Failed to open interface {s}, npcap error: {s}", .{ ifname, pcap_errbuf });
             return error.FailedToOpenInterface;
         };
@@ -197,17 +195,17 @@ pub const WindowsRawSocket = struct {
         const self: *WindowsRawSocket = @ptrCast(@alignCast(ctx));
         self.send_mutex.lock();
         defer self.send_mutex.unlock();
-        const result = npcap.pcap_sendpacket(self.socket, bytes.ptr, @intCast(bytes.len));
-        if (result == npcap.PCAP_ERROR) return error.NetworkSubsystemFailed;
+        const result = npcap.c.pcap_sendpacket(self.socket, bytes.ptr, @intCast(bytes.len));
+        if (result == npcap.c.PCAP_ERROR) return error.NetworkSubsystemFailed;
     }
 
     pub fn recv(ctx: *anyopaque, out: []u8) std.posix.RecvFromError!usize {
         const self: *WindowsRawSocket = @ptrCast(@alignCast(ctx));
         self.recv_mutex.lock();
         defer self.recv_mutex.unlock();
-        var packet_header_ptr: [*c]npcap.pcap_pkthdr = undefined;
+        var packet_header_ptr: [*c]npcap.c.pcap_pkthdr = undefined;
         var packet_data_ptr: [*c]const u8 = undefined;
-        const result = npcap.pcap_next_ex(self.socket, &packet_header_ptr, &packet_data_ptr);
+        const result = npcap.c.pcap_next_ex(self.socket, &packet_header_ptr, &packet_data_ptr);
         if (result == 0) return 0;
         if (result != 1) return error.NetworkSubsystemFailed;
         var fbs = std.io.fixedBufferStream(out);
@@ -229,6 +227,6 @@ pub const WindowsRawSocket = struct {
     }
 
     pub fn deinit(self: WindowsRawSocket) void {
-        npcap.pcap_close(self.socket);
+        npcap.c.pcap_close(self.socket);
     }
 };

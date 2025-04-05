@@ -387,7 +387,7 @@ pub fn readSubdeviceConfigurationLeaky(
                 subdevice.runtime_info.coe.?.config,
                 @intCast(sm_idx),
             );
-            for (sm_pdo_assignment.slice(), 0..) |pdo_index, pdo_cnt| {
+            for (sm_pdo_assignment.slice()) |pdo_index| {
                 const pdo_mapping = try gcat.mailbox.coe.readPDOMapping(
                     self.port,
                     station_address,
@@ -410,7 +410,7 @@ pub fn readSubdeviceConfigurationLeaky(
                 var entries = std.ArrayList(ENI.SubdeviceConfiguration.PDO.Entry).init(allocator);
                 defer entries.deinit();
 
-                for (pdo_mapping.entries.slice(), 0..) |entry, entry_cnt| {
+                for (pdo_mapping.entries.slice()) |entry| {
                     if (entry.isGap()) {
                         try entries.append(ENI.SubdeviceConfiguration.PDO.Entry{
                             .description = null,
@@ -439,8 +439,8 @@ pub fn readSubdeviceConfigurationLeaky(
                                 allocator,
                                 ring_position,
                                 if (sm_comm_type == .input) .input else .output,
-                                @intCast(pdo_cnt),
-                                @intCast(entry_cnt),
+                                entry.index,
+                                entry.subindex,
                                 name,
                                 try allocator.dupeZ(u8, object_description.name.slice()),
                                 try allocator.dupeZ(u8, entry_description.data.slice()),
@@ -498,7 +498,7 @@ pub fn readSubdeviceConfigurationLeaky(
 
             const pdos: []const sii.PDO = sii_pdos.slice();
 
-            for (pdos, 0..) |pdo, pdo_cnt| {
+            for (pdos) |pdo| {
                 var pdo_name: ?[:0]const u8 = null;
                 if (try sii.readSIIString(
                     self.port,
@@ -514,7 +514,7 @@ pub fn readSubdeviceConfigurationLeaky(
                 defer entries.deinit();
 
                 const sii_entries: []const sii.PDO.Entry = pdo.entries.slice();
-                for (sii_entries, 0..) |entry, entry_cnt| {
+                for (sii_entries) |entry| {
                     var entry_name: ?[:0]const u8 = null;
                     if (try sii.readSIIString(
                         self.port,
@@ -534,8 +534,8 @@ pub fn readSubdeviceConfigurationLeaky(
                             allocator,
                             ring_position,
                             direction,
-                            @intCast(pdo_cnt),
-                            @intCast(entry_cnt),
+                            entry.index,
+                            entry.subindex,
                             name,
                             pdo_name orelse "",
                             entry_name orelse "",
@@ -594,37 +594,45 @@ pub fn processVariableNameZ(
     allocator: std.mem.Allocator,
     ring_position: u16,
     direction: pdi.Direction,
-    pdo_cnt: u16,
-    entry_cnt: u16,
+    pdo_idx: u16,
+    entry_idx: u16,
     subdevice_name: []const u8,
     pdo_name: []const u8,
     entry_description: []const u8,
 ) error{OutOfMemory}![:0]u8 {
     const direction_str: []const u8 = if (direction == .input) "inputs" else "outputs";
-    const name = try std.fmt.allocPrintZ(allocator, "s/{}/{s}/pdo/{}/entry/{}/{s}_{s}_{s}", .{
+    const name = try std.fmt.allocPrintZ(allocator, "subdevices/{}/{s}/{s}/0x{x:04}/{s}/0x{x:02}/{s}", .{
         ring_position,
+        zenohSanitize(try allocator.dupe(u8, subdevice_name)),
         direction_str,
-        pdo_cnt,
-        entry_cnt,
-        subdevice_name,
-        pdo_name,
-        entry_description,
+        pdo_idx,
+        zenohSanitize(try allocator.dupe(u8, pdo_name)),
+        entry_idx,
+        zenohSanitize(try allocator.dupe(u8, entry_description)),
     });
+
+    return name;
+}
+
+/// Sanitizes untrusted input in-place for inclusion into zenoh key expressions.
+pub fn zenohSanitize(str: []u8) []u8 {
     // the encoding of strings in ethercat is IEC 8859-1,
     // lets just normalize to 7-bit ascii.
-    for (name) |*char| {
+    for (str) |*char| {
         if (!std.ascii.isAscii(char.*)) {
             char.* = '_';
         }
     }
     // *, $, ?, # prohibited by zenoh
-    _ = std.mem.replace(u8, name, "*", "_", name);
-    _ = std.mem.replace(u8, name, "$", "_", name);
-    _ = std.mem.replace(u8, name, "?", "_", name);
-    _ = std.mem.replace(u8, name, "#", "_", name);
+    // / is separator
+    _ = std.mem.replace(u8, str, "*", "_", str);
+    _ = std.mem.replace(u8, str, "$", "_", str);
+    _ = std.mem.replace(u8, str, "?", "_", str);
+    _ = std.mem.replace(u8, str, "#", "_", str);
+    _ = std.mem.replace(u8, str, "/", "_", str);
     // no whitespace (personal preference)
-    _ = std.mem.replace(u8, name, " ", "_", name);
-    return name;
+    _ = std.mem.replace(u8, str, " ", "_", str);
+    return str;
 }
 
 pub fn broadcastALStatusCheck(

@@ -61,7 +61,7 @@ pub fn main() !void {
         .read_eeprom => |read_eeprom_args| try read_eeprom.read_eeprom(gpa.allocator(), read_eeprom_args),
         .run => |run_args| try run.run(gpa.allocator(), run_args),
         .info => |info_args| try info.info(gpa.allocator(), info_args),
-        .version => std.debug.print("{}\n", .{getVersionFromZon()}),
+        .version => try std.io.getStdOut().writer().print("{}\n", .{getVersionFromZon()}),
     }
 }
 

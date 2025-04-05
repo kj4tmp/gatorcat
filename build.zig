@@ -42,10 +42,10 @@ pub fn build(b: *std.Build) void {
     }
 
     // zig build
-    buildCli(b, step_cli, target, optimize, module, .default);
+    _ = buildCli(b, step_cli, target, optimize, module, .default);
 
     // zig build release
-    buildRelease(b, step_release);
+    const installs = buildRelease(b, step_release) catch @panic("oom");
 
     // zig build test
     buildTest(b, step_test, target, optimize);
@@ -57,12 +57,13 @@ pub fn build(b: *std.Build) void {
     buildSimTest(b, step_sim_test, module, target, optimize);
 
     // zig build docker
-    buildDocker(b, step_docker);
+    buildDocker(b, step_docker, installs);
 }
 
 pub fn buildDocker(
     b: *std.Build,
     step: *std.Build.Step,
+    installs: std.ArrayList(*std.Build.Step.InstallArtifact),
 ) void {
     const docker_builder = b.addExecutable(.{
         .name = "docker-builder",
@@ -70,7 +71,11 @@ pub fn buildDocker(
         .target = b.graph.host,
     });
     docker_builder.root_module.addAnonymousImport("build_zig_zon", .{ .root_source_file = b.path("build.zig.zon") });
-    step.dependOn(&b.addRunArtifact(docker_builder).step);
+    const run = b.addRunArtifact(docker_builder);
+    for (installs.items) |install| {
+        run.step.dependOn(&install.step);
+    }
+    step.dependOn(&run.step);
 }
 
 pub fn buildSimTest(
@@ -173,7 +178,7 @@ pub fn buildCli(
     optimize: std.builtin.OptimizeMode,
     gatorcat_module: *std.Build.Module,
     dest_dir: std.Build.Step.InstallArtifact.Options.Dir,
-) void {
+) *std.Build.Step.InstallArtifact {
     const flags_module = b.dependency("flags", .{
         .target = target,
         .optimize = optimize,
@@ -201,18 +206,21 @@ pub fn buildCli(
 
     const cli_install = b.addInstallArtifact(cli, .{ .dest_dir = dest_dir });
     step.dependOn(&cli_install.step);
+    return cli_install;
 }
 
 pub fn buildRelease(
     b: *std.Build,
     step: *std.Build.Step,
-) void {
+) !std.ArrayList(*std.Build.Step.InstallArtifact) {
     const targets: []const std.Target.Query = &.{
         .{ .cpu_arch = .x86_64, .os_tag = .linux, .abi = .musl },
         // TODO: re-enable windows
         // .{ .cpu_arch = .x86_64, .os_tag = .windows, .abi = .gnu },
         .{ .cpu_arch = .aarch64, .os_tag = .linux, .abi = .musl },
     };
+
+    var installs = std.ArrayList(*std.Build.Step.InstallArtifact).init(b.allocator);
 
     for (targets) |target| {
         const options: struct {
@@ -239,13 +247,14 @@ pub fn buildRelease(
             },
             else => {},
         }
-        buildCli(
+        try installs.append(buildCli(
             b,
             step,
             options.target,
             options.optimize,
             gatorcat_module,
             .{ .override = .{ .custom = target.zigTriple(b.allocator) catch @panic("oom") } },
-        );
+        ));
     }
+    return installs;
 }

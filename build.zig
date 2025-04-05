@@ -21,7 +21,7 @@ pub fn buildRelease(
             .target = b.resolveTargetQuery(target),
             .optimize = .ReleaseSafe,
         };
-        const gatorcat_module = b.addModule("gatorcat", .{
+        const gatorcat_module = b.createModule(.{
             .root_source_file = b.path("src/module/root.zig"),
             .target = options.target,
             .optimize = options.optimize,

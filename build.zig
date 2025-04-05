@@ -1,6 +1,8 @@
 const std = @import("std");
 
 pub fn build(b: *std.Build) void {
+    // const git_describe = std.mem.trimRight(u8, b.run(&.{ "git", "describe", "--tags" }), '\n');
+
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
@@ -9,7 +11,8 @@ pub fn build(b: *std.Build) void {
     const step_examples = b.step("examples", "Build examples.");
     const step_sim_test = b.step("sim-test", "Run the sim tests.");
     const step_release = b.step("release", "Build the release binaries.");
-    // const step_docker = b.step("docker", "Build the docker container.");
+    const step_docker = b.step("docker", "Build the docker container.");
+    step_docker.dependOn(step_release);
 
     const step_ci = b.step("ci-test", "Run through full CI build and tests.");
     step_ci.dependOn(step_cli);
@@ -17,6 +20,7 @@ pub fn build(b: *std.Build) void {
     step_ci.dependOn(step_examples);
     step_ci.dependOn(step_sim_test);
     step_ci.dependOn(step_release);
+    step_ci.dependOn(step_docker);
 
     // gatorcat module
     const module = b.addModule("gatorcat", .{
@@ -37,21 +41,8 @@ pub fn build(b: *std.Build) void {
         else => {},
     }
 
-    const flags_module = b.dependency("flags", .{
-        .target = target,
-        .optimize = optimize,
-    }).module("flags");
-    const zbor_module = b.dependency("zbor", .{
-        .target = target,
-        .optimize = optimize,
-    }).module("zbor");
-    const zenoh_module = b.dependency("zenoh", .{
-        .target = target,
-        .optimize = optimize,
-    }).module("zenoh");
-
     // zig build
-    buildCli(b, step_cli, target, optimize, module, flags_module, zenoh_module, zbor_module, .default);
+    buildCli(b, step_cli, target, optimize, module, .default);
 
     // zig build release
     buildRelease(b, step_release);
@@ -65,16 +56,21 @@ pub fn build(b: *std.Build) void {
     // zig build sim-test
     buildSimTest(b, step_sim_test, module, target, optimize);
 
-    // docker image build
-    // const docker_builder = b.addExecutable(.{
-    //     .name = "docker-builder",
-    //     .root_source_file = b.path("src/ci/release_docker.zig"),
-    //     .target = target,
-    //     .optimize = optimize,
-    // });
-    // const docker_image_step = b.step("docker", "Build the gatorcat docker image");
-    // docker_image_step.dependOn(&b.addRunArtifact(docker_builder).step);
-    // docker_image_step.dependOn(&cli_install.step);
+    // zig build docker
+    buildDocker(b, step_docker);
+}
+
+pub fn buildDocker(
+    b: *std.Build,
+    step: *std.Build.Step,
+) void {
+    const docker_builder = b.addExecutable(.{
+        .name = "docker-builder",
+        .root_source_file = b.path("src/ci/release_docker.zig"),
+        .target = b.graph.host,
+    });
+    docker_builder.root_module.addAnonymousImport("build_zig_zon", .{ .root_source_file = b.path("build.zig.zon") });
+    step.dependOn(&b.addRunArtifact(docker_builder).step);
 }
 
 pub fn buildSimTest(
@@ -176,11 +172,20 @@ pub fn buildCli(
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
     gatorcat_module: *std.Build.Module,
-    flags_module: *std.Build.Module,
-    zenoh_module: *std.Build.Module,
-    zbor_module: *std.Build.Module,
     dest_dir: std.Build.Step.InstallArtifact.Options.Dir,
 ) void {
+    const flags_module = b.dependency("flags", .{
+        .target = target,
+        .optimize = optimize,
+    }).module("flags");
+    const zbor_module = b.dependency("zbor", .{
+        .target = target,
+        .optimize = optimize,
+    }).module("zbor");
+    const zenoh_module = b.dependency("zenoh", .{
+        .target = target,
+        .optimize = optimize,
+    }).module("zenoh");
     const cli = b.addExecutable(.{
         .name = "gatorcat",
         .root_source_file = b.path("src/cli/main.zig"),
@@ -234,27 +239,12 @@ pub fn buildRelease(
             },
             else => {},
         }
-        const flags_module = b.dependency("flags", .{
-            .target = options.target,
-            .optimize = options.optimize,
-        }).module("flags");
-        const zbor_module = b.dependency("zbor", .{
-            .target = options.target,
-            .optimize = options.optimize,
-        }).module("zbor");
-        const zenoh_module = b.dependency("zenoh", .{
-            .target = options.target,
-            .optimize = options.optimize,
-        }).module("zenoh");
         buildCli(
             b,
             step,
             options.target,
             options.optimize,
             gatorcat_module,
-            flags_module,
-            zenoh_module,
-            zbor_module,
             .{ .override = .{ .custom = target.zigTriple(b.allocator) catch @panic("oom") } },
         );
     }

@@ -8,6 +8,8 @@ const RunResult = std.process.Child.RunResult;
 const ChildProcess = std.process.Child;
 const assert = std.debug.assert;
 
+const build_zig_zon = @embedFile("build_zig_zon");
+
 /// Customization of std.process.Child.run:
 ///     - allows writing to stdin
 ///
@@ -71,19 +73,52 @@ pub fn main() !void {
     var gpa = std.heap.DebugAllocator(.{}).init;
     defer _ = gpa.deinit();
 
-    const dockerfile =
-        \\FROM alpine:3.21
-        \\COPY zig-out/bin/gatorcat gatorcat
-        \\ENTRYPOINT ["/gatorcat"]
-    ;
-    const child = try runWithStdin(.{
-        .allocator = gpa.allocator(),
-        .argv = &.{ "docker", "build", "-t", "gatorcat", "-f-", "." },
-        .stdin = dockerfile,
+    var arena = std.heap.ArenaAllocator.init(gpa.allocator());
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const buildx_create = try std.process.Child.run(.{
+        .allocator = allocator,
+        .argv = &.{ "docker", "buildx", "create", "--use" },
     });
 
-    defer gpa.allocator().free(child.stdout);
-    defer gpa.allocator().free(child.stderr);
+    switch (buildx_create.term) {
+        .Exited => |code| {
+            std.debug.print("child exited with code {}\nstdout:\n{s}\nstderr:\n{s}\n", .{ code, buildx_create.stdout, buildx_create.stderr });
+            if (code != 0) return error.ChildFailed;
+        },
+        .Signal => return error.Signal,
+        .Stopped => return error.Stopped,
+        .Unknown => return error.Unknown,
+    }
+
+    const tag = try std.fmt.allocPrint(allocator, "ghcr.io/kj4tmp/gatorcat:{}", .{getVersionFromZon()});
+
+    const dockerfile =
+        \\FROM scratch AS build-amd64
+        \\COPY zig-out/x86_64-linux-musl/gatorcat gatorcat
+        \\FROM scratch AS build-arm64
+        \\COPY zig-out/aarch64-linux-musl/gatorcat gatorcat
+        \\ARG TARGETARCH
+        \\FROM build-${TARGETARCH}
+        \\ENTRYPOINT ["/gatorcat"]
+    ;
+
+    const child = try runWithStdin(.{
+        .allocator = allocator,
+        .argv = &.{
+            // zig fmt: off
+            "docker",
+            "buildx",
+            "build",
+            "--platform", "linux/amd64,linux/arm64",
+            "-t", tag,
+            "-f-",
+            ".",
+            // zig fmt: on
+        },
+        .stdin = dockerfile,
+    });
 
     switch (child.term) {
         .Exited => |code| {
@@ -94,4 +129,25 @@ pub fn main() !void {
         .Stopped => return error.Stopped,
         .Unknown => return error.Unknown,
     }
+}
+
+
+fn getVersionFromZon() std.SemanticVersion {
+    var buffer: [10 * build_zig_zon.len]u8 = undefined;
+    var fba = std.heap.FixedBufferAllocator.init(&buffer);
+    const version = std.zon.parse.fromSlice(
+        struct { version: []const u8 },
+        fba.allocator(),
+        build_zig_zon,
+        null,
+        .{ .ignore_unknown_fields = true },
+    ) catch @panic("Invalid build.zig.zon!");
+    const semantic_version = std.SemanticVersion.parse(version.version) catch @panic("Invalid version!");
+    return std.SemanticVersion{
+        .major = semantic_version.major,
+        .minor = semantic_version.minor,
+        .patch = semantic_version.patch,
+        .build = null, // dont return pointers to stack memory
+        .pre = null, // dont return pointers to stack memory
+    };
 }

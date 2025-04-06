@@ -1,10 +1,8 @@
-name: Tests
+name: Release
 
 on:
-  push:
-  pull_request:
-    branches:
-      - main
+  release:
+    types: [published]
 
 jobs:
   build:
@@ -22,9 +20,11 @@ jobs:
         with:
           version: 0.14.0
 
-      - name: Build and test Zig Project
+      - name: docker upload on release
         run: zig build ci-test
-      
+        env:
+          GATORCAT_RELEASE: 1
+
       - name: Archive zig-out
         uses: actions/upload-artifact@v4
         with:
@@ -33,3 +33,10 @@ jobs:
             zig-out/x86_64-linux-musl/
             zig-out/aarch64-linux-musl/
             zig-out/x86_64-windows-gnu/
+      - name: Add binaries to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+              zig-out/x86_64-linux-musl/
+              zig-out/aarch64-linux-musl/
+              zig-out/x86_64-windows-gnu/

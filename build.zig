@@ -228,7 +228,7 @@ pub fn buildRelease(
 
     // TODO: somehow get rid of dependency on msvc so we can cross-compile with gnu.
     // Right now msvc is required for npcap.
-    if (builtin.target.os.tag == .windows) targets ++ .{ .cpu_arch = .x86_64, .os_tag = .windows, .abi = .msvc };
+    if (builtin.target.os.tag == .windows) targets ++ &.{.{ .cpu_arch = .x86_64, .os_tag = .windows, .abi = .msvc }};
 
     var installs = std.ArrayList(*std.Build.Step.InstallArtifact).init(b.allocator);
 

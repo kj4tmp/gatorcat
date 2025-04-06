@@ -43,11 +43,10 @@ jobs:
           GATORCAT_RELEASE: 1
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Add binaries to release
+      - name: Add binaries to release assets
         uses: softprops/action-gh-release@v2
         if: ${{ github.event_name == 'release' }}
         with:
+          fail_on_unmatched_files: true
           files: |
-              zig-out/x86_64-linux-musl/
-              zig-out/aarch64-linux-musl/
-              zig-out/x86_64-windows-gnu/
+              zig-out/release/*

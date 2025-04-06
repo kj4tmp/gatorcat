@@ -1,6 +1,8 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
+const build_zig_zon = @embedFile("build.zig.zon");
+
 pub fn build(b: *std.Build) void {
     // const git_describe = std.mem.trimRight(u8, b.run(&.{ "git", "describe", "--tags" }), '\n');
 
@@ -49,7 +51,7 @@ pub fn build(b: *std.Build) void {
     }
 
     // zig build
-    _ = buildCli(b, step_cli, target, optimize, module, .default);
+    _ = buildCli(b, step_cli, target, optimize, module, .default, "gatorcat");
 
     // zig build release
     const installs = buildRelease(b, step_release) catch @panic("oom");
@@ -185,6 +187,7 @@ pub fn buildCli(
     optimize: std.builtin.OptimizeMode,
     gatorcat_module: *std.Build.Module,
     dest_dir: std.Build.Step.InstallArtifact.Options.Dir,
+    exe_name: []const u8,
 ) *std.Build.Step.InstallArtifact {
     const flags_module = b.dependency("flags", .{
         .target = target,
@@ -199,7 +202,7 @@ pub fn buildCli(
         .optimize = optimize,
     }).module("zenoh");
     const cli = b.addExecutable(.{
-        .name = "gatorcat",
+        .name = exe_name,
         .root_source_file = b.path("src/cli/main.zig"),
         .target = target,
         .optimize = optimize,
@@ -253,14 +256,38 @@ pub fn buildRelease(
             },
             else => {},
         }
-        try installs.append(buildCli(
-            b,
-            step,
-            options.target,
-            options.optimize,
-            gatorcat_module,
-            .{ .override = .{ .custom = target.zigTriple(b.allocator) catch @panic("oom") } },
-        ));
+        const triple = target.zigTriple(b.allocator) catch @panic("oom");
+        try installs.append(
+            buildCli(
+                b,
+                step,
+                options.target,
+                options.optimize,
+                gatorcat_module,
+                .{ .override = .{ .custom = "release" } },
+                try std.fmt.allocPrint(b.allocator, "gatorcat-{}-{s}", .{ getVersionFromZon(), triple }),
+            ),
+        );
     }
     return installs;
+}
+
+fn getVersionFromZon() std.SemanticVersion {
+    var buffer: [10 * build_zig_zon.len]u8 = undefined;
+    var fba = std.heap.FixedBufferAllocator.init(&buffer);
+    const version = std.zon.parse.fromSlice(
+        struct { version: []const u8 },
+        fba.allocator(),
+        build_zig_zon,
+        null,
+        .{ .ignore_unknown_fields = true },
+    ) catch @panic("Invalid build.zig.zon!");
+    const semantic_version = std.SemanticVersion.parse(version.version) catch @panic("Invalid version!");
+    return std.SemanticVersion{
+        .major = semantic_version.major,
+        .minor = semantic_version.minor,
+        .patch = semantic_version.patch,
+        .build = null, // dont return pointers to stack memory
+        .pre = null, // dont return pointers to stack memory
+    };
 }

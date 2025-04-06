@@ -117,15 +117,17 @@ pub fn main() !void {
     const version_str_nl = try std.fmt.allocPrint(allocator, "{s}\n", .{version_str});
     const tag = try std.fmt.allocPrint(allocator, "ghcr.io/kj4tmp/gatorcat:{s}", .{version_str});
 
-    const dockerfile =
+    const dockerfile_fmt =
         \\FROM scratch AS build-amd64
-        \\COPY zig-out/x86_64-linux-musl/gatorcat gatorcat
+        \\COPY zig-out/release/gatorcat-{}-x86_64-linux-musl gatorcat
         \\FROM scratch AS build-arm64
-        \\COPY zig-out/aarch64-linux-musl/gatorcat gatorcat
+        \\COPY zig-out/release/gatorcat-{}-aarch64-linux-musl gatorcat
         \\ARG TARGETARCH
-        \\FROM build-${TARGETARCH}
+        \\FROM build-${{TARGETARCH}}
         \\ENTRYPOINT ["/gatorcat"]
     ;
+
+    const dockerfile = try std.fmt.allocPrint(allocator, dockerfile_fmt, .{ getVersionFromZon(), getVersionFromZon() });
 
     const docker_build_arm64 = try runWithStdin(.{
         .allocator = allocator,

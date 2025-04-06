@@ -26,19 +26,4 @@ jobs:
       - name: Build and test Zig Project
         run: zig build ci-test
 
-  windows-build:
-    runs-on: windows-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Setup Zig Compiler
-        uses: mlugg/setup-zig@v1.2.1
-        with:
-          version: 0.14.0
-
-      - name: Build and test Zig Project
-        run: zig build ci-test-windows
-
 

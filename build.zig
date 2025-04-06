@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 
 pub fn build(b: *std.Build) void {
     // const git_describe = std.mem.trimRight(u8, b.run(&.{ "git", "describe", "--tags" }), '\n');
@@ -20,6 +21,13 @@ pub fn build(b: *std.Build) void {
     step_ci_test.dependOn(step_sim_test);
     step_ci_test.dependOn(step_release);
     step_ci_test.dependOn(step_docker);
+
+    const step_ci_test_windows = b.step("ci-test-windows", "Run through the full CI build and tests, but on windows, so the docker stuff is removed.");
+    step_ci_test_windows.dependOn(step_cli);
+    step_ci_test_windows.dependOn(step_test);
+    step_ci_test_windows.dependOn(step_examples);
+    step_ci_test_windows.dependOn(step_sim_test);
+    step_ci_test_windows.dependOn(step_release);
 
     // gatorcat module
     const module = b.addModule("gatorcat", .{
@@ -214,10 +222,13 @@ pub fn buildRelease(
 ) !std.ArrayList(*std.Build.Step.InstallArtifact) {
     const targets: []const std.Target.Query = &.{
         .{ .cpu_arch = .x86_64, .os_tag = .linux, .abi = .musl },
-        // TODO: re-enable windows
-        // .{ .cpu_arch = .x86_64, .os_tag = .windows, .abi = .gnu },
+
         .{ .cpu_arch = .aarch64, .os_tag = .linux, .abi = .musl },
     };
+
+    // TODO: somehow get rid of dependency on msvc so we can cross-compile with gnu.
+    // Right now msvc is required for npcap.
+    if (builtin.target.os.tag == .windows) targets ++ .{ .cpu_arch = .x86_64, .os_tag = .windows, .abi = .msvc };
 
     var installs = std.ArrayList(*std.Build.Step.InstallArtifact).init(b.allocator);
 

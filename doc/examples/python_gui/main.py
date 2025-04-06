@@ -2,9 +2,9 @@ import threading
 import time
 from typing import Any
 
-import zenoh
 import cbor2
-from nicegui import Client, run, ui, app
+import zenoh
+from nicegui import Client, app, run, ui
 
 channels: dict[str, tuple[Any, Any]] = {}
 
@@ -21,7 +21,7 @@ def subscribe_in_background():
             elif sample.kind == zenoh.SampleKind.PUT:
                 channels[str(sample.key_expr)] = (cbor2.loads(sample.payload.to_bytes()), sample.timestamp.get_time() if sample.timestamp else None)
 
-        session.declare_subscriber("**/EL7031$*", listener)
+        session.declare_subscriber("**/EL7031-0030/**", listener)
         i = 0
         while True:
             session.put("s/1/outputs/pdo/0/entry/0/EL2008_Channel_1_Output", cbor2.dumps(False), congestion_control=zenoh.CongestionControl.BLOCK)

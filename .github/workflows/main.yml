@@ -34,6 +34,9 @@ jobs:
             zig-out/x86_64-linux-musl/
             zig-out/aarch64-linux-musl/
             zig-out/x86_64-windows-gnu/
-        
 
-
+      - name: docker upload on release
+        run: zig build ci-test
+        if: ${{ github.event_name == 'release' }}
+        env:
+          GATORCAT_RELEASE: 1

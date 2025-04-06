@@ -9,8 +9,8 @@
             .hash = "flags-0.10.0-a_9h3kR2AABNAfaPGRyOOGmWsfv12Hk6JQPTX4MM446s",
         },
         .zenoh = .{
-            .url = "git+https://github.com/kj4tmp/zenoh-zig.git#048aadd0e3e60496b4c1914bd90116c19447174f",
-            .hash = "zenoh-1.2.1-QDbMYzuxAADnRED7VO-Xki9YXETWV9MmtZccNBKTr4xX",
+            .url = "git+https://github.com/kj4tmp/zenoh-zig.git#1b6856babbd22855121d3e7b95b5d123b8f4c4ca",
+            .hash = "zenoh-1.2.1-QDbMY420AACW0RDQrBsBBfsgsaNlaK3T-WJoLLTjUuYC",
         },
         .zbor = .{
             .url = "git+https://github.com/kj4tmp/zbor.git#2c9c45a9fb118430bf43bebe5776461e3ccf1ecd",

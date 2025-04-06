@@ -4,7 +4,21 @@ services:
       context: .
       dockerfile: Dockerfile.gui
     volumes:
-      - /dev/shm
+      - /dev/shm/:/dev/shm/
+      - /tmp
     ports:
       - "8080:8080"
+  gatorcat:
+    image: ghcr.io/kj4tmp/gatorcat:0.3.1
+    command: run --ifname enx00e04c68191a --zenoh-config-default
+    volumes:
+      - /dev/shm/:/dev/shm/
+      - /tmp
     network_mode: host
+
+# networks:
+#   ethercat:
+#     driver: macvlan
+#     driver_opts:
+#       macvlan_mode: passthru
+#       parent: enx00e04c68191a

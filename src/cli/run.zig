@@ -328,7 +328,6 @@ pub fn run(allocator: std.mem.Allocator, args: Args) RunError!void {
             => continue :bus_scan,
             error.TransactionContention => unreachable,
         };
-        std.log.info("Look mom! I got to OP!", .{});
 
         var print_timer = std.time.Timer.start() catch @panic("Timer unsupported");
         var cycle_count: u32 = 0;

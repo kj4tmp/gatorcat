@@ -220,15 +220,14 @@ pub fn buildRelease(
     b: *std.Build,
     step: *std.Build.Step,
 ) !std.ArrayList(*std.Build.Step.InstallArtifact) {
-    const targets: []const std.Target.Query = &.{
+    const targets = [_]std.Target.Query{
         .{ .cpu_arch = .x86_64, .os_tag = .linux, .abi = .musl },
-
         .{ .cpu_arch = .aarch64, .os_tag = .linux, .abi = .musl },
     };
 
     // TODO: somehow get rid of dependency on msvc so we can cross-compile with gnu.
     // Right now msvc is required for npcap.
-    if (builtin.target.os.tag == .windows) targets ++ &.{.{ .cpu_arch = .x86_64, .os_tag = .windows, .abi = .msvc }};
+    if (builtin.target.os.tag == .windows) targets ++ [_]std.Target.Query{.{ .cpu_arch = .x86_64, .os_tag = .windows, .abi = .msvc }};
 
     var installs = std.ArrayList(*std.Build.Step.InstallArtifact).init(b.allocator);
 

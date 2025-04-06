@@ -41,6 +41,7 @@ jobs:
         if: ${{ github.event_name == 'release' }}
         env:
           GATORCAT_RELEASE: 1
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Add binaries to release
         uses: softprops/action-gh-release@v2

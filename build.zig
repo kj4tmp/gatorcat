@@ -12,15 +12,14 @@ pub fn build(b: *std.Build) void {
     const step_sim_test = b.step("sim-test", "Run the sim tests.");
     const step_release = b.step("release", "Build the release binaries.");
     const step_docker = b.step("docker", "Build the docker container.");
-    step_docker.dependOn(step_release);
 
-    const step_ci = b.step("ci-test", "Run through full CI build and tests.");
-    step_ci.dependOn(step_cli);
-    step_ci.dependOn(step_test);
-    step_ci.dependOn(step_examples);
-    step_ci.dependOn(step_sim_test);
-    step_ci.dependOn(step_release);
-    step_ci.dependOn(step_docker);
+    const step_ci_test = b.step("ci-test", "Run through full CI build and tests. If environment varaible GATORCAT_RELEASE is set, it will attempt to publish docker containers.");
+    step_ci_test.dependOn(step_cli);
+    step_ci_test.dependOn(step_test);
+    step_ci_test.dependOn(step_examples);
+    step_ci_test.dependOn(step_sim_test);
+    step_ci_test.dependOn(step_release);
+    step_ci_test.dependOn(step_docker);
 
     // gatorcat module
     const module = b.addModule("gatorcat", .{

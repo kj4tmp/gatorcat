@@ -293,10 +293,10 @@ pub const Normal = struct {
     comptime {
         assert(data_max_size ==
             mailbox.max_size -
-            @divExact(@bitSizeOf(mailbox.Header), 8) -
-            @divExact(@bitSizeOf(coe.Header), 8) -
-            @divExact(@bitSizeOf(SDOHeader), 8) -
-            @divExact(@bitSizeOf(u32), 8));
+                @divExact(@bitSizeOf(mailbox.Header), 8) -
+                @divExact(@bitSizeOf(coe.Header), 8) -
+                @divExact(@bitSizeOf(SDOHeader), 8) -
+                @divExact(@bitSizeOf(u32), 8));
     }
 };
 
@@ -455,9 +455,9 @@ pub const Segment = struct {
     comptime {
         assert(data_max_size ==
             mailbox.max_size -
-            @divExact(@bitSizeOf(mailbox.Header), 8) -
-            @divExact(@bitSizeOf(coe.Header), 8) -
-            @divExact(@bitSizeOf(SDOSegmentHeaderClient), 8));
+                @divExact(@bitSizeOf(mailbox.Header), 8) -
+                @divExact(@bitSizeOf(coe.Header), 8) -
+                @divExact(@bitSizeOf(SDOSegmentHeaderClient), 8));
     }
 
     comptime {

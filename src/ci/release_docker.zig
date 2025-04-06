@@ -77,22 +77,26 @@ pub fn main() !void {
     defer arena.deinit();
     const allocator = arena.allocator();
 
-    // const password = try std.process.getEnvVarOwned(allocator, "GITHUB_TOKEN");
+    const is_release: bool = if (std.process.getEnvVarOwned(allocator, "GATORCAT_RELEASE")) |_| true else |_| false;
 
-    // const docker_login = try std.process.Child.run(.{
-    //     .allocator = allocator,
-    //     .argv = &.{ "docker", "login", "--username", "kj4tmp", "--password", password },
-    // });
+    if (is_release) {
+        const password = try std.process.getEnvVarOwned(allocator, "GITHUB_TOKEN");
 
-    // switch (docker_login.term) {
-    //     .Exited => |code| {
-    //         std.debug.print("child exited with code {}\nstdout:\n{s}\nstderr:\n{s}\n", .{ code, docker_login.stdout, docker_login.stderr });
-    //         if (code != 0) return error.ChildFailed;
-    //     },
-    //     .Signal => return error.Signal,
-    //     .Stopped => return error.Stopped,
-    //     .Unknown => return error.Unknown,
-    // }
+        const docker_login = try std.process.Child.run(.{
+            .allocator = allocator,
+            .argv = &.{ "docker", "login", "--username", "kj4tmp", "--password", password },
+        });
+
+        switch (docker_login.term) {
+            .Exited => |code| {
+                std.debug.print("child exited with code {}\nstdout:\n{s}\nstderr:\n{s}\n", .{ code, docker_login.stdout, docker_login.stderr });
+                if (code != 0) return error.ChildFailed;
+            },
+            .Signal => return error.Signal,
+            .Stopped => return error.Stopped,
+            .Unknown => return error.Unknown,
+        }
+    }
 
     const buildx_create = try std.process.Child.run(.{
         .allocator = allocator,
@@ -126,16 +130,16 @@ pub fn main() !void {
     const docker_build_arm64 = try runWithStdin(.{
         .allocator = allocator,
         .argv = &.{
-            // zig fmt: off
             "docker",
             "buildx",
             "build",
-            "--platform", "linux/arm64",
-            "-t", tag,
+            "--platform",
+            "linux/arm64",
+            "-t",
+            tag,
             "-f-",
             ".",
-            "--load"
-            // zig fmt: on
+            "--load",
         },
         .stdin = dockerfile,
     });
@@ -152,7 +156,7 @@ pub fn main() !void {
 
     const test_arm64 = try std.process.Child.run(.{
         .allocator = allocator,
-        .argv = &.{ "docker", "run", "--platform", "linux/arm64", tag,  "version"},
+        .argv = &.{ "docker", "run", "--platform", "linux/arm64", tag, "version" },
     });
 
     switch (test_arm64.term) {
@@ -169,16 +173,16 @@ pub fn main() !void {
     const docker_build_amd64 = try runWithStdin(.{
         .allocator = allocator,
         .argv = &.{
-            // zig fmt: off
             "docker",
             "buildx",
             "build",
-            "--platform", "linux/amd64",
-            "-t", tag,
+            "--platform",
+            "linux/amd64",
+            "-t",
+            tag,
             "-f-",
             ".",
-            "--load"
-            // zig fmt: on
+            "--load",
         },
         .stdin = dockerfile,
     });
@@ -195,7 +199,7 @@ pub fn main() !void {
 
     const test_amd64 = try std.process.Child.run(.{
         .allocator = allocator,
-        .argv = &.{ "docker", "run", "--platform", "linux/amd64", tag,  "version"},
+        .argv = &.{ "docker", "run", "--platform", "linux/amd64", tag, "version" },
     });
 
     switch (test_amd64.term) {
@@ -209,34 +213,35 @@ pub fn main() !void {
     }
     try std.testing.expectEqualSlices(u8, version_str_nl, test_amd64.stdout);
 
-    const docker_push = try runWithStdin(.{
-        .allocator = allocator,
-        .argv = &.{
-            // zig fmt: off
-            "docker",
-            "buildx",
-            "build",
-            "--platform", "linux/amd64,linux/arm64",
-            "-t", tag,
-            "-f-",
-            ".",
-            // "--push"
-            // zig fmt: on
-        },
-        .stdin = dockerfile,
-    });
+    if (is_release) {
+        const docker_push = try runWithStdin(.{
+            .allocator = allocator,
+            .argv = &.{
+                "docker",
+                "buildx",
+                "build",
+                "--platform",
+                "linux/amd64,linux/arm64",
+                "-t",
+                tag,
+                "-f-",
+                ".",
+                "--push",
+            },
+            .stdin = dockerfile,
+        });
 
-    switch (docker_push.term) {
-        .Exited => |code| {
-            std.debug.print("child exited with code {}\nstdout:\n{s}\nstderr:\n{s}\n", .{ code, docker_push.stdout, docker_push.stderr });
-            if (code != 0) return error.ChildFailed;
-        },
-        .Signal => return error.Signal,
-        .Stopped => return error.Stopped,
-        .Unknown => return error.Unknown,
+        switch (docker_push.term) {
+            .Exited => |code| {
+                std.debug.print("child exited with code {}\nstdout:\n{s}\nstderr:\n{s}\n", .{ code, docker_push.stdout, docker_push.stderr });
+                if (code != 0) return error.ChildFailed;
+            },
+            .Signal => return error.Signal,
+            .Stopped => return error.Stopped,
+            .Unknown => return error.Unknown,
+        }
     }
 }
-
 
 fn getVersionFromZon() std.SemanticVersion {
     var buffer: [10 * build_zig_zon.len]u8 = undefined;

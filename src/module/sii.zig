@@ -1371,7 +1371,7 @@ pub const FMMUConfiguration = struct {
                 fmmu.bitLength() % 8 == 0 and
                 fmmu.enable and
                 ((fmmu.read_enable and sm_assign.direction == .input) or
-                (fmmu.write_enable and sm_assign.direction == .output)))
+                    (fmmu.write_enable and sm_assign.direction == .output)))
             {
                 fmmu.addBits(sm_assign.pdo_bit_length);
                 break :search_for_usable_fmmu;

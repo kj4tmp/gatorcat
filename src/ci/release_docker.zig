@@ -84,7 +84,7 @@ pub fn main() !void {
 
         const docker_login = try std.process.Child.run(.{
             .allocator = allocator,
-            .argv = &.{ "docker", "login", "--username", "kj4tmp", "--password", password },
+            .argv = &.{ "docker", "login", "--username", "kj4tmp", "--password", password, "ghcr.io" },
         });
 
         switch (docker_login.term) {

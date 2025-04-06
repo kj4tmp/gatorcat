@@ -5,6 +5,8 @@ on:
   pull_request:
     branches:
       - main
+  release:
+    types: [published]
 
 jobs:
   build:
@@ -33,3 +35,18 @@ jobs:
             zig-out/x86_64-linux-musl/
             zig-out/aarch64-linux-musl/
             zig-out/x86_64-windows-gnu/
+
+      - name: docker upload on release
+        run: zig build ci-test
+        if: ${{ github.event_name == 'release' }}
+        env:
+          GATORCAT_RELEASE: 1
+
+      - name: Add binaries to release
+        uses: softprops/action-gh-release@v2
+        if: ${{ github.event_name == 'release' }}
+        with:
+          files: |
+              zig-out/x86_64-linux-musl/
+              zig-out/aarch64-linux-musl/
+              zig-out/x86_64-windows-gnu/

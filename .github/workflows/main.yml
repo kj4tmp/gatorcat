@@ -29,7 +29,11 @@ jobs:
       - name: Archive zig-out
         uses: actions/upload-artifact@v4
         with:
-          name: zig-out
-          path: zig-out/
+          name: Release-safe binaries
+          path: |
+            zig-out/x86_64-linux-musl/
+            zig-out/aarch64-linux-musl/
+            zig-out/x86_64-windows-gnu/
+        
 
 

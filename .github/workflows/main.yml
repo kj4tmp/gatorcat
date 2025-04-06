@@ -25,5 +25,11 @@ jobs:
 
       - name: Build and test Zig Project
         run: zig build ci-test
+      
+      - name: Archive zig-out
+        uses: actions/upload-artifact@v4
+        with:
+          name: zig-out
+          path: zig-out/
 
 

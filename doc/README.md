@@ -22,9 +22,11 @@ Please review the `minimum_zig_version` field of the [`build.zig.zon`](/build.zi
 
 ### Installation
 
-The CLI can be built from source:
+The CLI can be downloaded from the github releases page or built from source.
 
-1. Install the zig compiler. See [Zig Version](#zig-version).
+To build from source:
+
+1. Install the zig compiler. See [Zig Version](#zig-version). There are no other build-time dependencies.
 1. Clone this repo.
 1. Run `zig build` in the repo.
 1. The executable will be named `gatorcat` and placed in `./zig-out/bin/`.
@@ -35,6 +37,8 @@ On Windows, the GatorCAT CLI depends on [npcap](https://npcap.com/). It must be 
 Please do not use windows for anything other than developer convienience (using the CLI, etc.).
 Npcap has poor realtime performance and so does Windows in general.
 
+The CLI must have permissions to interact with npcap. The easiest way to accomplish this is to launch it from a terminal with administrator priviledges.
+
 ### Linux
 
 The CLI requires `CAP_NET_RAW` permissions to open raw sockets. The easiest way to acheive this is to run the CLI with `sudo`.
@@ -42,7 +46,12 @@ The CLI requires `CAP_NET_RAW` permissions to open raw sockets. The easiest way 
 ### Usage
 
 Please review the help text printed with `gatorcat -h`.
-There is also sub-help for each sub-command: `gatorcat scan -h`.
+There is also sub-help for each sub-command, for example: `gatorcat scan -h`.
+
+To obtain the name of network interfaces on windows:
+
+1. Run `getmac /fo csv /v` in command prompt
+2. ifname for npcap is of the format: `\Device\NPF_{538CF305-6539-480E-ACD9-BEE598E7AE8F}`
 
 ### Suggested Workflow
 
@@ -51,6 +60,29 @@ There is also sub-help for each sub-command: `gatorcat scan -h`.
 1. Run the network with `gatorcat run --ifname eth0 --cycle-time-us 10000 --zenoh-config-default --eni-file eni.zon`.
 1. Observe data published on zenoh from ethercat.
     > The keys are defined in the `eni.zon`.
+
+### Zenoh Details
+
+A zenoh config file can be provided. See the CLI help text on how to specify the path.
+
+The keys look like this:
+
+```
+subdevices/1/EL2008/outputs/0x7000/Channel_1/0x01/Output
+```
+| Zenoh Key Expression Segment | Explanation                                                              |
+|------------------------------|--------------------------------------------------------------------------|
+| `subdevices/1/`              | This is the second subdevice on the bus (zero indexed).                  |
+| `EL2008`                     | The name of the subdevice from the SII EEPROM.                           |
+| `outputs`                    | This is an output PDO.                                                   |
+| `0x7000`                     | The index of the PDO (in hex).                                           |
+| `Channel_1`                  | The name of the PDO from the SII EEPROM or CoE object description.       |
+| `0x01`                       | The subindex of the PDO entry (in hex).                                  |
+| `Output`                     | The pdo entry description from the SII EEPROM or CoE object description. |
+
+The data is published in CBOR encoding.
+
+The subscribed keys accept CBOR encoded data.
 
 ## GatorCAT Module
 
@@ -83,11 +115,6 @@ const gcat = @import("gatorcat");
 
 To provide windows support, GatorCAT depends on [npcap](https://npcap.com/). Npcap does not need to be installed
 to build for windows targets, but it must be installed on the target when running resulting executables.
-
-To obtain the name of network interfaces on windows:
-
-1. Run `getmac /fo csv /v` in command prompt
-2. ifname for npcap is of the format: `\Device\NPF_{538CF305-6539-480E-ACD9-BEE598E7AE8F}`
 
 ### Suggested Workflow
 

@@ -2,7 +2,7 @@
 
 > [!WARNING]
 > GatorCAT is **alpha** software. Using it today means participating in its development.
-> This means you may find bugs or need features implemented before you can use GatorCAT effectively.
+> You may find bugs or need features implemented before you can use GatorCAT effectively.
 
 GatorCAT provides the following:
 
@@ -111,6 +111,10 @@ The data is published in CBOR encoding.
 The subscribed keys accept CBOR encoded data.
 
 ## GatorCAT Module
+
+### Examples
+
+Examples can be found in [examples](doc/examples/). The examples can be built using `zig build examples`.
 
 ### Using the Zig Package Manager
 

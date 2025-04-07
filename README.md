@@ -2,16 +2,15 @@
 
 ![Tests](https://github.com/kj4tmp/gatorcat/actions/workflows/main.yml/badge.svg)
 
-GatorCAT is an EtherCAT maindevice written for the zig programming language.
+GatorCAT is an EtherCAT maindevice written for the Zig programming language.
 
 > [!WARNING]
 > GatorCAT is **alpha** software. Using it today means participating in its development.
+> You may find bugs or need features implemented before you can use GatorCAT effectively.
 
 ## Documentation
 
-Examples can be found in [examples](doc/examples/). The examples can be built using `zig build examples`.
-
-Documentation can be found in [doc](doc/README.md).
+See [doc](doc/README.md).
 
 ## Status
 
@@ -50,8 +49,6 @@ Documentation can be found in [doc](doc/README.md).
 - [ ] validate individual pdo types at runtime (not just size of pdos)
 - [ ] revise error handling
 - [x] python package: hello world
-- [ ] python package: message pack models
-- [ ] python package: valkey driver
 - [ ] make a custom `@tagName` that requires the parameter to be exhaustive
 
 ## Sponsors

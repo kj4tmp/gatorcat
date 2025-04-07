@@ -43,6 +43,28 @@ The CLI must have permissions to interact with npcap. The easiest way to accompl
 
 The CLI requires `CAP_NET_RAW` permissions to open raw sockets. The easiest way to acheive this is to run the CLI with `sudo`.
 
+### Docker
+
+The CLI is also provided as a docker image:
+
+```
+$ docker run ghcr.io/kj4tmp/gatorcat:0.3.2 version
+0.3.2
+```
+
+To obtain raw access to ethernet ports with docker, the easiest way is to use network mode host. This will give the container host-level access to the ethernet interfaces.
+
+```
+$ docker run --network host ghcr.io/kj4tmp/gatorcat:0.3.2 run --ifname enx00e04c68191a --zenoh-config-default
+warning: Scheduler: NORMAL
+warning: Ping returned in 487 us.
+warning: Cycle time not specified. Estimating appropriate cycle time...
+warning: Max ping after 1000 tries is 616 us. Selected 2000 us as cycle time.
+warning: Scanning bus...
+warning: Detected 7 subdevices.
+```
+
+
 ### Usage
 
 Please review the help text printed with `gatorcat -h`.

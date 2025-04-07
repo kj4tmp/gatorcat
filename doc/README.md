@@ -1,24 +1,24 @@
-# GatorCAT Documentation
+# Gatorcat Documentation
 
 > [!WARNING]
-> GatorCAT is **alpha** software. Using it today means participating in its development.
-> You may find bugs or need features implemented before you can use GatorCAT effectively.
+> `gatorcat` is **alpha** software. Using it today means participating in its development.
+> You may find bugs or need features implemented before you can use `gatorcat` effectively.
 
-GatorCAT provides the following:
+`gatorcat` provides the following:
 
-1. [GatorCAT CLI](#gatorcat-cli): a command-line interface executable for common tasks when working with EtherCAT networks, incuding running and scanning.
+1. [gatorcat-cli](#gatorcat-cli): a command-line interface executable for common tasks when working with EtherCAT networks, incuding running and scanning.
     > Run: automatically operate an EtherCAT network with zero configuration.
 
     > Scan: obtain information about the contents of the network.
 
     > Debug: (Work in progress) debug issues with your network.
-1. [GatorCAT Module](#gatorcat-module): a zig module for writing applications that interact with EtherCAT networks.
+1. [gatorcat-module](#gatorcat-module): a zig module for writing applications that interact with EtherCAT networks.
 
 ## Zig Version
 
 Please review the `minimum_zig_version` field of the [`build.zig.zon`](/build.zig.zon).
 
-## GatorCAT CLI
+## Gatorcat CLI
 
 ### Installation
 
@@ -33,7 +33,7 @@ To build from source:
 
 ### Windows
 
-On Windows, the GatorCAT CLI depends on [npcap](https://npcap.com/). It must be installed prior to running the CLI.
+On Windows, the gatorcat CLI depends on [npcap](https://npcap.com/). It must be installed prior to running the CLI.
 Please do not use windows for anything other than developer convienience (using the CLI, etc.).
 Npcap has poor realtime performance and so does Windows in general.
 
@@ -118,7 +118,7 @@ Examples can be found in [examples](doc/examples/). The examples can be built us
 
 ### Using the Zig Package Manager
 
-To add GatorCAT to your project as a dependency, run:
+To add gatorcat to your project as a dependency, run:
 
 ```sh
 zig fetch --save git+https://github.com/kj4tmp/gatorcat
@@ -143,13 +143,13 @@ const gcat = @import("gatorcat");
 
 ### Windows Support
 
-To provide windows support, GatorCAT depends on [npcap](https://npcap.com/). Npcap does not need to be installed
+To provide windows support, gatorcat depends on [npcap](https://npcap.com/). Npcap does not need to be installed
 to build for windows targets, but it must be installed on the target when running resulting executables.
 
 ### Suggested Workflow
 
 1. Build your EtherCAT network.
-1. Use the [GatorCAT CLI](#gatorcat-cli) to scan the network.
+1. Use the [gatorcat CLI](#gatorcat-cli) to scan the network.
 1. Write your network configuration (ENI). See [example](./examples/simple/network_config.zig).
 1. Write your application. See [example](./examples/simple/main.zig).
 

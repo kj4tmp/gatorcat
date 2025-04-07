@@ -1,12 +1,12 @@
-# GatorCAT
+# gatorcat
 
-![Tests](https://github.com/kj4tmp/gatorcat/actions/workflows/main.yml/badge.svg)
+![tests](https://github.com/kj4tmp/gatorcat/actions/workflows/main.yml/badge.svg)
 
-GatorCAT is an EtherCAT maindevice written for the Zig programming language.
+`gatorcat` is an EtherCAT maindevice written in the Zig programming language.
 
 > [!WARNING]
-> GatorCAT is **alpha** software. Using it today means participating in its development.
-> You may find bugs or need features implemented before you can use GatorCAT effectively.
+> `gatorcat` is **alpha** software. Using it today means participating in its development.
+> You may find bugs or need features implemented before you can use `gatorcat` effectively.
 
 ## Documentation
 

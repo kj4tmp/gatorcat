@@ -39,6 +39,10 @@ Npcap has poor realtime performance and so does Windows in general.
 
 The CLI must have permissions to interact with npcap. The easiest way to accomplish this is to launch it from a terminal with administrator priviledges.
 
+### Windows (WSL)
+
+On linux on windows through WSL, is is very difficult to obtain raw access to ethernet interfaces on the host. It is possible through [usbipd](https://learn.microsoft.com/en-us/windows/wsl/connect-usb) but you might as well just use the windows CLI.
+
 ### Linux
 
 The CLI requires `CAP_NET_RAW` permissions to open raw sockets. The easiest way to acheive this is to run the CLI with `sudo`.

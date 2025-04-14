@@ -1,9 +1,10 @@
 {
+  mode: "client",
   downsampling: [
     {
       flow: "ingress",
       rules: [
-        { key_expr: "**", freq: 100
+        { key_expr: "**", freq: 10000
         },
       ],
     },

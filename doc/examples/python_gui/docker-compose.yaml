@@ -8,13 +8,29 @@ services:
       - /tmp
     ports:
       - "8080:8080"
+    restart: always
+    environment:
+     - PYTHONUNBUFFERED=1
   gatorcat:
-    image: ghcr.io/kj4tmp/gatorcat:0.3.1
+    image: ghcr.io/kj4tmp/gatorcat:0.3.2
     command: run --ifname enx00e04c68191a --zenoh-config-default
     volumes:
       - /dev/shm/:/dev/shm/
       - /tmp
     network_mode: host
+    restart: always
+  zenoh-router:
+    image: eclipse/zenoh
+    restart: always
+    ports:
+      - 7447:7447
+      - 8000:8000
+    volumes:
+      - ./zenoh_docker:/root/.zenoh
+      - /dev/shm/:/dev/shm/
+      - /tmp
+    environment:
+      - RUST_LOG=debug
 
 # networks:
 #   ethercat:

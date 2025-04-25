@@ -7,6 +7,7 @@ const ns_per_us = std.time.ns_per_us;
 const ENI = @import("ENI.zig");
 const esc = @import("esc.zig");
 const gcat = @import("root.zig");
+const logger = @import("root.zig").logger;
 const coe = @import("mailbox/coe.zig");
 const MainDevice = @import("MainDevice.zig");
 const nic = @import("nic.zig");
@@ -664,7 +665,7 @@ pub fn broadcastALStatusCheck(
             return;
         }
         if (status.err) {
-            std.log.err("state change refused. status: {}", .{status});
+            logger.err("state change refused. status: {}", .{status});
             return error.StateChangeRefused;
         }
     } else {

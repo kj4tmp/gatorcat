@@ -5,6 +5,7 @@ const assert = std.debug.assert;
 
 const ENI = @import("ENI.zig");
 const esc = @import("esc.zig");
+const logger = @import("root.zig").logger;
 const mailbox = @import("mailbox.zig");
 const coe = @import("mailbox/coe.zig");
 const nic = @import("nic.zig");
@@ -119,14 +120,14 @@ pub fn setALState(
         const requested_int: u4 = @intFromEnum(state);
         const actual_int: u4 = @intFromEnum(status.state);
         if (actual_int == requested_int) {
-            std.log.info(
+            logger.info(
                 "station addr: 0x{x}, successful state change to {}, Status Code: {}.",
                 .{ station_address, status.state, status.status_code },
             );
             return;
         }
         if (status.err) {
-            std.log.err(
+            logger.err(
                 "station addr: 0x{x}, refused state change to {}. Actual state: {}, Status Code: {}.",
                 .{ station_address, state, status.state, status.status_code },
             );
@@ -177,7 +178,7 @@ pub fn transitionIP(
         info.product_code != self.config.identity.product_code or
         info.revision_number != self.config.identity.revision_number)
     {
-        std.log.err(
+        logger.err(
             "Identified subdevice: vendor id: 0x{x}, product code: 0x{x}, revision: 0x{x}, expected vendor id: 0x{x}, product code: 0x{x}, revision: 0x{x}",
             .{
                 info.vendor_id,
@@ -369,7 +370,7 @@ pub fn transitionPS(
             // write that length to the SM.
             const sm_assigns = blk: {
                 if (self.runtime_info.coe) |*this_coe| {
-                    std.log.info("station addr: 0x{x}, reading sm_assigns from CoE.", .{station_address});
+                    logger.info("station addr: 0x{x}, reading sm_assigns from CoE.", .{station_address});
                     break :blk try coe.readSMPDOAssigns(
                         port,
                         station_address,
@@ -390,7 +391,7 @@ pub fn transitionPS(
             };
 
             for (sm_assigns.data.slice()) |sm_assign| {
-                std.log.info("station addr: 0x{x}, sm assign: {}", .{ station_address, sm_assign });
+                logger.info("station addr: 0x{x}, sm assign: {}", .{ station_address, sm_assign });
             }
 
             for (sm_assigns.dumpESCSMs().slice()) |esc_sm| {
@@ -406,7 +407,7 @@ pub fn transitionPS(
             }
 
             for (sm_assigns.dumpESCSMs().slice()) |esc_sm| {
-                std.log.info("station addr: 0x{x}, process data sm {} config: {any}", .{ station_address, esc_sm.sm_idx, esc_sm.esc_sm });
+                logger.info("station addr: 0x{x}, process data sm {} config: {any}", .{ station_address, esc_sm.sm_idx, esc_sm.esc_sm });
             }
 
             var min_fmmu_required: u8 = 0;
@@ -424,28 +425,28 @@ pub fn transitionPS(
             const totals = sm_assigns.totalBitLengths();
 
             if (totals.inputs_bit_length != self.config.inputsBitLength()) {
-                std.log.err(
+                logger.err(
                     "station addr: 0x{x}, expected inputs bit length: {}, got {}",
                     .{ station_address, self.config.inputsBitLength(), totals.inputs_bit_length },
                 );
                 return error.InvalidInputsBitLength;
             }
             if (totals.outputs_bit_length != self.config.outputsBitLength()) {
-                std.log.err(
+                logger.err(
                     "station addr: 0x{x}, expected outputs bit length: {}, got {}",
                     .{ station_address, self.config.outputsBitLength(), totals.outputs_bit_length },
                 );
                 return error.InvalidOutputsBitLength;
             }
-            std.log.info("station addr: 0x{x}, inputs_bit_length: {}", .{ station_address, totals.inputs_bit_length });
-            std.log.info("station addr: 0x{x}, outputs_bit_length: {}", .{ station_address, totals.outputs_bit_length });
+            logger.info("station addr: 0x{x}, inputs_bit_length: {}", .{ station_address, totals.inputs_bit_length });
+            logger.info("station addr: 0x{x}, outputs_bit_length: {}", .{ station_address, totals.outputs_bit_length });
 
             const fmmu_config = try sii.FMMUConfiguration.initFromSMPDOAssigns(
                 sm_assigns,
                 .{ .start_addr = fmmu_inputs_start_addr, .bit_length = totals.inputs_bit_length },
                 .{ .start_addr = fmmu_outputs_start_addr, .bit_length = totals.outputs_bit_length },
             );
-            std.log.info("station addr: 0x{x}, n_FMMU: {}, FMMU config: {any}", .{ station_address, fmmu_config.data.slice().len, fmmu_config.data.slice() });
+            logger.info("station addr: 0x{x}, n_FMMU: {}, FMMU config: {any}", .{ station_address, fmmu_config.data.slice().len, fmmu_config.data.slice() });
             // TODO: Sort FMMUs according to order defined in SII
             if (fmmu_config.data.slice().len > fmmus.len) return error.NotEnoughFMMUs;
 
@@ -482,7 +483,7 @@ pub fn doStartupParameters(
     for (self.config.startup_parameters) |parameter| {
         // TODO: support reads?
         if (parameter.transition == transition) {
-            std.log.info("station address: 0x{x}, doing startup parameter: {}", .{ stationAddressFromRingPos(self.runtime_info.ring_position), parameter });
+            logger.info("station address: 0x{x}, doing startup parameter: {}", .{ stationAddressFromRingPos(self.runtime_info.ring_position), parameter });
 
             try self.sdoWrite(
                 port,

@@ -8,6 +8,7 @@ const assert = std.debug.assert;
 const mailbox = @import("../mailbox.zig");
 const nic = @import("../nic.zig");
 const Port = @import("../Port.zig");
+const logger = @import("../root.zig").logger;
 const sii = @import("../sii.zig");
 const wire = @import("../wire.zig");
 pub const client = @import("coe/client.zig");
@@ -200,12 +201,11 @@ pub fn sdoReadPack(
         config,
     );
     if (n_bytes_read != bytes.len) {
-        std.log.err("expected pack size: {}, got {}", .{ bytes.len, n_bytes_read });
+        logger.err("expected pack size: {}, got {}", .{ bytes.len, n_bytes_read });
         return error.WrongPackSize;
     }
     return wire.packFromECat(packed_type, bytes);
 }
-
 // TODO: support segmented reads
 /// Read the SDO from the subdevice into a buffer.
 ///
@@ -289,7 +289,7 @@ pub fn sdoRead(
             }
             switch (in_content.coe) {
                 .abort => {
-                    std.log.err("station addr: 0x{x}, aborted sdo read at index 0x{x}:{x}, code: {}", .{ station_address, index, subindex, in_content.coe.abort.abort_code });
+                    logger.err("station addr: 0x{x}, aborted sdo read at index 0x{x}:{x}, code: {}", .{ station_address, index, subindex, in_content.coe.abort.abort_code });
                     return error.Aborted;
                 },
                 .expedited => continue :state .expedited,
@@ -1170,7 +1170,7 @@ pub fn readSDOInfoFragments(
             },
             else => {
                 // TODO: handle this better?
-                std.log.err(
+                logger.err(
                     "station addr: 0x{x:04}, unexpected protocol during sdo info fragment transfer: {}",
                     .{ station_address, in_content.coe },
                 );

@@ -11,6 +11,7 @@ const ns_per_us = std.time.ns_per_us;
 const assert = std.debug.assert;
 
 const esc = @import("esc.zig");
+const logger = @import("root.zig").logger;
 const nic = @import("nic.zig");
 const pdi = @import("pdi.zig");
 const Port = @import("Port.zig");
@@ -507,7 +508,7 @@ pub fn readGeneralCatagory(port: *Port, station_address: u16, recv_timeout_us: u
     ) orelse return null;
 
     if (catagory.byte_length < @divExact(@bitSizeOf(CatagoryGeneral), 8)) {
-        std.log.err(
+        logger.err(
             "Subdevice station addr: 0x{x} has invalid eeprom sii general length: {}. Expected >= {}",
             .{ station_address, catagory.byte_length, @divExact(@bitSizeOf(CatagoryGeneral), 8) },
         );
@@ -1191,7 +1192,7 @@ pub fn readSMPDOAssigns(
             recv_timeout_us,
             eeprom_timeout_us,
         ) orelse {
-            std.log.info("station_addr: 0x{x}, couldnt find cat: {}, skipping", .{ station_address, catagory_type });
+            logger.info("station_addr: 0x{x}, couldnt find cat: {}, skipping", .{ station_address, catagory_type });
             continue;
         };
 

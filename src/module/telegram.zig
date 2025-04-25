@@ -4,6 +4,7 @@ const assert = std.debug.assert;
 const big = std.builtin.Endian.big;
 const little = std.builtin.Endian.little;
 
+const logger = @import("root.zig").logger;
 const wire = @import("wire.zig");
 
 /// EtherCAT command, present in the EtherCAT datagram header.
@@ -420,7 +421,7 @@ pub const EthernetFrame = struct {
             return error.InvalidFrameLengthTooSmall;
         }
         if (ethercat_header.length > bytes_remaining) {
-            std.log.debug(
+            logger.debug(
                 "length field: {}, remaining: {}, end pos: {}",
                 .{ ethercat_header.length, bytes_remaining, try fbs_reading.getEndPos() },
             );
@@ -474,7 +475,7 @@ pub const EthernetFrame = struct {
             return error.InvalidFrameLengthTooSmall;
         }
         if (ethercat_header.length > bytes_remaining) {
-            std.log.debug(
+            logger.debug(
                 "length field: {}, remaining: {}, end pos: {}",
                 .{ ethercat_header.length, bytes_remaining, try fbs.getEndPos() },
             );

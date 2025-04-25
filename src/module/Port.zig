@@ -1,6 +1,7 @@
 const std = @import("std");
 const assert = std.debug.assert;
 
+const logger = @import("root.zig").logger;
 const nic = @import("nic.zig");
 const telegram = @import("telegram.zig");
 const wire = @import("wire.zig");
@@ -127,7 +128,7 @@ fn recvFrame(self: *Port) !void {
     frame_size = self.link_layer.recv(&buf) catch |err| switch (err) {
         error.WouldBlock => return error.FrameNotFound,
         else => {
-            std.log.err("Socket error: {}", .{err});
+            logger.err("Socket error: {}", .{err});
             return error.LinkError;
         },
     };

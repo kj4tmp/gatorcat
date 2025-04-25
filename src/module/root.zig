@@ -15,6 +15,8 @@ pub const Subdevice = @import("Subdevice.zig");
 pub const telegram = @import("telegram.zig");
 pub const wire = @import("wire.zig");
 
+pub const logger = std.log.scoped(.gatorcat);
+
 const gcat = @This();
 
 // given the time of the first cycle and the cycle duration, sleep until the next cycle

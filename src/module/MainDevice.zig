@@ -5,6 +5,7 @@ const ENI = @import("ENI.zig");
 const esc = @import("esc.zig");
 const FrameBuilder = @import("FrameBuilder.zig");
 const gcat = @import("root.zig");
+const logger = @import("root.zig").logger;
 const nic = @import("nic.zig");
 const pdi = @import("pdi.zig");
 const Port = @import("Port.zig");
@@ -77,7 +78,6 @@ pub fn estimateAllocSize(eni: ENI) usize {
         @sizeOf(telegram.EtherCATFrame) * frameCount(eni.processImageSize()) +
         @sizeOf(Subdevice) * eni.subdevices.len;
 }
-
 /// Initialize the ethercat bus.
 ///
 /// Sets all subdevices to the INIT state.
@@ -100,7 +100,7 @@ pub fn busInit(self: *MainDevice, change_timeout_us: u32) !void {
         },
         self.settings.recv_timeout_us,
     );
-    std.log.info("bus wipe open all ports wkc: {}", .{wkc});
+    logger.info("bus wipe open all ports wkc: {}", .{wkc});
 
     // TODO: set IRQ mask
 
@@ -127,7 +127,7 @@ pub fn busInit(self: *MainDevice, change_timeout_us: u32) !void {
         },
         self.settings.recv_timeout_us,
     );
-    std.log.info("bus wipe reset crc counters wkc: {}", .{wkc});
+    logger.info("bus wipe reset crc counters wkc: {}", .{wkc});
 
     // reset FMMUs
     wkc = try self.port.bwrPack(
@@ -140,7 +140,7 @@ pub fn busInit(self: *MainDevice, change_timeout_us: u32) !void {
         },
         self.settings.recv_timeout_us,
     );
-    std.log.info("bus wipe zero fmmus wkc: {}", .{wkc});
+    logger.info("bus wipe zero fmmus wkc: {}", .{wkc});
 
     // reset SMs
     wkc = try self.port.bwrPack(
@@ -153,7 +153,7 @@ pub fn busInit(self: *MainDevice, change_timeout_us: u32) !void {
         },
         self.settings.recv_timeout_us,
     );
-    std.log.info("bus wipe zero sms wkc: {}", .{wkc});
+    logger.info("bus wipe zero sms wkc: {}", .{wkc});
 
     // TODO: reset DC activation
     // TODO: reset system time offsets
@@ -171,7 +171,7 @@ pub fn busInit(self: *MainDevice, change_timeout_us: u32) !void {
         },
         self.settings.recv_timeout_us,
     );
-    std.log.info("bus wipe disable alias wkc: {}", .{wkc});
+    logger.info("bus wipe disable alias wkc: {}", .{wkc});
 
     // request INIT
     wkc = try self.port.bwrPack(
@@ -193,7 +193,7 @@ pub fn busInit(self: *MainDevice, change_timeout_us: u32) !void {
         },
         self.settings.recv_timeout_us,
     );
-    std.log.info("bus wipe INIT wkc: {}", .{wkc});
+    logger.info("bus wipe INIT wkc: {}", .{wkc});
 
     // Force take away EEPROM from PDI
     wkc = try self.port.bwrPack(
@@ -207,7 +207,7 @@ pub fn busInit(self: *MainDevice, change_timeout_us: u32) !void {
         },
         self.settings.recv_timeout_us,
     );
-    std.log.info("bus wipe force eeprom wkc: {}", .{wkc});
+    logger.info("bus wipe force eeprom wkc: {}", .{wkc});
 
     // Maindevice controls EEPROM
     wkc = try self.port.bwrPack(
@@ -221,7 +221,7 @@ pub fn busInit(self: *MainDevice, change_timeout_us: u32) !void {
         },
         self.settings.recv_timeout_us,
     );
-    std.log.info("bus wipe eeprom control to maindevice wkc: {}", .{wkc});
+    logger.info("bus wipe eeprom control to maindevice wkc: {}", .{wkc});
 
     // count subdevices
     const res = try self.port.brdPack(
@@ -232,9 +232,9 @@ pub fn busInit(self: *MainDevice, change_timeout_us: u32) !void {
         },
         self.settings.recv_timeout_us,
     );
-    std.log.info("detected {} subdevices", .{res.wkc});
+    logger.info("detected {} subdevices", .{res.wkc});
     if (res.wkc != self.subdevices.len) {
-        std.log.info("Found {} subdevices, expected {}.", .{ res.wkc, self.subdevices.len });
+        logger.info("Found {} subdevices, expected {}.", .{ res.wkc, self.subdevices.len });
         return error.WrongNumberOfSubdevices;
     }
     try self.broadcastStateChange(.INIT, change_timeout_us);
@@ -297,7 +297,7 @@ pub fn busSafeop(self: *MainDevice, change_timeout_us: u32) !void {
         for (self.subdevices) |subdevice| {
             const status = try subdevice.getALStatus(self.port, self.settings.recv_timeout_us);
             if (status.state != .SAFEOP) {
-                std.log.err("station address: 0x{x} failed state transition, status: {}", .{ Subdevice.stationAddressFromRingPos(subdevice.runtime_info.ring_position), status });
+                logger.err("station address: 0x{x} failed state transition, status: {}", .{ Subdevice.stationAddressFromRingPos(subdevice.runtime_info.ring_position), status });
             }
         }
         return error.StateChangeTimeout;
@@ -329,10 +329,10 @@ pub fn busOp(self: *MainDevice, change_timeout_us: u32) !void {
     var timer = std.time.Timer.start() catch @panic("timer not supported");
     while (timer.read() < @as(u64, change_timeout_us) * std.time.ns_per_us) {
         const result = try self.sendRecvCyclicFramesDiag();
-        // std.log.info("diag: {}", .{result});
+        // logger.info("diag: {}", .{result});
         if (result.brd_status_wkc != self.subdevices.len) return error.Wkc;
         if (result.brd_status.state == .OP and result.brd_status_wkc == self.subdevices.len) {
-            std.log.warn("successfull state change to {}, status code: {}", .{ result.brd_status.state, result.brd_status.status_code });
+            logger.warn("successfull state change to {}, status code: {}", .{ result.brd_status.state, result.brd_status.status_code });
             break;
         }
     } else return error.StateChangeTimeout;
@@ -663,14 +663,14 @@ pub fn broadcastStateChange(self: *MainDevice, state: esc.ALStateControl, change
         const requested_int: u4 = @intFromEnum(state);
         const actual_int: u4 = @intFromEnum(status.state);
         if (actual_int == requested_int) {
-            std.log.warn(
+            logger.warn(
                 "successful broadcast state change to {}, Status Code: {}.",
                 .{ status.state, status.status_code },
             );
             break;
         }
         if (status.err) {
-            std.log.err(
+            logger.err(
                 "broadcast state change refused to {}. Actual state: {}, Status Code: {}.",
                 .{ state, status.state, status.status_code },
             );

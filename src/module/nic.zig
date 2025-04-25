@@ -4,6 +4,7 @@ const builtin = @import("builtin");
 
 const npcap = @import("npcap");
 
+const logger = @import("root.zig").logger;
 const telegram = @import("telegram.zig");
 
 /// Interface for networking hardware
@@ -172,7 +173,6 @@ pub const LinuxRawSocket = struct {
 };
 
 var pcap_errbuf: [npcap.c.PCAP_ERRBUF_SIZE]u8 = [_]u8{0} ** npcap.c.PCAP_ERRBUF_SIZE;
-
 pub const WindowsRawSocket = struct {
     send_mutex: std.Thread.Mutex = .{},
     recv_mutex: std.Thread.Mutex = .{},
@@ -182,7 +182,7 @@ pub const WindowsRawSocket = struct {
         const socket = npcap.c.pcap_open(ifname, 65536, npcap.c.PCAP_OPENFLAG_PROMISCUOUS |
             npcap.c.PCAP_OPENFLAG_MAX_RESPONSIVENESS |
             npcap.c.PCAP_OPENFLAG_NOCAPTURE_LOCAL, -1, null, &pcap_errbuf) orelse {
-            std.log.err("Failed to open interface {s}, npcap error: {s}", .{ ifname, pcap_errbuf });
+            logger.err("Failed to open interface {s}, npcap error: {s}", .{ ifname, pcap_errbuf });
             return error.FailedToOpenInterface;
         };
 

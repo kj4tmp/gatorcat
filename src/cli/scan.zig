@@ -12,6 +12,7 @@ pub const Args = struct {
     PREOP_timeout_us: u32 = 10_000_000,
     mbx_timeout_us: u32 = 50_000,
     json: bool = false,
+    sim: bool = false,
     pub const descriptions = .{
         .ifname = "Network interface to use for the bus scan.",
         .recv_timeout_us = "Frame receive timeout in microseconds.",
@@ -19,6 +20,7 @@ pub const Args = struct {
         .INIT_timeout_us = "state transition to INIT timeout in microseconds.",
         .ring_position = "Optionally specify only a single subdevice at this ring position to be scanned.",
         .json = "Export the ENI as JSON instead of ZON.",
+        .sim = "Also scan information required for simulation.",
     };
 };
 

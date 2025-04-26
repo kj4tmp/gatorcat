@@ -118,7 +118,11 @@ pub const Subdevice = struct {
         var ethernet_frame = telegram.EthernetFrame.deserialize(frame.slice()) catch return;
 
         for (ethernet_frame.ethercat_frame.portable_datagrams.slice()) |*datagram| {
-            _ = datagram;
+            switch (datagram.header.command) {
+                .NOP => {}, // no operation
+                .APRD => {}, // TODO
+                else => {}, // TODO
+            }
         }
         var new_frame = Simulator.Frame{};
         new_frame.len = frame.len;

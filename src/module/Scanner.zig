@@ -577,6 +577,31 @@ pub fn readSubdeviceConfigurationLeaky(
         }
     }
 
+    const eeprom_info = try gcat.sii.readSubdeviceInfo(
+        self.port,
+        station_address,
+        self.settings.recv_timeout_us,
+        self.settings.eeprom_timeout_us,
+    );
+
+    const sii_byte_length: u64 = (@as(u64, eeprom_info.size) + 1) * 1024 / 8;
+    logger.info("stations addr: 0x{x:04}, Reading full eeprom size: {} B", .{ station_address, sii_byte_length });
+
+    var sii_stream = gcat.sii.SIIStream.init(
+        self.port,
+        station_address,
+        0,
+        self.settings.recv_timeout_us,
+        self.settings.eeprom_timeout_us,
+    );
+
+    const sii_reader = sii_stream.reader();
+    var limited_reader = std.io.limitedReader(sii_reader, sii_byte_length);
+    const reader = limited_reader.reader();
+
+    const eeprom_content = try allocator.alloc(u8, sii_byte_length);
+    try reader.readNoEof(eeprom_content);
+
     const res = ENI.SubdeviceConfiguration{
         .name = name,
         .identity = .{
@@ -586,6 +611,10 @@ pub fn readSubdeviceConfigurationLeaky(
         },
         .inputs = try inputs.toOwnedSlice(),
         .outputs = try outputs.toOwnedSlice(),
+        .sim = .{
+            .eeprom = eeprom_content,
+            .physical_memory = &.{}, // TODO
+        },
     };
     return res;
 }

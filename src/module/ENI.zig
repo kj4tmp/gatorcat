@@ -33,6 +33,9 @@ pub const SubdeviceConfiguration = struct {
     /// Outputs w/r/t the maindevice, also called the RxPDO's
     outputs: []const PDO = &.{},
 
+    /// Information required for the simulator
+    sim: ?Sim = null,
+
     pub const PDO = struct {
         index: u16,
         entries: []const Entry,
@@ -58,6 +61,16 @@ pub const SubdeviceConfiguration = struct {
                 return self.index == 0;
             }
         };
+    };
+
+    pub const Sim = struct {
+        // SII EEPROM contents
+        eeprom: []const u8,
+        /// The physical memory in the subdevice. Also called the DPRAM.
+        /// The first 4 KB (addresses 0x0000 - 0x0fff) is reserved
+        /// for ethercat and PDI configuration settings.
+        /// It may be up to the full addressable space (u16, 65535 kB).
+        physical_memory: []const u8,
     };
 
     pub fn inputsBitLength(self: SubdeviceConfiguration) u32 {

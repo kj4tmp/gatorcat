@@ -108,19 +108,32 @@ pub const Simulator = struct {
 
 pub const Subdevice = struct {
     config: ENI.SubdeviceConfiguration,
+    physical_memory: [4096]u8,
     pub fn init(config: ENI.SubdeviceConfiguration) Subdevice {
         return Subdevice{
             .config = config,
+            .physical_memory = @splat(0),
         };
     }
+
     pub fn processFrame(self: *Subdevice, frame: *Simulator.Frame) void {
         _ = self;
         var ethernet_frame = telegram.EthernetFrame.deserialize(frame.slice()) catch return;
 
-        for (ethernet_frame.ethercat_frame.portable_datagrams.slice()) |*datagram| {
+        const datagrams: []telegram.EtherCATFrame.PortableDatagram = ethernet_frame.ethercat_frame.portable_datagrams.slice();
+        for (datagrams) |*datagram| {
+            // TODO: operate if address zero
+
+            // increment address field
             switch (datagram.header.command) {
                 .NOP => {}, // no operation
-                .APRD => {}, // TODO
+                .BRD => {
+                    // validate address
+
+                    // perform bit-wise or
+
+                    // increment wkc
+                },
                 else => {}, // TODO
             }
         }

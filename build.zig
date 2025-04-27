@@ -16,6 +16,9 @@ pub fn build(b: *std.Build) void {
     const step_release = b.step("release", "Build the release binaries.");
     const step_docker = b.step("docker", "Build the docker container.");
 
+    step_docker.dependOn(step_test);
+    step_docker.dependOn(step_sim_test);
+
     const step_ci_test = b.step("ci-test", "Run through full CI build and tests. If environment varaible GATORCAT_RELEASE is set, it will attempt to publish docker containers.");
     step_ci_test.dependOn(step_cli);
     step_ci_test.dependOn(step_test);
@@ -23,13 +26,6 @@ pub fn build(b: *std.Build) void {
     step_ci_test.dependOn(step_sim_test);
     step_ci_test.dependOn(step_release);
     step_ci_test.dependOn(step_docker);
-
-    const step_ci_test_windows = b.step("ci-test-windows", "Run through the full CI build and tests, but on windows, so the docker stuff is removed.");
-    step_ci_test_windows.dependOn(step_cli);
-    step_ci_test_windows.dependOn(step_test);
-    step_ci_test_windows.dependOn(step_examples);
-    step_ci_test_windows.dependOn(step_sim_test);
-    step_ci_test_windows.dependOn(step_release);
 
     // gatorcat module
     const module = b.addModule("gatorcat", .{
@@ -66,14 +62,17 @@ pub fn build(b: *std.Build) void {
     buildSimTest(b, step_sim_test, module, target, optimize);
 
     // zig build docker
-    buildDocker(b, step_docker, installs);
+    const run_docker = buildDocker(b, step_docker, installs);
+    run_docker.dependOn(step_test);
+    run_docker.dependOn(step_sim_test);
 }
 
+// returns run step that builds docker
 pub fn buildDocker(
     b: *std.Build,
     step: *std.Build.Step,
     installs: std.ArrayList(*std.Build.Step.InstallArtifact),
-) void {
+) *std.Build.Step {
     const docker_builder = b.addExecutable(.{
         .name = "docker-builder",
         .root_source_file = b.path("src/ci/release_docker.zig"),
@@ -81,10 +80,12 @@ pub fn buildDocker(
     });
     docker_builder.root_module.addAnonymousImport("build_zig_zon", .{ .root_source_file = b.path("build.zig.zon") });
     const run = b.addRunArtifact(docker_builder);
+    run.has_side_effects = true;
     for (installs.items) |install| {
         run.step.dependOn(&install.step);
     }
     step.dependOn(&run.step);
+    return &run.step;
 }
 
 pub fn buildSimTest(

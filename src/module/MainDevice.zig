@@ -517,8 +517,8 @@ pub fn recvCyclicFrames(self: *MainDevice) SendRecvCycleFramesDiagError!SendRecv
         for (frame.datagrams().slice()) |*dgram| {
             switch (dgram.header.command) {
                 .LRD, .LRW => {
-                    const start = dgram.header.address;
-                    const end_exclusive = dgram.header.address + dgram.data.len;
+                    const start = dgram.header.address.logical;
+                    const end_exclusive = dgram.header.address.logical + dgram.data.len;
                     @memcpy(self.process_image[start..end_exclusive], dgram.data);
                 },
                 // no need to copy to outputs
@@ -577,12 +577,13 @@ pub fn continueAllTransactionsRecvCyclicFrames(self: *MainDevice) SendRecvCycleF
     // telegram.EtherCATFrame.isCurrupted protects against memory
     // curruption
     // TODO: don't touch process data unless wkc is correct
+    // TODO: check overflows
     for (self.frames[0..n_transactions]) |*frame| {
         for (frame.datagrams().slice()) |*dgram| {
             switch (dgram.header.command) {
                 .LRD, .LRW => {
-                    const start = dgram.header.address;
-                    const end_exclusive = dgram.header.address + dgram.data.len;
+                    const start = dgram.header.address.logical;
+                    const end_exclusive = dgram.header.address.logical + dgram.data.len;
                     @memcpy(self.process_image[start..end_exclusive], dgram.data);
                 },
                 // no need to copy to outputs

@@ -127,7 +127,7 @@ pub const Datagram = struct {
         return Datagram{
             .header = .{
                 .command = command,
-                .address = address,
+                .address = .{ .logical = address },
                 .length = @intCast(data.len),
                 .circulating = false,
                 .next = next,
@@ -163,7 +163,11 @@ pub const Datagram = struct {
         idx: u8 = 0,
         /// auto-increment, configured station, or logical address
         /// when position addressing
-        address: u32,
+        address: packed union {
+            position: PositionAddress,
+            station: StationAddress,
+            logical: LogicalAddress,
+        },
         /// length of following data, in bytes, not including wkc
         length: u11,
         /// reserved, 0
@@ -278,7 +282,7 @@ pub const EtherCATFrame = struct {
                 .FPRD, .FPWR, .FPRW, .LRD, .LWR, .LRW, .FRMW, .NOP => true,
                 _ => unreachable, // sent datagrams should never have been _
             };
-            if (check_addr and self_dgram.header.address != orig_dgram.header.address) return true;
+            if (check_addr and @as(u32, @bitCast(self_dgram.header.address)) != @as(u32, @bitCast(orig_dgram.header.address))) return true;
             // idx is skipped since it is injected on serialization
             if (i != 0 and self_dgram.header.idx != orig_dgram.header.idx) return true;
             if (self_dgram.header.length != orig_dgram.header.length) return true;
@@ -571,7 +575,7 @@ test "ethernet frame serialization / deserialization" {
 
     const frame2 = try EthernetFrame.deserialize(serialize_copy);
 
-    try std.testing.expectEqualDeep(frame, frame2);
+    try std.testing.expectEqual(frame, frame2);
 }
 
 /// Max frame length

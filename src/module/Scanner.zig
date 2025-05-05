@@ -237,6 +237,9 @@ pub fn readEni(
     self: *Scanner,
     allocator: std.mem.Allocator,
     state_change_timeout_us: u32,
+    /// Read information for simulator.
+    /// Not required unless you are running the simulator.
+    sim: bool,
 ) !gcat.Arena(ENI) {
     const arena = try allocator.create(std.heap.ArenaAllocator);
     errdefer allocator.destroy(arena);
@@ -247,6 +250,7 @@ pub fn readEni(
         .value = try self.readEniLeaky(
             arena.allocator(),
             state_change_timeout_us,
+            sim,
         ),
     };
 }
@@ -256,12 +260,13 @@ pub fn readEniLeaky(
     self: *Scanner,
     allocator: std.mem.Allocator,
     state_change_timeout_us: u32,
+    sim: bool,
 ) !ENI {
     var subdevice_configs = std.ArrayList(gcat.ENI.SubdeviceConfiguration).init(allocator);
     defer subdevice_configs.deinit();
     const num_subdevices = try self.countSubdevices();
     for (0..num_subdevices) |i| {
-        const config = try self.readSubdeviceConfigurationLeaky(allocator, @intCast(i), state_change_timeout_us);
+        const config = try self.readSubdeviceConfigurationLeaky(allocator, @intCast(i), state_change_timeout_us, sim);
         try subdevice_configs.append(config);
     }
     return gcat.ENI{ .subdevices = try subdevice_configs.toOwnedSlice() };
@@ -272,6 +277,7 @@ pub fn readSubdeviceConfiguration(
     allocator: std.mem.Allocator,
     ring_position: u16,
     state_change_timeout_us: u32,
+    sim: bool,
 ) !gcat.Arena(ENI.SubdeviceConfiguration) {
     const arena = try allocator.create(std.heap.ArenaAllocator);
     errdefer allocator.destroy(arena);
@@ -283,6 +289,7 @@ pub fn readSubdeviceConfiguration(
             arena.allocator(),
             ring_position,
             state_change_timeout_us,
+            sim,
         ),
     };
 }
@@ -294,6 +301,7 @@ pub fn readSubdeviceConfigurationLeaky(
     allocator: std.mem.Allocator,
     ring_position: u16,
     state_change_timeout_us: u32,
+    sim: bool,
 ) !ENI.SubdeviceConfiguration {
     const station_address = Subdevice.stationAddressFromRingPos(ring_position);
     const info = try sii.readSIIFP_ps(
@@ -577,30 +585,38 @@ pub fn readSubdeviceConfigurationLeaky(
         }
     }
 
-    const eeprom_info = try gcat.sii.readSubdeviceInfo(
-        self.port,
-        station_address,
-        self.settings.recv_timeout_us,
-        self.settings.eeprom_timeout_us,
-    );
+    var sim_result: ?ENI.SubdeviceConfiguration.Sim = null;
+    if (sim) {
+        const eeprom_info = try gcat.sii.readSubdeviceInfo(
+            self.port,
+            station_address,
+            self.settings.recv_timeout_us,
+            self.settings.eeprom_timeout_us,
+        );
 
-    const sii_byte_length: u64 = (@as(u64, eeprom_info.size) + 1) * 1024 / 8;
-    logger.info("stations addr: 0x{x:04}, Reading full eeprom size: {} B", .{ station_address, sii_byte_length });
+        const sii_byte_length: u64 = (@as(u64, eeprom_info.size) + 1) * 1024 / 8;
+        logger.info("stations addr: 0x{x:04}, Reading full eeprom size: {} B", .{ station_address, sii_byte_length });
 
-    var sii_stream = gcat.sii.SIIStream.init(
-        self.port,
-        station_address,
-        0,
-        self.settings.recv_timeout_us,
-        self.settings.eeprom_timeout_us,
-    );
+        var sii_stream = gcat.sii.SIIStream.init(
+            self.port,
+            station_address,
+            0,
+            self.settings.recv_timeout_us,
+            self.settings.eeprom_timeout_us,
+        );
 
-    const sii_reader = sii_stream.reader();
-    var limited_reader = std.io.limitedReader(sii_reader, sii_byte_length);
-    const reader = limited_reader.reader();
+        const sii_reader = sii_stream.reader();
+        var limited_reader = std.io.limitedReader(sii_reader, sii_byte_length);
+        const reader = limited_reader.reader();
 
-    const eeprom_content = try allocator.alloc(u8, sii_byte_length);
-    try reader.readNoEof(eeprom_content);
+        const eeprom_content = try allocator.alloc(u8, sii_byte_length);
+        try reader.readNoEof(eeprom_content);
+
+        sim_result = .{
+            .eeprom = eeprom_content,
+            .physical_memory = &.{}, // TODO
+        };
+    }
 
     const res = ENI.SubdeviceConfiguration{
         .name = name,
@@ -611,10 +627,7 @@ pub fn readSubdeviceConfigurationLeaky(
         },
         .inputs = try inputs.toOwnedSlice(),
         .outputs = try outputs.toOwnedSlice(),
-        .sim = .{
-            .eeprom = eeprom_content,
-            .physical_memory = &.{}, // TODO
-        },
+        .sim = sim_result,
     };
     return res;
 }

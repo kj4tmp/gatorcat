@@ -11,11 +11,16 @@ pub fn main() !void {
     var raw_socket = try gcat.nic.RawSocket.init("enx00e04c68191a");
     defer raw_socket.deinit();
     var port = gcat.Port.init(raw_socket.linkLayer(), .{});
+    defer port.deinit();
     try port.ping(10000);
 
     var scanner = gcat.Scanner.init(&port, .{});
     try scanner.busInit(10_000_000, try scanner.countSubdevices());
-    const eni = try scanner.readEni(gpa.allocator(), 10_000_000);
+    const eni = try scanner.readEni(
+        gpa.allocator(),
+        10_000_000,
+        false,
+    );
     defer eni.deinit();
 
     var md = try gcat.MainDevice.init(

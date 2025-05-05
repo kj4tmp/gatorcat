@@ -30,6 +30,7 @@ pub fn info(allocator: std.mem.Allocator, args: Args) !void {
 
     var port2 = gcat.Port.init(raw_socket.linkLayer(), .{});
     var port = &port2;
+    defer port.deinit();
     try port.ping(args.recv_timeout_us);
 
     var scanner = gcat.Scanner.init(port, .{ .eeprom_timeout_us = args.eeprom_timeout_us, .recv_timeout_us = args.recv_timeout_us });

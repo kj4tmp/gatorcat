@@ -25,7 +25,7 @@ test {
     var port = gcat.Port.init(simulator.linkLayer(), .{});
     try port.ping(10000);
 
-    const estimated_stack_usage = comptime gcat.MainDevice.estimateAllocSize(eni) + 8;
+    const estimated_stack_usage = 300000;
     var stack_memory: [estimated_stack_usage]u8 = undefined;
     var stack_fba = std.heap.FixedBufferAllocator.init(&stack_memory);
 

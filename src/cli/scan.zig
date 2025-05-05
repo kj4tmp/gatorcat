@@ -41,7 +41,7 @@ pub fn scan(allocator: std.mem.Allocator, args: Args) !void {
     try scanner.assignStationAddresses(num_subdevices);
 
     if (args.ring_position) |ring_position| {
-        const subdevice_eni = try scanner.readSubdeviceConfiguration(allocator, ring_position, args.PREOP_timeout_us);
+        const subdevice_eni = try scanner.readSubdeviceConfiguration(allocator, ring_position, args.PREOP_timeout_us, args.sim);
         defer subdevice_eni.deinit();
         var std_out = std.io.getStdOut();
 
@@ -53,7 +53,7 @@ pub fn scan(allocator: std.mem.Allocator, args: Args) !void {
             try std_out.writer().writeByte('\n');
         }
     } else {
-        const eni = try scanner.readEni(allocator, args.PREOP_timeout_us);
+        const eni = try scanner.readEni(allocator, args.PREOP_timeout_us, args.sim);
         defer eni.deinit();
 
         var std_out = std.io.getStdOut();

@@ -16,7 +16,11 @@ pub fn main() !void {
 
     var scanner = gcat.Scanner.init(&port, .{});
     try scanner.busInit(10_000_000, try scanner.countSubdevices());
-    const eni = try scanner.readEni(gpa.allocator(), 10_000_000);
+    const eni = try scanner.readEni(
+        gpa.allocator(),
+        10_000_000,
+        false,
+    );
     defer eni.deinit();
 
     var md = try gcat.MainDevice.init(

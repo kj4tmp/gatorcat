@@ -142,7 +142,7 @@ pub fn run(allocator: std.mem.Allocator, args: Args) RunError!void {
                 error.RecvTimeout, error.Wkc => continue :bus_scan,
             };
 
-            break :blk scanner.readEni(allocator, args.preop_timeout_us) catch |err| switch (err) {
+            break :blk scanner.readEni(allocator, args.preop_timeout_us, false) catch |err| switch (err) {
                 error.LinkError,
                 error.Overflow,
                 error.NoSpaceLeft,

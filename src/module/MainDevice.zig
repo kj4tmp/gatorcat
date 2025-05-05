@@ -442,7 +442,6 @@ pub fn sendCyclicFrames(self: *MainDevice) error{LinkError}!void {
     }
 }
 
-// TODO: rename this
 pub const CyclicResult = struct {
     brd_status: esc.ALStatusRegister,
     brd_status_wkc: u16,

@@ -8,84 +8,106 @@ const wire = @import("wire.zig");
 
 const Port = @This();
 
-recv_frames_status_mutex: std.Thread.Mutex = .{},
-recv_frames: [max_frames]*telegram.EtherCATFrame = undefined,
-recv_frames_status: [max_frames]FrameStatus = [_]FrameStatus{FrameStatus.available} ** max_frames,
-last_used_idx: u8 = 0,
 link_layer: nic.LinkLayer,
 settings: Settings,
+transactions: Transactions,
+transactions_mutex: std.Thread.Mutex = .{},
 
 pub const Settings = struct {
     source_mac_address: u48 = 0xffff_ffff_ffff,
     dest_mac_address: u48 = 0xABCD_EF12_3456,
 };
 
-pub const max_frames: u9 = 256;
+pub const Transactions = std.DoublyLinkedList(TransactionDatagram);
+pub const Transaction = Transactions.Node;
 
-const FrameStatus = enum {
-    /// available to be claimed
-    available,
-    /// under construction
-    in_use,
-    /// sent and can be received
-    in_use_receivable,
-    /// received
-    in_use_received,
-    in_use_currupted,
+pub const TransactionDatagram = struct {
+    send_datagram: telegram.Datagram,
+    recv_datagram: telegram.Datagram,
+    done: bool = false,
+    check_wkc: ?u16 = null,
+
+    /// The datagram to send is send_datagram.
+    /// If recv_region is provided, the returned datagram.data payload will be placed there.
+    /// If recv_region is null, the returned datagram payload will be placed back in the send_datagram.data.
+    /// The recv_region, when provided, must be same length as send_datagram.data.
+    ///
+    /// If check_wkc is non-null, the returned wkc will be checked to be equal before copying the data to
+    /// the recv region.
+    pub fn init(send_datagram: telegram.Datagram, recv_region: ?[]u8, check_wkc: ?u16) TransactionDatagram {
+        if (recv_region) |region| {
+            assert(send_datagram.data.len == region.len);
+        }
+        return TransactionDatagram{
+            .send_datagram = send_datagram,
+            .recv_datagram = telegram.Datagram{
+                .header = send_datagram.header,
+                .wkc = 0,
+                .data = recv_region orelse send_datagram.data,
+            },
+            .check_wkc = check_wkc,
+        };
+    }
 };
 
 pub fn init(link_layer: nic.LinkLayer, settings: Settings) Port {
-    return Port{ .link_layer = link_layer, .settings = settings };
+    return Port{
+        .link_layer = link_layer,
+        .settings = settings,
+        .transactions = .{},
+    };
 }
 
-/// claim transaction
-///
-/// claim a transaction idx with the ethercat bus.
-pub fn claimTransaction(self: *Port) error{NoTransactionAvailable}!u8 {
-    self.recv_frames_status_mutex.lock();
-    defer self.recv_frames_status_mutex.unlock();
+pub fn deinit(self: *Port) void {
+    assert(self.transactions.len == 0); // leaked transaction;
+}
 
-    const new_idx = self.last_used_idx +% 1;
-    if (self.recv_frames_status[new_idx] == .available) {
-        self.recv_frames_status[new_idx] = .in_use;
-        self.last_used_idx = new_idx;
-        return self.last_used_idx;
-    } else return error.NoTransactionAvailable;
+/// Caller owns responsibilty to release transaction after successful return from this function.
+pub fn sendTransactions(self: *Port, transactions: []Transaction) error{LinkError}!void {
+    // TODO: optimize to pack frames
+    var n_sent: usize = 0;
+    errdefer self.releaseTransactions(transactions[0..n_sent]);
+    for (transactions) |*transaction| {
+        try self.sendTransaction(transaction);
+        n_sent += 1;
+    }
 }
 
 /// Send a transaction with the ethercat bus.
-pub fn sendTransaction(self: *Port, idx: u8, send_frame: *const telegram.EtherCATFrame, recv_frame_ptr: *telegram.EtherCATFrame) !void {
-    assert(send_frame.datagrams().slice().len > 0); // no datagrams
-    assert(send_frame.datagrams().slice().len <= 15); // too many datagrams
-    assert(self.recv_frames_status[idx] == FrameStatus.in_use); // should claim transaction first
-
-    // store pointer to where to deserialize frames later
-    self.recv_frames[idx] = recv_frame_ptr;
-
+/// Caller owns responsibilty to release transaction after successful return from this function.
+/// Callers must take care to provide uniquely identifiable frames, through idx or other means.
+/// See fn compareDatagramIdentity.
+pub fn sendTransaction(self: *Port, transaction: *Transaction) error{LinkError}!void {
+    assert(transaction.data.done == false); // forget to release transaction?
+    assert(transaction.data.send_datagram.data.len == transaction.data.recv_datagram.data.len);
+    // one datagram will always fit
+    const ethercat_frame = telegram.EtherCATFrame.init(&.{transaction.data.send_datagram}) catch unreachable;
     var frame = telegram.EthernetFrame.init(
         .{
             .dest_mac = self.settings.dest_mac_address,
             .src_mac = self.settings.source_mac_address,
             .ether_type = .ETHERCAT,
         },
-        send_frame.*,
+        ethercat_frame,
     );
-
     var out_buf: [telegram.max_frame_length]u8 = undefined;
 
-    // type system guarantees frames will serialize
-    const n_bytes = frame.serialize(idx, &out_buf) catch |err| switch (err) {
+    // one datagram will always fit
+    const n_bytes = frame.serialize(null, &out_buf) catch |err| switch (err) {
         error.NoSpaceLeft => unreachable,
     };
     const out = out_buf[0..n_bytes];
 
+    // We need to append the transaction before we send.
+    // Because we may recv from any thread.
+    {
+        self.transactions_mutex.lock();
+        defer self.transactions_mutex.unlock();
+        self.transactions.append(transaction);
+    }
+    errdefer self.releaseTransaction(transaction);
     // TODO: handle partial send error
     _ = self.link_layer.send(out) catch return error.LinkError;
-    {
-        self.recv_frames_status_mutex.lock();
-        defer self.recv_frames_status_mutex.unlock();
-        self.recv_frames_status[idx] = FrameStatus.in_use_receivable;
-    }
 }
 
 /// fetch a frame by receiving bytes
@@ -97,28 +119,21 @@ pub fn sendTransaction(self: *Port, idx: u8, send_frame: *const telegram.EtherCA
 /// Returns false if return frame was not found (call again to try to recieve it).
 ///
 /// Returns true when frame has been deserialized successfully.
-pub fn continueTransaction(self: *Port, idx: u8) !bool {
-    switch (self.recv_frames_status[idx]) {
-        .available => unreachable,
-        .in_use => unreachable,
-        .in_use_receivable => {},
-        .in_use_received => return true,
-        .in_use_currupted => return error.CurruptedFrame,
-    }
+pub fn continueTransaction(self: *Port, transaction: *Transaction) error{LinkError}!bool {
+    if (self.isDone(transaction)) return true;
     self.recvFrame() catch |err| switch (err) {
-        error.FrameNotFound => {},
         error.LinkError => {
             return error.LinkError;
         },
         error.InvalidFrame => {},
     };
-    switch (self.recv_frames_status[idx]) {
-        .available => unreachable,
-        .in_use => unreachable,
-        .in_use_receivable => return false,
-        .in_use_received => return true,
-        .in_use_currupted => return error.CurruptedFrame,
-    }
+    return self.isDone(transaction);
+}
+
+fn isDone(self: *Port, transaction: *Transaction) bool {
+    self.transactions_mutex.lock();
+    defer self.transactions_mutex.unlock();
+    return transaction.data.done;
 }
 
 fn recvFrame(self: *Port) !void {
@@ -126,7 +141,7 @@ fn recvFrame(self: *Port) !void {
     var frame_size: usize = 0;
 
     frame_size = self.link_layer.recv(&buf) catch |err| switch (err) {
-        error.WouldBlock => return error.FrameNotFound,
+        error.WouldBlock => return,
         else => {
             logger.err("Socket error: {}", .{err});
             return error.LinkError;
@@ -137,85 +152,96 @@ fn recvFrame(self: *Port) !void {
 
     assert(frame_size <= telegram.max_frame_length);
     const bytes_recv: []const u8 = buf[0..frame_size];
-    const recv_frame_idx = telegram.EthernetFrame.identifyFromBuffer(bytes_recv) catch return error.InvalidFrame;
 
-    switch (self.recv_frames_status[recv_frame_idx]) {
-        .in_use_receivable => {
-            self.recv_frames_status_mutex.lock();
-            defer self.recv_frames_status_mutex.unlock();
-            const frame_res = telegram.EthernetFrame.deserialize(bytes_recv);
-            if (frame_res) |frame| {
-                if (frame.ethercat_frame.isCurrupted(self.recv_frames[recv_frame_idx])) {
-                    self.recv_frames_status[recv_frame_idx] = FrameStatus.in_use_currupted;
-                    return;
-                }
-                self.recv_frames[recv_frame_idx].* = frame.ethercat_frame;
-                self.recv_frames_status[recv_frame_idx] = FrameStatus.in_use_received;
-            } else |err| switch (err) {
-                else => {
-                    self.recv_frames_status[recv_frame_idx] = FrameStatus.in_use_currupted;
-                    return;
-                },
-            }
-        },
-        else => {},
-    }
-}
-
-/// Release transaction idx.
-///
-/// Releases a transaction so it can be used by others.
-///
-/// Caller is inteded to use the idx returned by a previous
-/// call to send_frame.
-pub fn releaseTransaction(self: *Port, idx: u8) void {
-    {
-        self.recv_frames_status_mutex.lock();
-        defer self.recv_frames_status_mutex.unlock();
-        self.recv_frames_status[idx] = FrameStatus.available;
-    }
-}
-
-pub const SendRecvError = error{
-    TransactionContention,
-    RecvTimeout,
-    FrameSerializationFailure,
-    LinkError,
-    CurruptedFrame,
-};
-
-pub fn sendRecvFrame(
-    self: *Port,
-    send_frame: *telegram.EtherCATFrame,
-    recv_frame_ptr: *telegram.EtherCATFrame,
-    timeout_us: u32,
-) SendRecvError!void {
-    assert(send_frame.datagrams().slice().len != 0); // no datagrams
-    assert(send_frame.datagrams().slice().len <= 15); // too many datagrams
-
-    var timer = std.time.Timer.start() catch |err| switch (err) {
-        error.TimerUnsupported => unreachable,
+    var frame = telegram.EthernetFrame.deserialize(bytes_recv) catch |err| {
+        logger.info("Failed to deserialize frame: {}", .{err});
+        return;
     };
-    var idx: u8 = undefined;
-    while (timer.read() < @as(u64, timeout_us) * std.time.ns_per_us) {
-        idx = self.claimTransaction() catch |err| switch (err) {
-            error.NoTransactionAvailable => continue,
-        };
-        break;
-    } else {
-        return error.TransactionContention;
+    for (frame.ethercat_frame.datagrams().slice()) |datagram| {
+        self.findPutDatagramLocked(datagram);
     }
-    defer self.releaseTransaction(idx);
+}
 
-    try self.sendTransaction(idx, send_frame, recv_frame_ptr);
+fn findPutDatagramLocked(self: *Port, datagram: telegram.Datagram) void {
+    self.transactions_mutex.lock();
+    defer self.transactions_mutex.unlock();
 
-    while (timer.read() < @as(u64, timeout_us) * 1000) {
-        if (try self.continueTransaction(idx)) {
-            return;
+    var current: ?*Transaction = self.transactions.first;
+    while (current) |node| : (current = node.next) {
+        if (node.data.done) continue;
+        if (compareDatagramIdentity(datagram, node.data.send_datagram)) {
+            defer node.data.done = true;
+            node.data.recv_datagram.header = datagram.header;
+            node.data.recv_datagram.wkc = datagram.wkc;
+            // memcpy can be skipped for non-read commands
+            switch (datagram.header.command) {
+                .APRD,
+                .APRW,
+                .ARMW,
+                .BRD,
+                .BRW,
+                .FPRD,
+                .FPRW,
+                .FRMW,
+                .LRD,
+                .LRW,
+                => {
+                    if (node.data.check_wkc == null or node.data.check_wkc.? == datagram.wkc) {
+                        @memcpy(node.data.recv_datagram.data, datagram.data);
+                    }
+                },
+                .APWR, .BWR, .FPWR, .LWR, .NOP => {},
+                _ => {},
+            }
         }
-    } else {
-        return error.RecvTimeout;
+        // we intentionally do not break here since we want to
+        // handle idx collisions gracefully by just writing to all of them
     }
+}
+
+/// returns true when the datagrams are the same
+fn compareDatagramIdentity(first: telegram.Datagram, second: telegram.Datagram) bool {
+    if (first.header.command != second.header.command) return false;
+    if (first.header.idx != second.header.idx) return false;
+    switch (first.header.command) {
+        .APRD,
+        .APRW,
+        .APWR,
+        .ARMW,
+        .BRD,
+        .BRW,
+        .BWR,
+        => if (first.header.address.position.offset != second.header.address.position.offset) return false,
+        .FPRD,
+        .FPRW,
+        .FPWR,
+        .FRMW,
+        .LRD,
+        .LRW,
+        .LWR,
+        .NOP,
+        => if (first.header.address.logical != second.header.address.logical) return false,
+        _ => return false,
+    }
+    if (first.header.length != second.data.len) return false;
+    if (first.data.len != second.data.len) return false;
+    return true;
+}
+
+pub fn releaseTransactions(self: *Port, transactions: []Transaction) void {
+    self.transactions_mutex.lock();
+    defer self.transactions_mutex.unlock();
+    for (transactions) |*transaction| {
+        self.transactions.remove(transaction);
+        transaction.data.done = false; // TODO: reevaluate if this makes sense
+    }
+}
+
+pub fn releaseTransaction(self: *Port, transaction: *Transaction) void {
+    self.transactions_mutex.lock();
+    defer self.transactions_mutex.unlock();
+    self.transactions.remove(transaction);
+    transaction.data.done = false; // TODO: reevaluate if this makes sense
 }
 
 /// send and recv a no-op to quickly check if port works and are connected
@@ -226,10 +252,8 @@ pub fn ping(self: *Port, timeout_us: u32) !void {
 pub const SendDatagramError = error{
     RecvTimeout,
     LinkError,
-    CurruptedFrame,
-    TransactionContention,
 };
-pub fn sendDatagram(
+pub fn sendRecvDatagram(
     self: *Port,
     command: telegram.Command,
     address: u32,
@@ -238,34 +262,21 @@ pub fn sendDatagram(
 ) SendDatagramError!u16 {
     assert(data.len <= telegram.Datagram.max_data_length);
 
-    var datagrams: [1]telegram.Datagram = .{
-        telegram.Datagram.init(
-            command,
-            address,
-            false,
-            data,
-        ),
-    };
-    var frame = telegram.EtherCATFrame.init(&datagrams) catch |err| switch (err) {
-        error.Overflow => unreachable,
-        error.NoSpaceLeft => unreachable,
-    };
-    self.sendRecvFrame(
-        &frame,
-        &frame,
-        timeout_us,
-    ) catch |err| switch (err) {
-        // only one datagram so it should fit
-        error.FrameSerializationFailure => unreachable,
-        error.RecvTimeout => return error.RecvTimeout,
-        error.LinkError => return error.LinkError,
-        error.CurruptedFrame => return error.CurruptedFrame,
-        error.TransactionContention => return error.TransactionContention,
-    };
-    // checked by telegram.EtherCATFrame.isCurrupted
-    assert(data.len == frame.datagrams().slice()[0].data.len);
-    @memcpy(data, frame.datagrams().slice()[0].data);
-    return frame.datagrams().slice()[0].wkc;
+    var timer = std.time.Timer.start() catch @panic("timer unsupported");
+    const datagram: telegram.Datagram = .init(command, address, false, data);
+    var transaction: Transaction = .{ .data = .init(datagram, null, null) };
+
+    try self.sendTransaction(&transaction);
+    defer self.releaseTransaction(&transaction);
+
+    while (timer.read() < @as(u64, timeout_us) * 1000) {
+        if (try self.continueTransaction(&transaction)) {
+            break;
+        }
+    } else {
+        return error.RecvTimeout;
+    }
+    return transaction.data.recv_datagram.wkc;
 }
 
 /// No operation.
@@ -275,7 +286,7 @@ pub fn nop(self: *Port, data_size: u16, timeout_us: u32) SendDatagramError!void 
     assert(data_size > 0);
     var zeros = std.mem.zeroes([telegram.Datagram.max_data_length]u8);
     // wkc can be ignored on NOP, it is always zero
-    _ = try sendDatagram(
+    _ = try sendRecvDatagram(
         self,
         telegram.Command.NOP,
         0,
@@ -294,7 +305,7 @@ pub fn aprd(
     data: []u8,
     timeout_us: u32,
 ) SendDatagramError!u16 {
-    return sendDatagram(
+    return sendRecvDatagram(
         self,
         telegram.Command.APRD,
         @bitCast(address),
@@ -324,7 +335,7 @@ pub fn apwr(
     data: []u8,
     timeout_us: u32,
 ) SendDatagramError!u16 {
-    return sendDatagram(
+    return sendRecvDatagram(
         self,
         telegram.Command.APWR,
         @bitCast(address),
@@ -368,7 +379,7 @@ pub fn aprw(
     data: []u8,
     timeout_us: u32,
 ) SendDatagramError!u16 {
-    return sendDatagram(
+    return sendRecvDatagram(
         self,
         telegram.Command.APRW,
         @bitCast(address),
@@ -398,7 +409,7 @@ pub fn fprd(
     data: []u8,
     timeout_us: u32,
 ) SendDatagramError!u16 {
-    return sendDatagram(
+    return sendRecvDatagram(
         self,
         telegram.Command.FPRD,
         @bitCast(address),
@@ -459,7 +470,7 @@ pub fn fpwr(
     data: []u8,
     timeout_us: u32,
 ) SendDatagramError!u16 {
-    return sendDatagram(
+    return sendRecvDatagram(
         self,
         telegram.Command.FPWR,
         @bitCast(address),
@@ -512,7 +523,7 @@ pub fn fprw(
     data: []u8,
     timeout_us: u32,
 ) SendDatagramError!u16 {
-    return sendDatagram(
+    return sendRecvDatagram(
         self,
         telegram.Command.FPRW,
         @bitCast(address),
@@ -543,7 +554,7 @@ pub fn brd(
     data: []u8,
     timeout_us: u32,
 ) SendDatagramError!u16 {
-    return sendDatagram(
+    return sendRecvDatagram(
         self,
         telegram.Command.BRD,
         @bitCast(address),
@@ -572,7 +583,7 @@ pub fn bwr(
     data: []u8,
     timeout_us: u32,
 ) SendDatagramError!u16 {
-    return sendDatagram(
+    return sendRecvDatagram(
         self,
         telegram.Command.BWR,
         @bitCast(address),
@@ -615,7 +626,7 @@ pub fn brw(
     data: []u8,
     timeout_us: u32,
 ) SendDatagramError!u16 {
-    return sendDatagram(
+    return sendRecvDatagram(
         self,
         telegram.Command.BRW,
         @bitCast(address),
@@ -645,7 +656,7 @@ pub fn lrd(
     data: []u8,
     timeout_us: u32,
 ) SendDatagramError!u16 {
-    return sendDatagram(
+    return sendRecvDatagram(
         self,
         telegram.Command.LRD,
         @bitCast(address),
@@ -663,7 +674,7 @@ pub fn lwr(
     data: []u8,
     timeout_us: u32,
 ) SendDatagramError!u16 {
-    return sendDatagram(
+    return sendRecvDatagram(
         self,
         telegram.Command.LWR,
         @bitCast(address),
@@ -682,7 +693,7 @@ pub fn lrw(
     data: []u8,
     timeout_us: u32,
 ) SendDatagramError!u16 {
-    return sendDatagram(
+    return sendRecvDatagram(
         self,
         telegram.Command.LRW,
         @bitCast(address),
@@ -700,7 +711,7 @@ pub fn armw(
     data: []u8,
     timeout_us: u32,
 ) SendDatagramError!u16 {
-    return sendDatagram(
+    return sendRecvDatagram(
         self,
         telegram.Command.ARMW,
         @bitCast(address),
@@ -716,7 +727,7 @@ pub fn frmw(
     data: []u8,
     timeout_us: u32,
 ) SendDatagramError!u16 {
-    return sendDatagram(
+    return sendRecvDatagram(
         self,
         telegram.Command.FRMW,
         @bitCast(address),

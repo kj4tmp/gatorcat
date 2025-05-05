@@ -13,9 +13,10 @@ pub fn main() !void {
     var raw_socket = try gcat.nic.RawSocket.init("enx00e04c68191a");
     defer raw_socket.deinit();
     var port = gcat.Port.init(raw_socket.linkLayer(), .{});
+    defer port.deinit();
     try port.ping(10000);
 
-    const estimated_stack_usage = comptime gcat.MainDevice.estimateAllocSize(eni) + 8;
+    const estimated_stack_usage = 300000;
     var stack_memory: [estimated_stack_usage]u8 = undefined;
     var stack_fba = std.heap.FixedBufferAllocator.init(&stack_memory);
 
@@ -52,8 +53,6 @@ pub fn main() !void {
                 continue;
             },
             error.LinkError,
-            error.CurruptedFrame,
-            error.NoTransactionAvailable,
             => |err2| return err2,
         };
         if (diag.brd_status_wkc != eni.subdevices.len) return error.TopologyChanged;

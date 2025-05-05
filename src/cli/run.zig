@@ -26,6 +26,7 @@ pub const Args = struct {
     zenoh_log_level: ZenohLogLevel = .@"error",
     eni_file: ?[:0]const u8 = null,
     rt_prio: ?i32 = null,
+    verbose: bool = false,
 
     pub const ZenohLogLevel = enum { trace, debug, info, warn, @"error" };
 
@@ -43,6 +44,7 @@ pub const Args = struct {
         .zenoh_config_file = "Enable zenoh and use this file path for the zenoh configuration. Example: path/to/comfig.json5",
         .eni_file = "Path to ethercat nework information file (as ZON). See output of `gatorcat scan` for an example.",
         .rt_prio = "Set a real-time priority for this process. Does nothing on windows.",
+        .verbose = "Enable verbose logs.",
     };
 };
 
@@ -75,18 +77,14 @@ pub fn run(allocator: std.mem.Allocator, args: Args) RunError!void {
     var raw_socket = gcat.nic.RawSocket.init(args.ifname) catch return error.NonRecoverable;
     defer raw_socket.deinit();
     var port = gcat.Port.init(raw_socket.linkLayer(), .{});
+    defer port.deinit();
 
     bus_scan: while (true) {
         var ping_timer = std.time.Timer.start() catch @panic("Timer not supported");
         port.ping(args.recv_timeout_us) catch |err| switch (err) {
             error.LinkError => return error.NonRecoverable,
-            error.TransactionContention => unreachable, // nobody else is using the port right now
             error.RecvTimeout => {
                 std.log.err("Ping failed. No frame returned before the recv timeout. Is anything connected to the specified interface ({s})?", .{args.ifname});
-                return error.NonRecoverable;
-            },
-            error.CurruptedFrame => {
-                std.log.err("Ping failed. The ping frame returned modified by the bus. This should not happen. What are you connected to?", .{});
                 return error.NonRecoverable;
             },
         };
@@ -132,19 +130,15 @@ pub fn run(allocator: std.mem.Allocator, args: Args) RunError!void {
             });
             const num_subdevices = scanner.countSubdevices() catch |err| switch (err) {
                 error.LinkError => return error.NonRecoverable,
-                error.TransactionContention => unreachable,
                 error.RecvTimeout => continue :bus_scan,
-                error.CurruptedFrame => return error.NonRecoverable,
             };
             std.log.warn("Detected {} subdevices.", .{num_subdevices});
             scanner.busInit(args.init_timeout_us, num_subdevices) catch |err| switch (err) {
-                error.LinkError, error.CurruptedFrame => return error.NonRecoverable,
-                error.TransactionContention => unreachable,
+                error.LinkError => return error.NonRecoverable,
                 error.RecvTimeout, error.Wkc, error.StateChangeRefused, error.StateChangeTimeout => continue :bus_scan,
             };
             scanner.assignStationAddresses(num_subdevices) catch |err| switch (err) {
-                error.LinkError, error.CurruptedFrame => return error.NonRecoverable,
-                error.TransactionContention => unreachable,
+                error.LinkError => return error.NonRecoverable,
                 error.RecvTimeout, error.Wkc => continue :bus_scan,
             };
 
@@ -154,8 +148,6 @@ pub fn run(allocator: std.mem.Allocator, args: Args) RunError!void {
                 error.NoSpaceLeft,
                 error.OutOfMemory,
                 error.RecvTimeout,
-                error.CurruptedFrame,
-                error.TransactionContention,
                 error.Wkc,
                 error.StateChangeRefused,
                 error.StateChangeTimeout,
@@ -202,8 +194,7 @@ pub fn run(allocator: std.mem.Allocator, args: Args) RunError!void {
         defer md.deinit(allocator);
 
         md.busInit(args.init_timeout_us) catch |err| switch (err) {
-            error.LinkError, error.CurruptedFrame => return error.NonRecoverable,
-            error.TransactionContention => unreachable,
+            error.LinkError => return error.NonRecoverable,
             error.RecvTimeout,
             error.Wkc,
             error.StateChangeRefused,
@@ -233,7 +224,6 @@ pub fn run(allocator: std.mem.Allocator, args: Args) RunError!void {
 
         md.busPreop(args.preop_timeout_us) catch |err| switch (err) {
             error.LinkError,
-            error.CurruptedFrame,
             error.EndOfStream,
             error.InvalidSubdeviceEEPROM,
             error.InvalidSII,
@@ -245,7 +235,6 @@ pub fn run(allocator: std.mem.Allocator, args: Args) RunError!void {
             error.WrongProtocol,
             error.InvalidMbxContent,
             => return error.NonRecoverable,
-            error.TransactionContention => unreachable,
             error.Wkc,
             error.StateChangeRefused,
             error.Timeout,
@@ -265,7 +254,6 @@ pub fn run(allocator: std.mem.Allocator, args: Args) RunError!void {
             error.LinkError,
             error.Overflow,
             error.NoSpaceLeft,
-            error.CurruptedFrame,
             error.CoENotSupported,
             error.CoECompleteAccessNotSupported,
             error.UnexpectedSegment,
@@ -300,14 +288,10 @@ pub fn run(allocator: std.mem.Allocator, args: Args) RunError!void {
             error.WrongOutputsBitLength,
             => return error.NonRecoverable,
             // => continue :bus_scan,
-            error.TransactionContention,
-            error.NoTransactionAvailable,
-            => unreachable,
         };
 
         md.busOp(args.op_timeout_us) catch |err| switch (err) {
             error.LinkError,
-            error.CurruptedFrame,
             error.CoENotSupported,
             error.CoECompleteAccessNotSupported,
             error.NotImplemented,
@@ -324,14 +308,13 @@ pub fn run(allocator: std.mem.Allocator, args: Args) RunError!void {
             error.MbxOutFull,
             error.InvalidMbxContent,
             error.MbxTimeout,
-            error.NoTransactionAvailable, // WTF is this?
             => continue :bus_scan,
-            error.TransactionContention => unreachable,
         };
 
         var print_timer = std.time.Timer.start() catch @panic("Timer unsupported");
         var cycle_count: u32 = 0;
         var recv_timeouts: u32 = 0;
+        std.log.info("Beginning operation at cycle time: {} us.", .{cycle_time_us});
         while (true) {
 
             // exchange process data
@@ -346,11 +329,7 @@ pub fn run(allocator: std.mem.Allocator, args: Args) RunError!void {
                         recv_timeouts += 1;
                         if (recv_timeouts > args.max_recv_timeouts_before_rescan) continue :bus_scan;
                     },
-                    error.LinkError,
-                    error.CurruptedFrame,
-                    => return error.NonRecoverable,
-                    error.NoTransactionAvailable,
-                    => unreachable,
+                    error.LinkError => return error.NonRecoverable,
                     error.NotAllSubdevicesInOP,
                     error.TopologyChanged,
                     error.Wkc,
@@ -367,7 +346,9 @@ pub fn run(allocator: std.mem.Allocator, args: Args) RunError!void {
 
             if (print_timer.read() > std.time.ns_per_s * 1) {
                 print_timer.reset();
-                std.log.info("cycles/s: {}", .{cycle_count});
+                if (args.verbose) {
+                    std.log.info("cycles/s: {}", .{cycle_count});
+                }
                 cycle_count = 0;
             }
             gcat.sleepUntilNextCycle(md.first_cycle_time.?, cycle_time_us);

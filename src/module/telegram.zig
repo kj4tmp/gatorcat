@@ -108,7 +108,7 @@ pub const LogicalAddress = u32;
 /// Ref: IEC 61158-4-12:2019 5.4.1.2
 pub const Datagram = struct {
     header: Header,
-    data: []const u8,
+    data: []u8,
     /// Working counter.
     /// The working counter is incremented if an EtherCAT device was successfully addressed
     /// and a read operation, a write operation or a read/write operation was executed successfully.
@@ -235,7 +235,7 @@ pub const EtherCATFrame = struct {
 
     const Datagrams = std.BoundedArray(Datagram, max_datagrams);
 
-    pub fn datagrams(self: *const EtherCATFrame) Datagrams {
+    pub fn datagrams(self: *EtherCATFrame) Datagrams {
         var dgrams = Datagrams{};
 
         for (self.portable_datagrams.slice()) |portable_datagram| {
@@ -378,7 +378,7 @@ pub const EthernetFrame = struct {
     /// Returns number of bytes written, or error.
     ///
     /// If idx is provided, it will be injected into the first datagram.
-    pub fn serialize(self: *const EthernetFrame, maybe_idx: ?u8, out: []u8) !usize {
+    pub fn serialize(self: *EthernetFrame, maybe_idx: ?u8, out: []u8) !usize {
         var fbs = std.io.fixedBufferStream(out);
         const writer = fbs.writer();
         try writer.writeInt(u48, self.header.dest_mac, big);

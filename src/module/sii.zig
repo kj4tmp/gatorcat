@@ -882,9 +882,7 @@ pub fn readSII4ByteFP(
         recv_timeout_us,
         1,
     ) catch |err| switch (err) {
-        error.TransactionContention => return error.Timeout,
         error.RecvTimeout => return error.Timeout,
-        error.CurruptedFrame => return error.Timeout,
         error.Wkc => return error.Timeout,
         error.LinkError => return error.LinkError,
     };
@@ -900,8 +898,6 @@ pub fn readSII4ByteFP(
         1,
     ) catch |err| switch (err) {
         error.LinkError => return error.LinkError,
-        error.TransactionContention => return error.Timeout,
-        error.CurruptedFrame => return error.Timeout,
         error.RecvTimeout => return error.Timeout,
         error.Wkc => return error.Timeout,
     };
@@ -930,8 +926,6 @@ pub fn readSII4ByteFP(
         1,
     ) catch |err| switch (err) {
         error.LinkError => return error.LinkError,
-        error.TransactionContention => return error.Timeout,
-        error.CurruptedFrame => return error.Timeout,
         error.RecvTimeout => return error.Timeout,
         error.Wkc => return error.Timeout,
     };
@@ -953,8 +947,6 @@ pub fn readSII4ByteFP(
             1,
         ) catch |err| switch (err) {
             error.LinkError => return error.LinkError,
-            error.TransactionContention => return error.Timeout,
-            error.CurruptedFrame => return error.Timeout,
             error.RecvTimeout => return error.Timeout,
             error.Wkc => return error.Timeout,
         };
@@ -986,8 +978,6 @@ pub fn readSII4ByteFP(
         1,
     ) catch |err| switch (err) {
         error.LinkError => return error.LinkError,
-        error.TransactionContention => return error.Timeout,
-        error.CurruptedFrame => return error.Timeout,
         error.RecvTimeout => return error.Timeout,
         error.Wkc => return error.Timeout,
     };

@@ -26,6 +26,7 @@ pub fn benchmark(args: Args) !void {
     defer raw_socket.deinit();
 
     var port = gcat.Port.init(raw_socket.linkLayer(), .{});
+    defer port.deinit();
     try port.ping(args.recv_timeout_us);
     var writer = std.io.getStdOut().writer();
     if (builtin.os.tag == .linux) {

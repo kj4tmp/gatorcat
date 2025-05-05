@@ -11,6 +11,7 @@ pub fn main() !void {
     var raw_socket = try gcat.nic.RawSocket.init("enx00e04c68191a");
     defer raw_socket.deinit();
     var port = gcat.Port.init(raw_socket.linkLayer(), .{});
+    defer port.deinit();
     try port.ping(10000);
 
     var scanner = gcat.Scanner.init(&port, .{});

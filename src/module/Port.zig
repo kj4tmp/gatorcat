@@ -1,3 +1,23 @@
+//! The port is a thread-safe interface for interacting with an ethernet port.
+//! The port performs transactions (ethercat datagrams).
+//! A transaction is a single ethercat datagram that travels in the ethercat ring.
+//! It is sent, travels through the network (potentially modified by the subdevices), and is received.
+//!
+//! Callers are expected to follow the life cycle of a transaction:
+//!
+//! 1. `sendTransaction()`: immediately send a transaction, using a full ethernet frame. Callers may use sendTransactions() to allow multiple transactions to be packed into individual ethernet frames (recommended).
+//! 2. `continueTransaction()`: callers must call this repeatedly until the transaction is received.
+//! 3. `releaseTransaction()`: callers must call this if sendTransaction() is successful.
+//!
+//! This interface is necessary because frames (and thus transactions) may be returned out of order
+//! by the ethernet interface. So the port must have access to the full list of transactions that are currently
+//! pending.
+//!
+//! The `continueTransaction()` concept also allows single-threaded operation without an event loop.
+//!
+//! Multiple callers are expected to cooperate to provide uniquely identifiable frames, through the datagram header
+//! idx field or other means. See compareDatagramIdentity() for how frame identity is determined. If multiple transactions are pending with the same identity, a single datagram will be applied to all of them.
+
 const std = @import("std");
 const assert = std.debug.assert;
 
@@ -75,7 +95,7 @@ pub fn sendTransactions(self: *Port, transactions: []Transaction) error{LinkErro
 
 /// Send a transaction with the ethercat bus.
 /// Caller owns responsibilty to release transaction after successful return from this function.
-/// Callers must take care to provide uniquely identifiable frames, through idx or other means.
+/// Callers must take care to provide uniquely identifiable transactions, through idx or other means.
 /// See fn compareDatagramIdentity.
 pub fn sendTransaction(self: *Port, transaction: *Transaction) error{LinkError}!void {
     assert(transaction.data.done == false); // forget to release transaction?
@@ -110,15 +130,9 @@ pub fn sendTransaction(self: *Port, transaction: *Transaction) error{LinkError}!
     _ = self.link_layer.send(out) catch return error.LinkError;
 }
 
-/// fetch a frame by receiving bytes
-///
-/// returns immediatly
-///
-/// call using idx from claim transaction and used by begin transaction
-///
-/// Returns false if return frame was not found (call again to try to recieve it).
-///
-/// Returns true when frame has been deserialized successfully.
+/// Returns true when transaction is done.
+/// Early returns when transaction is already done, without performing a recv.
+/// If transaction is not already done, performs recv, which may recv any pending transaction.
 pub fn continueTransaction(self: *Port, transaction: *Transaction) error{LinkError}!bool {
     if (self.isDone(transaction)) return true;
     self.recvFrame() catch |err| switch (err) {

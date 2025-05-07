@@ -117,31 +117,63 @@ pub const Subdevice = struct {
     }
 
     pub fn processFrame(self: *Subdevice, frame: *Simulator.Frame) void {
-        _ = self;
         var ethernet_frame = telegram.EthernetFrame.deserialize(frame.slice()) catch return;
-
-        const datagrams: []telegram.EtherCATFrame.PortableDatagram = ethernet_frame.ethercat_frame.portable_datagrams.slice();
-        for (datagrams) |*datagram| {
+        var datagrams = ethernet_frame.ethercat_frame.datagrams();
+        const datagrams_slice: []telegram.Datagram = datagrams.slice();
+        skip_datagram: for (datagrams_slice) |*datagram| {
             // TODO: operate if address zero
-
             // increment address field
             switch (datagram.header.command) {
                 .NOP => {}, // no operation
                 .BRD => {
-                    // validate address
+                    if (!validOffsetLen(
+                        datagram.header.address.position.offset,
+                        datagram.header.length,
+                    )) {
+                        continue :skip_datagram;
+                    }
+                    assert(datagram.data.len == datagram.header.length);
+                    const start_addr = @as(usize, datagram.header.address.position.offset);
+                    const end_exclusive: usize = start_addr + datagram.header.length;
 
-                    // perform bit-wise or
-
-                    // increment wkc
+                    const read_region = self.physical_memory[start_addr..end_exclusive];
+                    for (datagram.data, read_region) |*dest, source| {
+                        dest.* |= source;
+                    }
+                    datagram.wkc +%= 1;
                 },
+                .BWR => {
+                    if (!validOffsetLen(
+                        datagram.header.address.position.offset,
+                        datagram.header.length,
+                    )) {
+                        continue :skip_datagram;
+                    }
+                    assert(datagram.data.len == datagram.header.length);
+                    const start_addr = @as(usize, datagram.header.address.position.offset);
+                    const end_exclusive: usize = start_addr + datagram.header.length;
+
+                    const write_region = self.physical_memory[start_addr..end_exclusive];
+                    for (datagram.data, write_region) |source, *dest| {
+                        dest.* = source;
+                    }
+                    datagram.wkc +%= 1;
+                },
+
                 else => {}, // TODO
             }
         }
         var new_frame = Simulator.Frame{};
         new_frame.len = frame.len;
-        const num_written = ethernet_frame.serialize(null, new_frame.slice()) catch unreachable;
+        var new_eth_frame = telegram.EthernetFrame.init(ethernet_frame.header, telegram.EtherCATFrame.init(datagrams_slice) catch unreachable);
+        const num_written = new_eth_frame.serialize(null, new_frame.slice()) catch unreachable;
         assert(num_written == frame.len);
         frame.* = new_frame;
+    }
+
+    pub fn validOffsetLen(offset: u16, len: u11) bool {
+        const end: u16, const overflowed = @addWithOverflow(offset, len);
+        return (overflowed == 0 and end <= 4095);
     }
 };
 

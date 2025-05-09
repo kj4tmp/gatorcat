@@ -56,3 +56,12 @@ See [doc](doc/README.md).
 ![GitHub Sponsors](https://img.shields.io/github/sponsors/kj4tmp)
 
 Please consider [❤️ Sponsoring](https://github.com/sponsors/kj4tmp) if you depend on this project or just want to see it succeed.
+
+## Release Procedure
+
+1. roll version in build.zig.zon
+2. commit
+3. tag commit
+4. push commit, push tags
+5. wait for CI pass
+6. click release in github

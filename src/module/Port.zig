@@ -46,6 +46,7 @@ pub const TransactionDatagram = struct {
     recv_datagram: telegram.Datagram,
     done: bool = false,
     check_wkc: ?u16 = null,
+    released: bool = true,
 
     /// The datagram to send is send_datagram.
     /// If recv_region is provided, the returned datagram.data payload will be placed there.
@@ -82,7 +83,7 @@ pub fn deinit(self: *Port) void {
     assert(self.transactions.len == 0); // leaked transaction;
 }
 
-/// Caller owns responsibilty to release transaction after successful return from this function.
+/// Caller owns responsibilty to release transactions after successful return from this function.
 pub fn sendTransactions(self: *Port, transactions: []Transaction) error{LinkError}!void {
     // TODO: optimize to pack frames
     var n_sent: usize = 0;
@@ -97,8 +98,9 @@ pub fn sendTransactions(self: *Port, transactions: []Transaction) error{LinkErro
 /// Caller owns responsibilty to release transaction after successful return from this function.
 /// Callers must take care to provide uniquely identifiable transactions, through idx or other means.
 /// See fn compareDatagramIdentity.
-pub fn sendTransaction(self: *Port, transaction: *Transaction) error{LinkError}!void {
+fn sendTransaction(self: *Port, transaction: *Transaction) error{LinkError}!void {
     assert(transaction.data.done == false); // forget to release transaction?
+    assert(transaction.data.released == true);
     assert(transaction.data.send_datagram.data.len == transaction.data.recv_datagram.data.len);
     // one datagram will always fit
     const ethercat_frame = telegram.EtherCATFrame.init(&.{transaction.data.send_datagram}) catch unreachable;
@@ -124,8 +126,9 @@ pub fn sendTransaction(self: *Port, transaction: *Transaction) error{LinkError}!
         self.transactions_mutex.lock();
         defer self.transactions_mutex.unlock();
         self.transactions.append(transaction);
+        transaction.data.released = false;
     }
-    errdefer self.releaseTransaction(transaction);
+    errdefer self.releaseTransactions(transaction[0..1]);
     // TODO: handle partial send error
     _ = self.link_layer.send(out) catch return error.LinkError;
 }
@@ -133,21 +136,25 @@ pub fn sendTransaction(self: *Port, transaction: *Transaction) error{LinkError}!
 /// Returns true when transaction is done.
 /// Early returns when transaction is already done, without performing a recv.
 /// If transaction is not already done, performs recv, which may recv any pending transaction.
-pub fn continueTransaction(self: *Port, transaction: *Transaction) error{LinkError}!bool {
-    if (self.isDone(transaction)) return true;
+pub fn continueTransactions(self: *Port, transactions: []Transaction) error{LinkError}!bool {
+    if (self.done(transactions)) return true;
     self.recvFrame() catch |err| switch (err) {
         error.LinkError => {
             return error.LinkError;
         },
         error.InvalidFrame => {},
     };
-    return self.isDone(transaction);
+    return self.done(transactions);
 }
 
-fn isDone(self: *Port, transaction: *Transaction) bool {
+/// Returns true when all transactions are done, else false.
+fn done(self: *Port, transactions: []Transaction) bool {
     self.transactions_mutex.lock();
     defer self.transactions_mutex.unlock();
-    return transaction.data.done;
+    for (transactions) |transaction| {
+        if (transaction.data.done) continue else return false;
+    }
+    return true;
 }
 
 fn recvFrame(self: *Port) !void {
@@ -184,6 +191,8 @@ fn findPutDatagramLocked(self: *Port, datagram: telegram.Datagram) void {
     while (current) |node| : (current = node.next) {
         if (node.data.done) continue;
         if (compareDatagramIdentity(datagram, node.data.send_datagram)) {
+            defer self.transactions.remove(node);
+            defer node.data.released = true;
             defer node.data.done = true;
             node.data.recv_datagram.header = datagram.header;
             node.data.recv_datagram.wkc = datagram.wkc;
@@ -246,16 +255,12 @@ pub fn releaseTransactions(self: *Port, transactions: []Transaction) void {
     self.transactions_mutex.lock();
     defer self.transactions_mutex.unlock();
     for (transactions) |*transaction| {
-        self.transactions.remove(transaction);
-        transaction.data.done = false; // TODO: reevaluate if this makes sense
+        if (!transaction.data.released) {
+            self.transactions.remove(transaction);
+            transaction.data.released = true;
+        }
+        assert(transaction.data.released == true);
     }
-}
-
-pub fn releaseTransaction(self: *Port, transaction: *Transaction) void {
-    self.transactions_mutex.lock();
-    defer self.transactions_mutex.unlock();
-    self.transactions.remove(transaction);
-    transaction.data.done = false; // TODO: reevaluate if this makes sense
 }
 
 /// send and recv a no-op to quickly check if port works and are connected
@@ -280,11 +285,11 @@ pub fn sendRecvDatagram(
     const datagram: telegram.Datagram = .init(command, address, false, data);
     var transaction: Transaction = .{ .data = .init(datagram, null, null) };
 
-    try self.sendTransaction(&transaction);
-    defer self.releaseTransaction(&transaction);
+    try self.sendTransactions((&transaction)[0..1]);
+    defer self.releaseTransactions((&transaction)[0..1]);
 
     while (timer.read() < @as(u64, timeout_us) * 1000) {
-        if (try self.continueTransaction(&transaction)) {
+        if (try self.continueTransactions((&transaction)[0..1])) {
             break;
         }
     } else {

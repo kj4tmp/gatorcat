@@ -25,8 +25,10 @@ first_cycle_time: ?std.time.Instant = null,
 
 pub const Transactions = struct {
     state_check_res: *[wire.packedSize(esc.ALStatusRegister)]u8,
-    state_check: *Port.Transaction,
-    process_data: []Port.Transaction,
+    /// 0: state_check
+    /// 1..: process data
+    all: []Port.Transaction,
+    idx: u8,
 };
 
 pub const Settings = struct {
@@ -45,22 +47,20 @@ pub fn init(
     errdefer allocator.free(process_image);
     @memset(process_image, 0);
 
-    const n_process_data_datagrams = std.math.divCeil(
+    const n_datagrams = 1 + (std.math.divCeil(
         u32,
         eni.processImageSize(),
         telegram.Datagram.max_data_length,
-    ) catch unreachable; // TODO: is this actually unreachable?
-    const process_data_transactions = try allocator.alloc(Port.Transaction, n_process_data_datagrams);
-    errdefer allocator.free(process_data_transactions);
-    initProcessDataTransactions(process_data_transactions, process_image);
+    ) catch unreachable); // TODO: is this actually unreachable?
+    const transactions = try allocator.alloc(Port.Transaction, n_datagrams);
+    errdefer allocator.free(transactions);
+    initProcessDataTransactions(transactions[1..], process_image);
 
     const state_check_result = try allocator.create([wire.packedSize(esc.ALStatusRegister)]u8);
     errdefer allocator.destroy(state_check_result);
     @memset(state_check_result.*[0..], 0);
 
-    const state_check_transaction = try allocator.create(Port.Transaction);
-    errdefer allocator.destroy(state_check_transaction);
-    state_check_transaction.* = .{
+    transactions[0] = .{
         .data = .init(
             telegram.Datagram.init(
                 .BRD,
@@ -86,9 +86,9 @@ pub fn init(
         .subdevices = subdevices,
         .process_image = process_image,
         .transactions = .{
-            .state_check = state_check_transaction,
             .state_check_res = state_check_result,
-            .process_data = process_data_transactions,
+            .all = transactions,
+            .idx = 0,
         },
     };
 }
@@ -114,10 +114,10 @@ fn initProcessDataTransactions(transactions: []Port.Transaction, process_image: 
 }
 
 pub fn deinit(self: *MainDevice, allocator: std.mem.Allocator) void {
+    self.port.releaseTransactions(self.transactions.all);
     allocator.free(self.process_image);
     allocator.free(self.subdevices);
-    allocator.free(self.transactions.process_data);
-    allocator.destroy(self.transactions.state_check);
+    allocator.free(self.transactions.all);
     allocator.destroy(self.transactions.state_check_res);
 }
 
@@ -410,6 +410,7 @@ pub const CyclicError = error{
     Wkc,
 };
 
+/// Send and attempt to receive cyclic frames, blocking up to the recv timeout.
 pub fn sendRecvCyclicFrames(self: *MainDevice) CyclicError!void {
     const result = try self.sendRecvCyclicFramesDiag();
     if (result.brd_status_wkc != self.subdevices.len) return error.TopologyChanged;
@@ -417,26 +418,32 @@ pub fn sendRecvCyclicFrames(self: *MainDevice) CyclicError!void {
     if (result.process_data_wkc != self.expectedProcessDataWkc()) return error.Wkc;
 }
 
+/// Send and attempt to receive cyclic frames, blocking up to the recv timeout.
+/// Returnes addtional diagnostic information instead of error codes.
 pub fn sendRecvCyclicFramesDiag(self: *MainDevice) error{ LinkError, RecvTimeout }!CyclicResult {
     try self.sendCyclicFrames();
-    defer self.port.releaseTransaction(self.transactions.state_check);
-    defer self.port.releaseTransactions(self.transactions.process_data);
     var timer = std.time.Timer.start() catch @panic("timer not supported");
     while (timer.read() < @as(u64, self.settings.recv_timeout_us) * std.time.ns_per_us) {
-        if (try self.continueAllTransactionsOnce()) break;
+        return self.recvCyclicFrames() catch |err| switch (err) {
+            error.RecvTimeout => continue,
+            error.LinkError => return error.LinkError,
+        };
     } else {
         return error.RecvTimeout;
     }
-    return self.resultFromTransactions();
 }
 
+/// Send the cyclic frames (after OP is obtained).
 pub fn sendCyclicFrames(self: *MainDevice) error{LinkError}!void {
     @memset(self.transactions.state_check_res.*[0..], 0); // TODO: figure out how to get rid of this
-    try self.port.sendTransaction(self.transactions.state_check);
-    errdefer self.port.releaseTransaction(self.transactions.state_check);
-    try self.port.sendTransactions(self.transactions.process_data);
-    errdefer self.port.releaseTransactions(self.transactions.process_data);
-
+    self.port.releaseTransactions(self.transactions.all);
+    self.transactions.idx +%= 1;
+    for (self.transactions.all) |*transaction| {
+        transaction.data.send_datagram.header.idx = self.transactions.idx;
+        transaction.data.done = false;
+    }
+    try self.port.sendTransactions(self.transactions.all);
+    errdefer comptime unreachable; // release transactions
     if (self.first_cycle_time == null) {
         self.first_cycle_time = std.time.Instant.now() catch @panic("Timer unsupported.");
     }
@@ -448,34 +455,31 @@ pub const CyclicResult = struct {
     process_data_wkc: u16,
 };
 
-// Call when you know all frames should be back.
-// Discards unreceieved frames.
+/// Receive the cyclic frames (after OP is obtained).
+/// Non-blocking.
+/// You may call this more than once.
 pub fn recvCyclicFrames(self: *MainDevice) error{ RecvTimeout, LinkError }!CyclicResult {
-    defer self.port.releaseTransaction(self.transactions.state_check);
-    defer self.port.releaseTransactions(self.transactions.process_data);
-
-    // call continue transaction on each transaction at least once
-    // to allow them all to deserialize
-    _ = try self.continueAllTransactionsOnce();
-    // call continue again but require them all to be done
-    if (!(try self.continueAllTransactionsOnce())) return error.RecvTimeout;
-
+    for (0..self.transactions.all.len) |_| {
+        const done = try self.port.continueTransactions(self.transactions.all);
+        if (done) break;
+    } else {
+        return error.RecvTimeout;
+    }
     return self.resultFromTransactions();
 }
 
 fn resultFromTransactions(self: *MainDevice) CyclicResult {
-    assert(self.transactions.state_check.data.done);
-    for (self.transactions.process_data) |*transaction| {
+    for (self.transactions.all) |transaction| {
         assert(transaction.data.done);
     }
 
     // TODO: use individual datagram WKC's
     var process_data_wkc: u16 = 0;
-    for (self.transactions.process_data) |*transaction| {
+    for (self.transactions.all[1..]) |*transaction| {
         process_data_wkc +%= transaction.data.recv_datagram.wkc;
     }
 
-    const brd_status_wkc = self.transactions.state_check.data.recv_datagram.wkc;
+    const brd_status_wkc = self.transactions.all[0].data.recv_datagram.wkc;
     const al_status = wire.packFromECat(
         esc.ALStatusRegister,
         self.transactions.state_check_res.*,
@@ -486,17 +490,6 @@ fn resultFromTransactions(self: *MainDevice) CyclicResult {
         .brd_status_wkc = brd_status_wkc,
         .process_data_wkc = process_data_wkc,
     };
-}
-
-// Calls continue transaction for each transaction once.
-// Returns true if all transactions are done.
-fn continueAllTransactionsOnce(self: *MainDevice) !bool {
-    var all_done: u1 = 1;
-    all_done &= @intFromBool(try self.port.continueTransaction(self.transactions.state_check));
-    for (self.transactions.process_data) |*transaction| {
-        all_done &= @intFromBool(try self.port.continueTransaction(transaction));
-    }
-    return all_done == 1;
 }
 
 pub fn broadcastStateChange(self: *MainDevice, state: esc.ALStateControl, change_timeout_us: u32) !void {

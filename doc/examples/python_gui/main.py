@@ -20,6 +20,9 @@ def subscribe_in_background():
             last_print_time = time.perf_counter_ns()
             print(f"last print time: {last_print_time}")
             for sample in sub:
+                if sample.encoding != zenoh.Encoding.APPLICATION_CBOR:
+                    print(f"wrong encoding: {sample.encoding}")
+                    continue
                 if sample.kind == zenoh.SampleKind.DELETE:
                     channels.pop(str(sample.key_expr), None)
                 elif sample.kind == zenoh.SampleKind.PUT:

@@ -875,6 +875,9 @@ pub const ZenohHandler = struct {
     fn publishAssumeKey(self: *ZenohHandler, key: [:0]const u8, payload: []const u8) !void {
         var options: zenoh.c.z_publisher_put_options_t = undefined;
         zenoh.c.z_publisher_put_options_default(&options);
+        var encoding: zenoh.c.z_owned_encoding_t = undefined;
+        zenoh.c.z_encoding_clone(&encoding, zenoh.c.z_encoding_application_cbor());
+        options.encoding = zenoh.move(&encoding);
         var bytes: zenoh.c.z_owned_bytes_t = undefined;
         const result_copy = zenoh.c.z_bytes_copy_from_buf(&bytes, payload.ptr, payload.len);
         try zenoh.err(result_copy);

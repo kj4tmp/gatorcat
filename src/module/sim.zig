@@ -141,6 +141,9 @@ pub const Subdevice = struct {
                         dest.* |= source;
                     }
                     datagram.wkc +%= 1;
+                    // subdevice shall increment the address
+                    // Ref: IEC 61158-3-12:2019 5.2.4
+                    datagram.header.address.position.autoinc_address +%= 1;
                 },
                 .BWR => {
                     if (!validOffsetLen(

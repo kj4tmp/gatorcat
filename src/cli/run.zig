@@ -25,6 +25,7 @@ pub const Args = struct {
     zenoh_config_file: ?[:0]const u8 = null,
     zenoh_log_level: ZenohLogLevel = .@"error",
     eni_file: ?[:0]const u8 = null,
+    eni_file_json: ?[:0]const u8 = null,
     rt_prio: ?i32 = null,
     verbose: bool = false,
 
@@ -43,6 +44,7 @@ pub const Args = struct {
         .zenoh_config_default = "Enable zenoh and use the default zenoh configuration.",
         .zenoh_config_file = "Enable zenoh and use this file path for the zenoh configuration. Example: path/to/comfig.json5",
         .eni_file = "Path to ethercat nework information file (as ZON). See output of `gatorcat scan` for an example.",
+        .eni_file_json = "Same as --eni-file but as JSON.",
         .rt_prio = "Set a real-time priority for this process. Does nothing on windows.",
         .verbose = "Enable verbose logs.",
     };
@@ -54,6 +56,10 @@ pub const RunError = error{
 };
 
 pub fn run(allocator: std.mem.Allocator, args: Args) RunError!void {
+    if (args.eni_file_json != null and args.eni_file != null) {
+        std.log.err("only one of --eni-file and --eni-file-json is allowed", .{});
+        return error.NonRecoverable;
+    }
     if (builtin.os.tag == .linux) {
         if (args.rt_prio) |rt_prio| {
             // using pid = 0 means this process will have the scheduler set.
@@ -119,6 +125,11 @@ pub fn run(allocator: std.mem.Allocator, args: Args) RunError!void {
         const eni = blk: {
             if (args.eni_file) |eni_file_path| {
                 const eni = gcat.ENI.fromFile(allocator, eni_file_path, 1e9) catch return error.NonRecoverable;
+                std.log.warn("Loaded ENI: {s}", .{eni_file_path});
+                break :blk eni;
+            }
+            if (args.eni_file_json) |eni_file_path| {
+                const eni = gcat.ENI.fromFileJson(allocator, eni_file_path, 1e9) catch return error.NonRecoverable;
                 std.log.warn("Loaded ENI: {s}", .{eni_file_path});
                 break :blk eni;
             }

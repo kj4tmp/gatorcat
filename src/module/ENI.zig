@@ -506,3 +506,20 @@ pub fn fromFile(allocator: std.mem.Allocator, file_path: []const u8, max_bytes: 
     const eni = try std.zon.parse.fromSlice(gcat.ENI, arena.allocator(), eni_bytes, null, .{});
     return gcat.Arena(ENI){ .arena = arena, .value = eni };
 }
+
+pub fn fromFileJson(allocator: std.mem.Allocator, file_path: []const u8, max_bytes: usize) !gcat.Arena(ENI) {
+    const arena = try allocator.create(std.heap.ArenaAllocator);
+    errdefer allocator.destroy(arena);
+    arena.* = .init(allocator);
+    errdefer arena.deinit();
+    const eni_bytes = try std.fs.cwd().readFileAllocOptions(
+        arena.allocator(),
+        file_path,
+        max_bytes,
+        null,
+        1,
+        0,
+    );
+    const eni = try std.json.parseFromSliceLeaky(gcat.ENI, arena.allocator(), eni_bytes, .{});
+    return gcat.Arena(ENI){ .arena = arena, .value = eni };
+}

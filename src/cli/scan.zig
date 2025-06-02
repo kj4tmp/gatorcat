@@ -13,6 +13,7 @@ pub const Args = struct {
     mbx_timeout_us: u32 = 50_000,
     json: bool = false,
     sim: bool = false,
+    pv_name_prefix: ?[]const u8,
     pub const descriptions = .{
         .ifname = "Network interface to use for the bus scan.",
         .recv_timeout_us = "Frame receive timeout in microseconds.",
@@ -21,6 +22,7 @@ pub const Args = struct {
         .ring_position = "Optionally specify only a single subdevice at this ring position to be scanned.",
         .json = "Export the ENI as JSON instead of ZON.",
         .sim = "Also scan information required for simulation.",
+        .pv_name_prefix = "Add a prefix to process variable names, if desired. (separated by /)",
     };
 };
 
@@ -41,7 +43,7 @@ pub fn scan(allocator: std.mem.Allocator, args: Args) !void {
     try scanner.assignStationAddresses(num_subdevices);
 
     if (args.ring_position) |ring_position| {
-        const subdevice_eni = try scanner.readSubdeviceConfiguration(allocator, ring_position, args.PREOP_timeout_us, args.sim);
+        const subdevice_eni = try scanner.readSubdeviceConfiguration(allocator, ring_position, args.PREOP_timeout_us, args.sim, args.pv_name_prefix);
         defer subdevice_eni.deinit();
         var std_out = std.io.getStdOut();
 
@@ -53,7 +55,7 @@ pub fn scan(allocator: std.mem.Allocator, args: Args) !void {
             try std_out.writer().writeByte('\n');
         }
     } else {
-        const eni = try scanner.readEni(allocator, args.PREOP_timeout_us, args.sim);
+        const eni = try scanner.readEni(allocator, args.PREOP_timeout_us, args.sim, args.pv_name_prefix);
         defer eni.deinit();
 
         var std_out = std.io.getStdOut();

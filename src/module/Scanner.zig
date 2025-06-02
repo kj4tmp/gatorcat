@@ -240,6 +240,7 @@ pub fn readEni(
     /// Read information for simulator.
     /// Not required unless you are running the simulator.
     sim: bool,
+    pv_name_prefix: ?[]const u8,
 ) !gcat.Arena(ENI) {
     const arena = try allocator.create(std.heap.ArenaAllocator);
     errdefer allocator.destroy(arena);
@@ -251,6 +252,7 @@ pub fn readEni(
             arena.allocator(),
             state_change_timeout_us,
             sim,
+            pv_name_prefix,
         ),
     };
 }
@@ -261,12 +263,19 @@ pub fn readEniLeaky(
     allocator: std.mem.Allocator,
     state_change_timeout_us: u32,
     sim: bool,
+    pv_name_prefix: ?[]const u8,
 ) !ENI {
     var subdevice_configs = std.ArrayList(gcat.ENI.SubdeviceConfiguration).init(allocator);
     defer subdevice_configs.deinit();
     const num_subdevices = try self.countSubdevices();
     for (0..num_subdevices) |i| {
-        const config = try self.readSubdeviceConfigurationLeaky(allocator, @intCast(i), state_change_timeout_us, sim);
+        const config = try self.readSubdeviceConfigurationLeaky(
+            allocator,
+            @intCast(i),
+            state_change_timeout_us,
+            sim,
+            pv_name_prefix,
+        );
         try subdevice_configs.append(config);
     }
     return gcat.ENI{ .subdevices = try subdevice_configs.toOwnedSlice() };
@@ -278,6 +287,7 @@ pub fn readSubdeviceConfiguration(
     ring_position: u16,
     state_change_timeout_us: u32,
     sim: bool,
+    pv_name_prefix: ?[]const u8,
 ) !gcat.Arena(ENI.SubdeviceConfiguration) {
     const arena = try allocator.create(std.heap.ArenaAllocator);
     errdefer allocator.destroy(arena);
@@ -290,6 +300,7 @@ pub fn readSubdeviceConfiguration(
             ring_position,
             state_change_timeout_us,
             sim,
+            pv_name_prefix,
         ),
     };
 }
@@ -302,6 +313,7 @@ pub fn readSubdeviceConfigurationLeaky(
     ring_position: u16,
     state_change_timeout_us: u32,
     sim: bool,
+    pv_name_prefix: ?[]const u8,
 ) !ENI.SubdeviceConfiguration {
     const station_address = Subdevice.stationAddressFromRingPos(ring_position);
     const info = try sii.readSIIFP_ps(
@@ -453,6 +465,7 @@ pub fn readSubdeviceConfigurationLeaky(
                                 name,
                                 try allocator.dupeZ(u8, object_description.name.slice()),
                                 try allocator.dupeZ(u8, entry_description.data.slice()),
+                                pv_name_prefix,
                             );
                         }
                         try entries.append(ENI.SubdeviceConfiguration.PDO.Entry{
@@ -548,6 +561,7 @@ pub fn readSubdeviceConfigurationLeaky(
                             name,
                             pdo_name orelse "",
                             entry_name orelse "",
+                            pv_name_prefix,
                         );
                     }
 
@@ -642,17 +656,32 @@ pub fn processVariableNameZ(
     subdevice_name: []const u8,
     pdo_name: []const u8,
     entry_description: []const u8,
-) error{OutOfMemory}![:0]u8 {
+    maybe_prefix: ?[]const u8,
+) error{OutOfMemory}![:0]const u8 {
     const direction_str: []const u8 = if (direction == .input) "inputs" else "outputs";
-    const name = try std.fmt.allocPrintZ(allocator, "subdevices/{}/{s}/{s}/0x{x:04}/{s}/0x{x:02}/{s}", .{
-        ring_position,
-        zenohSanitize(try allocator.dupe(u8, subdevice_name)),
-        direction_str,
-        pdo_idx,
-        zenohSanitize(try allocator.dupe(u8, pdo_name)),
-        entry_idx,
-        zenohSanitize(try allocator.dupe(u8, entry_description)),
-    });
+    var name: [:0]const u8 = undefined;
+    if (maybe_prefix) |prefix| {
+        name = try std.fmt.allocPrintZ(allocator, "{s}/subdevices/{}/{s}/{s}/0x{x:04}/{s}/0x{x:02}/{s}", .{
+            prefix,
+            ring_position,
+            zenohSanitize(try allocator.dupe(u8, subdevice_name)),
+            direction_str,
+            pdo_idx,
+            zenohSanitize(try allocator.dupe(u8, pdo_name)),
+            entry_idx,
+            zenohSanitize(try allocator.dupe(u8, entry_description)),
+        });
+    } else {
+        name = try std.fmt.allocPrintZ(allocator, "subdevices/{}/{s}/{s}/0x{x:04}/{s}/0x{x:02}/{s}", .{
+            ring_position,
+            zenohSanitize(try allocator.dupe(u8, subdevice_name)),
+            direction_str,
+            pdo_idx,
+            zenohSanitize(try allocator.dupe(u8, pdo_name)),
+            entry_idx,
+            zenohSanitize(try allocator.dupe(u8, entry_description)),
+        });
+    }
 
     return name;
 }

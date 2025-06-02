@@ -28,6 +28,7 @@ pub const Args = struct {
     eni_file_json: ?[:0]const u8 = null,
     rt_prio: ?i32 = null,
     verbose: bool = false,
+    pv_name_prefix: ?[]const u8,
 
     pub const ZenohLogLevel = enum { trace, debug, info, warn, @"error" };
 
@@ -47,6 +48,7 @@ pub const Args = struct {
         .eni_file_json = "Same as --eni-file but as JSON.",
         .rt_prio = "Set a real-time priority for this process. Does nothing on windows.",
         .verbose = "Enable verbose logs.",
+        .pv_name_prefix = "Add a prefix (separated by /) to process variable names, if desired. Not applicable if eni file provided.",
     };
 };
 
@@ -153,7 +155,7 @@ pub fn run(allocator: std.mem.Allocator, args: Args) RunError!void {
                 error.RecvTimeout, error.Wkc => continue :bus_scan,
             };
 
-            break :blk scanner.readEni(allocator, args.preop_timeout_us, false) catch |err| switch (err) {
+            break :blk scanner.readEni(allocator, args.preop_timeout_us, false, args.pv_name_prefix) catch |err| switch (err) {
                 error.LinkError,
                 error.Overflow,
                 error.NoSpaceLeft,

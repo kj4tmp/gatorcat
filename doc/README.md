@@ -52,14 +52,14 @@ The CLI requires `CAP_NET_RAW` permissions to open raw sockets. The easiest way 
 The CLI is also provided as a docker image:
 
 ```
-$ docker run ghcr.io/kj4tmp/gatorcat:0.3.2 version
+$ docker run ghcr.io/jeffective/gatorcat:0.3.2 version
 0.3.2
 ```
 
 To obtain raw access to ethernet ports with docker, the easiest way is to use network mode host. This will give the container host-level access to the ethernet interfaces.
 
 ```
-$ docker run --network host ghcr.io/kj4tmp/gatorcat:0.3.2 run --ifname enx00e04c68191a --zenoh-config-default
+$ docker run --network host ghcr.io/jeffective/gatorcat:0.3.2 run --ifname enx00e04c68191a --zenoh-config-default
 warning: Scheduler: NORMAL
 warning: Ping returned in 487 us.
 warning: Cycle time not specified. Estimating appropriate cycle time...
@@ -121,7 +121,7 @@ Examples can be found in [examples](doc/examples/). The examples can be built us
 To add gatorcat to your project as a dependency, run:
 
 ```sh
-zig fetch --save git+https://github.com/kj4tmp/gatorcat
+zig fetch --save git+https://github.com/jeffective/gatorcat
 ```
 
 Then add the following to your build.zig:

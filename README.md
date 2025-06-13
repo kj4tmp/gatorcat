@@ -1,6 +1,6 @@
 # gatorcat
 
-![tests](https://github.com/kj4tmp/gatorcat/actions/workflows/main.yml/badge.svg)
+![tests](https://github.com/jeffective/gatorcat/actions/workflows/main.yml/badge.svg)
 
 `gatorcat` is an EtherCAT maindevice written in the Zig programming language.
 
@@ -53,9 +53,9 @@ See [doc](doc/README.md).
 
 ## Sponsors
 
-![GitHub Sponsors](https://img.shields.io/github/sponsors/kj4tmp)
+![GitHub Sponsors](https://img.shields.io/github/sponsors/jeffective)
 
-Please consider [❤️ Sponsoring](https://github.com/sponsors/kj4tmp) if you depend on this project or just want to see it succeed.
+Please consider [❤️ Sponsoring](https://github.com/sponsors/jeffective) if you depend on this project or just want to see it succeed.
 
 ## Release Procedure
 

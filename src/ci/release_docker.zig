@@ -84,7 +84,7 @@ pub fn main() !void {
 
         const docker_login = try std.process.Child.run(.{
             .allocator = allocator,
-            .argv = &.{ "docker", "login", "--username", "kj4tmp", "--password", password, "ghcr.io" },
+            .argv = &.{ "docker", "login", "--username", "jeffective", "--password", password, "ghcr.io" },
         });
 
         switch (docker_login.term) {
@@ -115,7 +115,7 @@ pub fn main() !void {
 
     const version_str = try std.fmt.allocPrint(allocator, "{}", .{getVersionFromZon()});
     const version_str_nl = try std.fmt.allocPrint(allocator, "{s}\n", .{version_str});
-    const tag = try std.fmt.allocPrint(allocator, "ghcr.io/kj4tmp/gatorcat:{s}", .{version_str});
+    const tag = try std.fmt.allocPrint(allocator, "ghcr.io/jeffective/gatorcat:{s}", .{version_str});
 
     const dockerfile_fmt =
         \\FROM scratch AS build-amd64

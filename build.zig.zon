@@ -9,7 +9,7 @@
             .hash = "flags-0.10.0-a_9h3kR2AABNAfaPGRyOOGmWsfv12Hk6JQPTX4MM446s",
         },
         .zenoh = .{
-            .url = "git+https://github.com/kj4tmp/zenoh-zig#2b34a27a97aeda2b38c7a9cba9f72a3f406e3095",
+            .url = "git+https://github.com/jeffective/zenoh-zig#2b34a27a97aeda2b38c7a9cba9f72a3f406e3095",
             .hash = "zenoh-1.3.4-QDbMY420AACP2-YTF6esmKintDLIT6Bp5DBWRRTrbP4f",
         },
         .zbor = .{
@@ -17,7 +17,7 @@
             .hash = "zbor-0.17.0-kr-CoHIkAwCy2WhoS6MgwSvyQsLWzzNy6a7UTHqMPMmO",
         },
         .npcap = .{
-            .url = "git+https://github.com/kj4tmp/npcap-zig.git#98ba585d6fac1c66535de481142b18601068a702",
+            .url = "git+https://github.com/jeffective/npcap-zig.git#98ba585d6fac1c66535de481142b18601068a702",
             .hash = "npcap-1.15.0-V67iipUOAADLr8zdn3AYr9LA9l6FPPNzH8OT5UGvwgW7",
             .lazy = true,
         },

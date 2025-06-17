@@ -192,69 +192,32 @@ pub const Datagram = struct {
 /// Ref: IEC 61158-4-12:2019 5.3.3
 pub const EtherCATFrame = struct {
     header: Header,
-    portable_datagrams: std.BoundedArray(PortableDatagram, max_datagrams) = .{},
-    data_store: [Datagram.max_data_length]u8 = undefined,
+    datagrams: []Datagram,
 
-    pub fn init(dgrams: []const Datagram) !EtherCATFrame {
-        assert(dgrams.len != 0); // no datagrams
-        assert(dgrams.len <= 15); // too many datagrams
+    pub fn init(dgrams: []Datagram) EtherCATFrame {
+        assert(dgrams.len > 0); // no datagrams
+        assert(dgrams.len <= max_datagrams); // too many datagrams
         for (dgrams) |datagram| {
             assert(datagram.data.len > 0); // zero length datagrams are not supported
         }
-
         var header_length: u11 = 0;
-        var portable_datagrams = std.BoundedArray(PortableDatagram, max_datagrams){};
-        var data_store = [1]u8{0} ** Datagram.max_data_length;
-        var fbs = std.io.fixedBufferStream(&data_store);
-        const writer = fbs.writer();
-
         for (dgrams) |datagram| {
             header_length += @intCast(datagram.getLength());
-            const start_pos = try fbs.getPos();
-            try writer.writeAll(datagram.data);
-            const end_pos = try fbs.getPos();
-            assert(start_pos < end_pos);
-            assert(start_pos <= data_store.len);
-            assert(end_pos <= data_store.len);
-            try portable_datagrams.append(PortableDatagram{
-                .header = datagram.header,
-                .data_start = @intCast(start_pos),
-                .data_end = @intCast(end_pos),
-                .wkc = datagram.wkc,
-            });
         }
         const header = Header{
             .length = header_length,
         };
         return EtherCATFrame{
             .header = header,
-            .portable_datagrams = portable_datagrams,
-            .data_store = data_store,
+            .datagrams = dgrams,
         };
-    }
-
-    const Datagrams = std.BoundedArray(Datagram, max_datagrams);
-
-    pub fn datagrams(self: *EtherCATFrame) Datagrams {
-        var dgrams = Datagrams{};
-
-        for (self.portable_datagrams.slice()) |portable_datagram| {
-            dgrams.append(Datagram{
-                .header = portable_datagram.header,
-                .data = self.data_store[portable_datagram.data_start..portable_datagram.data_end],
-                .wkc = portable_datagram.wkc,
-            }) catch |err| switch (err) {
-                error.Overflow => unreachable,
-            };
-        }
-        return dgrams;
     }
 
     fn getLength(self: EtherCATFrame) usize {
         return self.header.length + @divExact(@bitSizeOf(Header), 8);
     }
 
-    /// when sending and recieving a frame,
+    /// when sending and receiving a frame,
     /// only certain parts of the frame should change.
     /// We choose to not trust the received frame.
     /// This function determines if the frame is "currupted"
@@ -263,12 +226,11 @@ pub const EtherCATFrame = struct {
         if (self.header != original.header) {
             return true;
         }
-        if (self.portable_datagrams.len != original.portable_datagrams.len) {
+        if (self.datagrams.len != original.datagrams.len) {
             return true;
         }
-
-        assert(self.portable_datagrams.len == original.portable_datagrams.len);
-        for (self.portable_datagrams.slice(), original.portable_datagrams.slice(), 0..) |self_dgram, orig_dgram, i| {
+        assert(self.datagrams.len == original.datagrams.len);
+        for (self.datagrams, original.datagrams, 0..) |self_dgram, orig_dgram, i| {
             switch (self_dgram.header.command) {
                 .BWR, .BRD, .BRW, .APRD, .APWR, .APRW, .ARMW, .FPRD, .FPWR, .FPRW, .LRD, .LWR, .LRW, .FRMW, .NOP => {},
                 _ => return true,
@@ -289,8 +251,7 @@ pub const EtherCATFrame = struct {
             if (self_dgram.header.circulating != orig_dgram.header.circulating) return true;
             if (self_dgram.header.next != orig_dgram.header.next) return true;
             // TODO: irq can change, i think?
-            if (self_dgram.data_start != orig_dgram.data_start) return true;
-            if (self_dgram.data_end != orig_dgram.data_end) return true;
+            if (self_dgram.data.len != orig_dgram.data.len) return true;
             // enforce wkc unchanged for NOP
             if (self_dgram.header.command == .NOP and self_dgram.wkc != orig_dgram.wkc) return true;
         }
@@ -303,27 +264,6 @@ pub const EtherCATFrame = struct {
 
     pub const max_datagrams = 15;
 
-    /// Stack portable storage of a datagram.
-    /// This struct is packed only for reducing its size.
-    pub const PortableDatagram = packed struct(u128) {
-        header: Datagram.Header,
-        /// inclusive start of datagram data in parent data
-        data_start: u16,
-        /// exclusive end of datagram data in parent data
-        data_end: u16,
-        wkc: u16,
-
-        pub fn init(dgram: Datagram, data_start: u16) PortableDatagram {
-            assert(dgram.data.len > 0);
-            return PortableDatagram{
-                .header = dgram.header,
-                .data_start = data_start,
-                .data_end = data_start + @as(u16, @intCast(dgram.data.len)),
-                .wkc = dgram.wkc,
-            };
-        }
-    };
-
     /// EtherCAT Header
     ///
     /// Ref: IEC 61158-4-12:2019 5.3.3
@@ -335,7 +275,7 @@ pub const EtherCATFrame = struct {
         type: u4 = 0x1,
     };
 
-    pub const empty = EtherCATFrame{ .header = .{ .length = 0 } };
+    pub const empty = EtherCATFrame{ .header = .{ .length = 0 }, .datagrams = &.{} };
 };
 
 pub const EtherType = enum(u16) {
@@ -349,14 +289,13 @@ pub const EtherType = enum(u16) {
 /// Ethernet Frame
 ///
 /// This is what is actually sent on the wire.
-///
 /// It is a standard ethernet frame with EtherCAT data in it.
 ///
 /// Ref: IEC 61158-4-12:2019 5.3.1
 pub const EthernetFrame = struct {
     header: Header,
     ethercat_frame: EtherCATFrame,
-    n_padding: u8,
+    n_padding: u8, // number of zero padding bytes
 
     pub fn init(
         header: Header,
@@ -372,11 +311,9 @@ pub const EthernetFrame = struct {
         };
     }
 
-    /// serialize this frame into the out buffer
-    /// for tranmission on the line.
-    ///
+    /// Serialize this frame into the out buffer
+    /// for transmission on the line.
     /// Returns number of bytes written, or error.
-    ///
     /// If idx is provided, it will be injected into the first datagram.
     pub fn serialize(self: *EthernetFrame, maybe_idx: ?u8, out: []u8) !usize {
         var fbs = std.io.fixedBufferStream(out);
@@ -385,7 +322,7 @@ pub const EthernetFrame = struct {
         try writer.writeInt(u48, self.header.src_mac, big);
         try writer.writeInt(u16, @intFromEnum(self.header.ether_type), big);
         try wire.eCatFromPackToWriter(self.ethercat_frame.header, writer);
-        for (self.ethercat_frame.datagrams().slice(), 0..) |datagram, i| {
+        for (self.ethercat_frame.datagrams, 0..) |datagram, i| {
             // inject idx at first datagram to identify frame
             if (i == 0) {
                 var header_copy = datagram.header;
@@ -403,9 +340,13 @@ pub const EthernetFrame = struct {
         return fbs.getWritten().len;
     }
 
-    /// deserialize bytes into datagrams
     pub fn deserialize(
-        received: []const u8,
+        /// received bytes from the wire,
+        /// lifetime must exceed return value
+        received: []u8,
+        /// uninitialized datagrams,
+        /// lifetime must exceed return value
+        scratch_datagrams: *[15]Datagram,
     ) !EthernetFrame {
         var fbs_reading = std.io.fixedBufferStream(received);
         const reader = fbs_reading.reader();
@@ -432,61 +373,28 @@ pub const EthernetFrame = struct {
             return error.InvalidEtherCATHeader;
         }
 
-        var data_store = [_]u8{0} ** Datagram.max_data_length;
-        var datagrams = std.BoundedArray(Datagram, EtherCATFrame.max_datagrams){};
-        var fbs_datastore = std.io.fixedBufferStream(&data_store);
-
-        reading_datgrams: for (0..15) |_| {
-            const header = try wire.packFromECatReader(Datagram.Header, reader);
-            const n_bytes_read = try reader.readAll(data_store[try fbs_datastore.getPos() .. try fbs_datastore.getPos() + header.length]);
-            if (n_bytes_read != header.length) {
-                return error.CurruptedFrame;
-            }
-            try fbs_datastore.seekBy(header.length);
+        var scratch_datagrams_used: usize = 0;
+        reading_datagrams: for (0..15) |i| {
+            const header = wire.packFromECatReader(Datagram.Header, reader) catch return error.CurruptedFrame;
+            fbs_reading.seekBy(header.length) catch return error.CurruptedFrame;
+            const datagram_data: []u8 = received[try fbs_reading.getPos() - header.length .. try fbs_reading.getPos()];
             const wkc = try wire.packFromECatReader(u16, reader);
-            try datagrams.append(Datagram{
+            scratch_datagrams[i] = Datagram{
                 .header = header,
-                .data = data_store[try fbs_datastore.getPos() - header.length .. try fbs_datastore.getPos()],
+                .data = datagram_data,
                 .wkc = wkc,
-            });
-            if (!header.next) break :reading_datgrams;
+            };
+            scratch_datagrams_used += 1;
+            if (!header.next) break :reading_datagrams;
         } else {
             return error.CurruptedFrame; // should always see header.next false
         }
-
-        const ethercat_frame = try EtherCATFrame.init(datagrams.slice());
+        assert(scratch_datagrams_used > 0);
+        const ethercat_frame = EtherCATFrame.init(scratch_datagrams[0..scratch_datagrams_used]);
         return EthernetFrame.init(
             ethernet_header,
             ethercat_frame,
         );
-    }
-
-    pub fn identifyFromBuffer(buf: []const u8) !u8 {
-        var fbs = std.io.fixedBufferStream(buf);
-        const reader = fbs.reader();
-        const ethernet_header = Header{
-            .dest_mac = try reader.readInt(u48, big),
-            .src_mac = try reader.readInt(u48, big),
-            .ether_type = @enumFromInt(try reader.readInt(u16, big)),
-        };
-        if (ethernet_header.ether_type != .ETHERCAT) {
-            return error.NotAnEtherCATFrame;
-        }
-        const ethercat_header = try wire.packFromECatReader(EtherCATFrame.Header, reader);
-        const bytes_remaining = try fbs.getEndPos() - try fbs.getPos();
-        const bytes_total = try fbs.getEndPos();
-        if (bytes_total < min_frame_length) {
-            return error.InvalidFrameLengthTooSmall;
-        }
-        if (ethercat_header.length > bytes_remaining) {
-            logger.debug(
-                "length field: {}, remaining: {}, end pos: {}",
-                .{ ethercat_header.length, bytes_remaining, try fbs.getEndPos() },
-            );
-            return error.InvalidEtherCATHeader;
-        }
-        const datagram_header = try wire.packFromECatReader(Datagram.Header, reader);
-        return datagram_header.idx;
     }
 
     /// Ethernet Header
@@ -510,7 +418,7 @@ test "ethernet frame serialization" {
             .src_mac = 0xAABB_CCDD_EEFF,
             .ether_type = .ETHERCAT,
         },
-        try EtherCATFrame.init(&datagrams),
+        EtherCATFrame.init(&datagrams),
     );
     var out_buf: [max_frame_length]u8 = undefined;
     const serialized = out_buf[0..try frame.serialize(123, &out_buf)];
@@ -560,7 +468,7 @@ test "ethernet frame serialization / deserialization" {
             .src_mac = 0xAAAA_AAAA_AAAA,
             .ether_type = .ETHERCAT,
         },
-        try EtherCATFrame.init(&datagrams),
+        EtherCATFrame.init(&datagrams),
     );
 
     var out_buf: [max_frame_length]u8 = undefined;
@@ -573,9 +481,18 @@ test "ethernet frame serialization / deserialization" {
     var datagrams2 = datagrams;
     datagrams2[0].data = &data2;
 
-    const frame2 = try EthernetFrame.deserialize(serialize_copy);
+    var scratch_datagrams: [15]Datagram = undefined;
+    const frame2 = try EthernetFrame.deserialize(serialize_copy, &scratch_datagrams);
 
-    try std.testing.expectEqual(frame, frame2);
+    try std.testing.expect(!frame2.ethercat_frame.isCurrupted(&frame.ethercat_frame));
+    try std.testing.expectEqual(frame.header, frame2.header);
+    try std.testing.expectEqual(frame.ethercat_frame.header, frame2.ethercat_frame.header);
+    try std.testing.expectEqual(frame.ethercat_frame.datagrams.len, frame2.ethercat_frame.datagrams.len);
+    try std.testing.expectEqual(frame.ethercat_frame.datagrams.len, 1);
+    try std.testing.expectEqual(@as(u80, @bitCast(frame.ethercat_frame.datagrams[0].header)),@as(u80, @bitCast(frame2.ethercat_frame.datagrams[0].header)));
+    try std.testing.expectEqualSlices(u8, frame.ethercat_frame.datagrams[0].data, frame2.ethercat_frame.datagrams[0].data);
+    try std.testing.expectEqual(frame.ethercat_frame.datagrams[0].wkc, frame2.ethercat_frame.datagrams[0].wkc);
+    try std.testing.expectEqual(frame.n_padding, frame2.n_padding);
 }
 
 /// Max frame length

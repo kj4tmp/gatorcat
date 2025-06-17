@@ -117,10 +117,10 @@ pub const Subdevice = struct {
     }
 
     pub fn processFrame(self: *Subdevice, frame: *Simulator.Frame) void {
-        var ethernet_frame = telegram.EthernetFrame.deserialize(frame.slice()) catch return;
-        var datagrams = ethernet_frame.ethercat_frame.datagrams();
-        const datagrams_slice: []telegram.Datagram = datagrams.slice();
-        skip_datagram: for (datagrams_slice) |*datagram| {
+        var scratch_datagrams: [15]telegram.Datagram = undefined;
+        const ethernet_frame = telegram.EthernetFrame.deserialize(frame.slice(), &scratch_datagrams) catch return;
+        const datagrams = ethernet_frame.ethercat_frame.datagrams;
+        skip_datagram: for (datagrams) |*datagram| {
             // TODO: operate if address zero
             // increment address field
             switch (datagram.header.command) {
@@ -168,7 +168,7 @@ pub const Subdevice = struct {
         }
         var new_frame = Simulator.Frame{};
         new_frame.len = frame.len;
-        var new_eth_frame = telegram.EthernetFrame.init(ethernet_frame.header, telegram.EtherCATFrame.init(datagrams_slice) catch unreachable);
+        var new_eth_frame = telegram.EthernetFrame.init(ethernet_frame.header, telegram.EtherCATFrame.init(datagrams));
         const num_written = new_eth_frame.serialize(null, new_frame.slice()) catch unreachable;
         assert(num_written == frame.len);
         frame.* = new_frame;

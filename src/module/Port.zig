@@ -103,7 +103,7 @@ fn sendTransaction(self: *Port, transaction: *Transaction) error{LinkError}!void
     assert(transaction.data.released == true);
     assert(transaction.data.send_datagram.data.len == transaction.data.recv_datagram.data.len);
     // one datagram will always fit
-    const ethercat_frame = telegram.EtherCATFrame.init(&.{transaction.data.send_datagram}) catch unreachable;
+    const ethercat_frame = telegram.EtherCATFrame.init((&transaction.data.send_datagram)[0..1]);
     var frame = telegram.EthernetFrame.init(
         .{
             .dest_mac = self.settings.dest_mac_address,
@@ -172,13 +172,14 @@ fn recvFrame(self: *Port) !void {
     if (frame_size > telegram.max_frame_length) return error.InvalidFrame;
 
     assert(frame_size <= telegram.max_frame_length);
-    const bytes_recv: []const u8 = buf[0..frame_size];
+    const bytes_recv: []u8 = buf[0..frame_size];
 
-    var frame = telegram.EthernetFrame.deserialize(bytes_recv) catch |err| {
+    var scratch_datagrams: [15]telegram.Datagram = undefined;
+    const frame = telegram.EthernetFrame.deserialize(bytes_recv, &scratch_datagrams) catch |err| {
         logger.info("Failed to deserialize frame: {}", .{err});
         return;
     };
-    for (frame.ethercat_frame.datagrams().slice()) |datagram| {
+    for (frame.ethercat_frame.datagrams) |datagram| {
         self.findPutDatagramLocked(datagram);
     }
 }

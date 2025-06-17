@@ -70,6 +70,8 @@ pub const SubdeviceConfiguration = struct {
         /// The first 4 KB (addresses 0x0000 - 0x0fff) is reserved
         /// for ethercat and PDI configuration settings.
         /// It may be up to the full addressable space (u16, 65535 kB).
+        ///
+        /// Currently, this is the first 4 kB.
         physical_memory: []const u8,
     };
 

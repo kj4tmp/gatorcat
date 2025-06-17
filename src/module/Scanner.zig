@@ -626,9 +626,14 @@ pub fn readSubdeviceConfigurationLeaky(
         const eeprom_content = try allocator.alloc(u8, sii_byte_length);
         try reader.readNoEof(eeprom_content);
 
+        const physical_memory = try allocator.create([4096]u8);
+        physical_memory.* = @splat(0);
+
+        try self.readFullPhysicalMemory(ring_position, physical_memory);
+
         sim_result = .{
             .eeprom = eeprom_content,
-            .physical_memory = &.{}, // TODO
+            .physical_memory = physical_memory[0..],
         };
     }
 
@@ -644,6 +649,23 @@ pub fn readSubdeviceConfigurationLeaky(
         .sim = sim_result,
     };
     return res;
+}
+
+pub fn readFullPhysicalMemory(
+    self: *Scanner,
+    ring_position: u16,
+    out: *[4096]u8,
+) !void {
+    for (0..4) |i| {
+        const start: usize = i * 1024;
+        const end: usize = (i + 1) * 1024;
+        try self.port.fprdWkc(
+            .{ .station_address = Subdevice.stationAddressFromRingPos(ring_position), .offset = 0 },
+            out[start..end],
+            self.settings.recv_timeout_us,
+            1,
+        );
+    }
 }
 
 /// Produces a unique process image variable name.

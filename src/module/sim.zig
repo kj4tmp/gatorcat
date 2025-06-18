@@ -4,8 +4,12 @@ const std = @import("std");
 const assert = std.debug.assert;
 
 const ENI = @import("ENI.zig");
+const esc = @import("esc.zig");
+const logger = @import("root.zig").logger;
 const nic = @import("nic.zig");
+pub const ESM = @import("sim/ESM.zig");
 const telegram = @import("telegram.zig");
+const wire = @import("wire.zig");
 
 /// Provides a link layer that will simulate an ethercat network
 /// specified using an ethercat network information struct.
@@ -108,12 +112,27 @@ pub const Simulator = struct {
 
 pub const Subdevice = struct {
     config: ENI.SubdeviceConfiguration,
-    physical_memory: [4096]u8,
+    physical_memory: PhysMem,
+    esm: ESM,
+
+    pub const PhysMem = [4096]u8;
+
     pub fn init(config: ENI.SubdeviceConfiguration) Subdevice {
-        return Subdevice{
+        var physical_memory: [4096]u8 = @splat(0);
+        if (config.sim) |sim| {
+            if (sim.physical_memory.len == physical_memory.len) {
+                @memcpy(&physical_memory, sim.physical_memory);
+            } else {
+                logger.err("Invalid physical memory length in eni.", .{});
+            }
+        }
+        var sub = Subdevice{
             .config = config,
-            .physical_memory = @splat(0),
+            .physical_memory = physical_memory,
+            .esm = .{},
         };
+        sub.initTick();
+        return sub;
     }
 
     pub fn processFrame(self: *Subdevice, frame: *Simulator.Frame) void {
@@ -172,13 +191,37 @@ pub const Subdevice = struct {
         const num_written = new_eth_frame.serialize(null, new_frame.slice()) catch unreachable;
         assert(num_written == frame.len);
         frame.* = new_frame;
+
+        self.tick();
     }
 
     pub fn validOffsetLen(offset: u16, len: u11) bool {
         const end: u16, const overflowed = @addWithOverflow(offset, len);
         return (overflowed == 0 and end <= 4095);
     }
+
+    pub fn initTick(self: *Subdevice) void {
+        self.esm.initTick(&self.physical_memory);
+    }
+
+    pub fn tick(self: *Subdevice) void {
+        self.esm.tick(&self.physical_memory);
+    }
 };
+
+pub fn readRegister(comptime T: type, offset: esc.RegisterMap, phys_mem: *const Subdevice.PhysMem) T {
+    const byte_size = wire.packedSize(T);
+    const start: usize = @intFromEnum(offset);
+    const end: usize = start + byte_size;
+    return wire.packFromECatSlice(T, phys_mem[start..end]);
+}
+pub fn writeRegister(pack: anytype, offset: esc.RegisterMap, phys_mem: *Subdevice.PhysMem) void {
+    const byte_size = wire.packedSize(@TypeOf(pack));
+    const start: usize = @intFromEnum(offset);
+    const end: usize = start + byte_size;
+    const bytes = wire.eCatFromPack(pack);
+    @memcpy(phys_mem[start..end], &bytes);
+}
 
 test {
     std.testing.refAllDecls(@This());

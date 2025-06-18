@@ -37,5 +37,5 @@ test {
     );
     defer md.deinit(stack_fba.allocator());
 
-    try std.testing.expectError(error.StateChangeTimeout, md.busInit(5_000_000));
+    try md.busInit(5_000_000);
 }
